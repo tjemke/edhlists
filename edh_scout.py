@@ -4,6 +4,7 @@
   python3 edh_scout.py sync                                   # one-time download -> compact local DB
   python3 edh_scout.py scout "Atraxa, Praetors' Voice" -n 12 --bracket 3
   python3 edh_scout.py scout "Tymna the Weaver" --partner "Kraum, Ludevic's Opus" --spellbook
+  python3 edh_scout.py scout "Jodah, the Unifier" --declared-bracket 2-3   # trust EDHREC's own label
   python3 edh_scout.py check mydeck.txt --bracket 3
 
 Sources (public, keyless -- everything is cached, please keep it polite):
@@ -185,6 +186,21 @@ def iter_json_array(fp: io.TextIOBase, key: str | None = None, chunk: int = 1 <<
         pos = end
 
 
+def iter_jsonl(fp: io.TextIOBase):
+    """Stream a JSON Lines document (one object per line)."""
+    for line in fp:
+        line = line.strip().rstrip(",")
+        if line.startswith("{"):
+            yield json.loads(line)
+
+
+def iter_bulk_cards(path: Path):
+    """Scryfall ships bulk data as gzipped JSON Lines; older dumps were one big JSON array."""
+    with open_text(path) as fp:
+        is_array = fp.read(64).lstrip().startswith("[")
+    return iter_json_array(open_text(path)) if is_array else iter_jsonl(open_text(path))
+
+
 def save_gz(path: Path, obj) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with gzip.open(path, "wt", encoding="utf-8") as f:
@@ -200,7 +216,7 @@ def load_gz(path: Path):
 
 def build_cards_db(bulk_path: Path) -> dict:
     cards, aliases = {}, {}
-    for c in iter_json_array(open_text(bulk_path)):
+    for c in iter_bulk_cards(bulk_path):
         if c.get("layout") in SKIP_LAYOUTS or c.get("set_type") == "memorabilia":
             continue
         name = c["name"]
@@ -356,6 +372,27 @@ def commander_slug(commanders: list[str]) -> str:
     return "-".join(sorted(slugify(c) for c in commanders))
 
 
+def bracket_spec(spec: str) -> set[int]:
+    """A declared-bracket selector: '3' -> {3}, '1-3' -> {1,2,3}, '2,4' -> {2,4}."""
+    out = set()
+    for part in spec.split(","):
+        part = part.strip()
+        if m := re.fullmatch(r"(\d)\s*-\s*(\d)", part):
+            lo, hi = sorted(int(g) for g in m.groups())
+            out.update(range(lo, hi + 1))
+        elif part.isdigit():
+            out.add(int(part))
+        else:
+            raise argparse.ArgumentTypeError(f"bad bracket {part!r} -- use e.g. 3, 1-3 or 2,4")
+    if not out <= {1, 2, 3, 4, 5}:
+        raise argparse.ArgumentTypeError(f"brackets must be 1-5, got {sorted(out - {1, 2, 3, 4, 5})}")
+    return out
+
+
+def fmt_brackets(want: set[int]) -> str:
+    return "B" + ",".join(map(str, sorted(want)))
+
+
 def edhrec_deck_table(http: Http, slug: str, theme=None, budget=None) -> list[dict]:
     path = "/".join(p for p in (slug, theme and slugify(theme), budget) if p)
     return http.json(f"{EDHREC_JSON}/decks/{path}.json", ttl=86400).get("table") or []
@@ -375,6 +412,46 @@ def edhrec_build_id(http: Http, refresh: bool = False) -> str:
     return m.group(1)
 
 
+def _entry(e) -> tuple[str, int]:
+    """A card entry is ["Sol Ring", 1] now; older payloads used bare names or objects."""
+    if isinstance(e, (list, tuple)):
+        name, qty = (list(e) + [1])[:2]
+    elif isinstance(e, dict):
+        name, qty = e.get("name") or e.get("card"), e.get("quantity") or e.get("q") or 1
+    else:
+        name, qty = e, 1
+    return str(name or ""), int(qty or 1)
+
+
+def edhrec_cards(data: dict) -> Counter:
+    """deckpreview keeps the 99 in data['deck']['cards'], grouped by card type:
+    {"Creature": [["Birds of Paradise", 1], ...], "Land": [["Plains", 6], ...]}."""
+    deck = data.get("deck")
+    groups = deck.get("cards") if isinstance(deck, dict) else None
+    if isinstance(groups, dict):
+        entries = [e for g in groups.values() for e in (g or [])]
+    elif isinstance(groups, list):
+        entries = groups
+    else:                                       # older shape: a flat list of names at the top level
+        entries = data.get("cards") or (deck if isinstance(deck, list) else [])
+    out = Counter()
+    for e in entries:
+        name, qty = _entry(e)
+        if name:
+            out[name] += qty
+    return out
+
+
+def edhrec_commanders(data: dict) -> list[str]:
+    cmdrs = [str(c) for c in data.get("commanders") or [] if c]
+    deck = data.get("deck") if isinstance(data.get("deck"), dict) else {}
+    for key in ("commander_v2", "commander"):
+        if cmdrs:
+            break
+        cmdrs = [n for n, _ in map(_entry, deck.get(key) or []) if n]
+    return cmdrs
+
+
 def edhrec_deck(http: Http, urlhash: str) -> Deck:
     key = f"edhrec:deckpreview:{urlhash}"      # build-id independent, decks are snapshots: cache forever
     page = http.peek(key)
@@ -388,8 +465,12 @@ def edhrec_deck(http: Http, urlhash: str) -> Deck:
                 if e.code != 404 or refresh:
                     raise
     data = (page.get("pageProps") or {}).get("data") or page
-    cmdrs = [c for c in data.get("commanders") or [] if c]
-    cards = Counter(c for c in data.get("cards") or [] if c and c not in cmdrs)
+    cmdrs = edhrec_commanders(data)
+    cards = edhrec_cards(data)
+    for c in cmdrs:
+        cards.pop(c, None)
+    if not cards:   # loud: an empty list means their payload moved again, not a 1-card deck
+        raise ValueError("no cards in the deckpreview payload -- EDHREC's format may have changed")
     meta = {k: data.get(k) for k in ("price", "salt", "cedh", "theme", "tribe", "tags", "savedate")}
     return Deck(commanders=cmdrs, cards=cards, ident=urlhash, source=data.get("url") or "",
                 edhrec=f"{EDHREC_SITE}/deckpreview/{urlhash}", meta=meta)
@@ -580,9 +661,16 @@ def cmd_sync(args, http: Http) -> None:
     db = None
     if not args.skip_cards:
         meta = http.json(f"{SCRYFALL}/bulk-data/oracle-cards", ttl=0)
-        raw = CACHE / "scryfall-oracle-cards.json"
-        log(f"downloading Scryfall oracle cards (~{meta.get('size', 0) / 1e6:.0f} MB) ...")
-        http.download(meta["download_uri"], raw)
+        # Scryfall replaced the plain-JSON download with gzipped JSON Lines (jsonl_download_uri);
+        # keep reading download_uri/size too in case either form comes back.
+        url = meta.get("jsonl_download_uri") or meta.get("download_uri")
+        if not url:
+            sys.exit("Scryfall's bulk-data entry has no download URI -- did their API change?")
+        size = meta.get("compressed_size") or meta.get("size") or 0
+        raw = CACHE / ("scryfall-oracle-cards.jsonl.gz" if url.endswith(".gz") else
+                       "scryfall-oracle-cards.json")
+        log(f"downloading Scryfall oracle cards (~{size / 1e6:.0f} MB) ...")
+        http.download(url, raw)
         db = build_cards_db(raw)
         save_gz(DB_CARDS, db)
         raw.unlink()
@@ -608,6 +696,21 @@ def cmd_scout(args, http: Http) -> None:
             if r.get("urlhash")]
     if not rows:
         sys.exit(f"no EDHREC decks for '{slug}' (check spelling or pass --slug)")
+    # EDHREC's deck table carries the bracket the deck's submitter declared (1-5, often absent).
+    want = args.declared_bracket
+    if want:
+        kept = [r for r in rows if r.get("bracket") in want
+                or (r.get("bracket") is None and args.include_undeclared)]
+        log(f"{len(rows)} decks -> {len(kept)} declared {fmt_brackets(want)}"
+            + (" (+ undeclared)" if args.include_undeclared else ""))
+        if not kept:
+            sys.exit(f"no decks declared {fmt_brackets(want)} for '{slug}' -- most EDHREC decks carry "
+                     "no declared bracket; try --include-undeclared or a wider spec")
+        rows = kept
+    # Bracket 5 *is* the cEDH label, so asking for it explicitly opts in.
+    allow_cedh = args.include_cedh or bool(want and 5 in want)
+    if not allow_cedh:
+        rows = [r for r in rows if r.get("bracket") != 5]
     if args.max_price:
         rows = [r for r in rows if (r.get("price") or 0) <= args.max_price]
     if args.sample == "random":
@@ -630,9 +733,11 @@ def cmd_scout(args, http: Http) -> None:
         except (urllib.error.URLError, RuntimeError, ValueError, KeyError) as e:
             log(f"  skip {row['urlhash']}: {e}")
             continue
-        if deck.meta.get("cedh") and not args.include_cedh:
+        # deckpreview no longer carries a `cedh` flag (the table's bracket 5 stands in, filtered above).
+        if deck.meta.get("cedh") and not allow_cedh:
             continue
-        deck.meta.update({k: row[k] for k in ("price", "salt", "savedate") if row.get(k) is not None})
+        deck.meta.update({k: row[k] for k in ("price", "salt", "savedate", "bracket")
+                          if row.get(k) is not None})
         deck.commanders = deck.commanders or commanders
         res = evaluate(deck, db, http, args.spellbook)
         results.append((deck, res))
@@ -679,6 +784,11 @@ def main(argv=None) -> None:
     s.add_argument("--max-price", type=float, help="skip decks above this EDHREC price (USD)")
     s.add_argument("--theme", help="EDHREC theme, e.g. 'counters' or 'infect'")
     s.add_argument("--budget", action="store_true", help="use EDHREC's budget deck subset")
+    s.add_argument("--declared-bracket", type=bracket_spec, metavar="SPEC",
+                   help="only decks whose submitter declared this bracket on EDHREC "
+                        "(e.g. 3, 1-3, 2,4); undeclared decks are dropped")
+    s.add_argument("--include-undeclared", action="store_true",
+                   help="with --declared-bracket, also keep decks that declared no bracket")
     s.add_argument("--include-cedh", action="store_true", help="don't skip decks EDHREC tags as cEDH")
     s.add_argument("--only-fitting", action="store_true", help="only report decks that fit --bracket")
 
