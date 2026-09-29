@@ -1,0 +1,42 @@
+{
+ "atraxa_four_colour.txt": {
+  "level": 7.531708701836179,
+  "score": 666.3417403672356,
+  "impact": 687.867961272954,
+  "efficiency": 0.9687058823529412,
+  "avg_cmc": 2.98,
+  "curve_cmc": 3
+ },
+ "jank_mono_red.txt": {
+  "level": 0.23793162201351134,
+  "score": 59.482905503377836,
+  "impact": 55.408733893557425,
+  "efficiency": 1.073529411764706,
+  "avg_cmc": 3,
+  "curve_cmc": 1
+ },
+ "kozilek_colourless.txt": {
+  "level": 6.543708687389687,
+  "score": 518.9337818650719,
+  "impact": 662.4023345627138,
+  "efficiency": 0.7834117647058824,
+  "avg_cmc": 4.48,
+  "curve_cmc": 5
+ },
+ "krenko_mono_red.txt": {
+  "level": 7.099376322973486,
+  "score": 579.8752645946971,
+  "impact": 590.5397171335201,
+  "efficiency": 0.9819411764705883,
+  "avg_cmc": 2.73,
+  "curve_cmc": 3
+ },
+ "partial_cedh_stub.txt": {
+  "level": 1.8145047363575428,
+  "score": 307.015331545028,
+  "impact": 273.57483154761906,
+  "efficiency": 1.122235294117647,
+  "avg_cmc": 1.08,
+  "curve_cmc": 2
+ }
+}

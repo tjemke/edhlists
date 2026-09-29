@@ -1,0 +1,20 @@
+Commander
+1 Thrasios, Triton Hero
+1 Tymna the Weaver
+
+Deck
+1 Sol Ring
+1 Mana Crypt
+1 Mox Diamond
+1 Chrome Mox
+1 Force of Will
+1 Fierce Guardianship
+1 Demonic Tutor
+1 Vampiric Tutor
+1 Mystical Tutor
+1 Rhystic Study
+1 Gaea's Cradle
+1 Underground Sea
+1 Tropical Island
+5 Island
+5 Forest

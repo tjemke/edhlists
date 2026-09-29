@@ -1,0 +1,103 @@
+Commander
+1 Atraxa, Praetors' Voice
+
+Deck
+1 Allay
+1 Apprentice Wizard
+1 Arcane Sanctum
+1 Arcane Signet
+1 As Foretold
+1 Astral Cornucopia
+1 Aura Blast
+1 Aura Shards
+1 Blightbelly Rat
+1 Bloated Contaminator
+1 Breeding Pool
+1 Brokers Ascendancy
+1 Brokers Confluence
+1 Chromatic Lantern
+1 Command Tower
+1 Contagion Clasp
+1 Contagion Engine
+1 Contentious Plan
+1 Counterspell
+1 Crystalline Crawler
+1 Darksteel Reactor
+1 Demystify
+1 Dreamtide Whale
+1 Everflowing Chalice
+1 Evolution Sage
+1 Exotic Orchard
+1 Expansion Algorithm
+1 Experimental Augury
+1 Ezuri, Stalker of Spheres
+1 Flooded Strand
+1 Flux Channeler
+1 Forest
+1 Fuel for the Cause
+1 Glistening Sphere
+1 Godless Shrine
+1 Grateful Apparition
+1 Grim Affliction
+1 Hallowed Fountain
+1 Hickory Woodlot
+1 Huatli's Raptor
+1 Ichormoon Gauntlet
+1 Indatha Triome
+1 Inexorable Tide
+1 Infectious Bite
+1 Infectious Inquiry
+1 Island
+1 Karn's Bastion
+1 Mana Confluence
+1 Mana Reflection
+1 Marsh Flats
+1 Metastatic Evangel
+1 Misty Rainforest
+1 Myth Unbound
+1 Necropotence
+1 Notion Thief
+1 Peat Bog
+1 Plains
+1 Platinum Emperion
+1 Pollenbright Druid
+1 Polluted Delta
+1 Prologue to Phyresis
+1 Radstorm
+1 Ray of Revelation
+1 Reject Imperfection
+1 Remote Farm
+1 Replicating Ring
+1 Requisition Raid
+1 Sandsteppe Citadel
+1 Saprazzan Skerry
+1 Savannah
+1 Scrubland
+1 Seaside Citadel
+1 Serum Snare
+1 Sol Ring
+1 Spara's Headquarters
+1 Staff of Compleation
+1 Super Shredder
+1 Swamp
+1 Swords to Plowshares
+1 Tekuthal, Inquiry Dominus
+1 Temple Garden
+1 Thirsting Roots
+1 Tropical Island
+1 Tundra
+1 Tyrranax Rex
+1 Underground Sea
+1 Undiscovered Paradise
+1 Unnatural Restoration
+1 Urborg, Tomb of Yawgmoth
+1 Verdant Catacombs
+1 Vivisurgeon's Insight
+1 Voidwing Hybrid
+1 Vorinclex, Monstrous Raider
+1 Vraska's Fall
+1 Vraska, Betrayal's Sting
+1 Whisper of the Dross
+1 Windswept Heath
+1 Yavimaya, Cradle of Growth
+1 Zagoth Triome

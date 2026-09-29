@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "edh-scout"
+version = "0.1"
+description = "Pull EDHREC decklists for a commander and triage them by Commander bracket and power level"
+readme = "README.md"
+requires-python = ">=3.9"
+# Deliberately no runtime dependencies: this is stdlib-only and meant to stay that way.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+edh-scout = "edh_scout.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/edh_scout"]
+
+[tool.ruff]
+line-length = 110
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# So `pytest` works straight from a clone, installed or not (src-layout would otherwise hide it).
+pythonpath = ["src"]
