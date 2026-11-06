@@ -1,14 +1,8 @@
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.ruff_cache/
-*.egg-info/
-build/
-dist/
-.venv/
-venv/
+/target
+/result
+/result-*
 
-# default output directories from `scout` / `check`
+# default output directories from `scout --export` and the TUI's export keys
 edh-scout-*/
 
 .claude

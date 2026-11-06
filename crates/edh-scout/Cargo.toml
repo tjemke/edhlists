@@ -1,0 +1,24 @@
+[package]
+name = "edh-scout"
+description = "Find well-rounded, fun Commander decklists on EDHREC, scored with EDHPowerLevel"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "edh-scout"
+path = "src/main.rs"
+
+[dependencies]
+edhpl.workspace = true
+edh-data.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+comfy-table.workspace = true
+indicatif.workspace = true
+open.workspace = true
+ratatui.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true

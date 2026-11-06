@@ -1,114 +1,125 @@
 # edh-scout
 
-Pull EDHREC decklists for a commander and triage them: what is the lowest **Commander bracket** each
-deck can honestly claim, and what **power level** does it score?
+Find **well-rounded, fun Commander decklists** for a given commander, ready for a normal commander
+night. edh-scout pulls decklists from EDHREC, scores every one the way
+[EDHPowerLevel](https://edhpowerlevel.com) does (power level and bracket, computed locally), adds
+EDHREC's salt score, a deckbuilding-template check and synergy with the commander, and lets you
+browse, compare and export the best fits — e.g. to print proxies.
 
 ```
-  B>=   PL GC cmb      $  salt   MV tut  deck
-✓   3  7.5  3   2   5060  61.4 2.94   0  DLSY0ucAq2iP44GSfNiOIw
-      PL 7.5/10: impact 688 × efficiency 0.97 = score 666
-      3 GC: Aura Shards, Necropotence, Notion Thief
-      extra turns: Ichormoon Gauntlet
-      combo [Spicy]: Vorinclex, Monstrous Raider + Vraska, Betrayal's Sting -> Target opponent loses
-~   4  7.8  9   3   1061  79.1 3.67   9  f2fyso5moXX2yHyDUBTqtw
-      cut 6 Game Changer(s) to fit B3
+$ edh-scout scout "Jodah, the Unifier" --plain
+╭───┬───────┬─────────┬──────┬───────────┬─────────┬───────┬─────────────────────────────────────────────────────────────────────────╮
+│ # ┆ Power ┆ Bracket ┆ Salt ┆ Structure ┆ Synergy ┆ Price ┆ Themes                                                                  │
+╞═══╪═══════╪═════════╪══════╪═══════════╪═════════╪═══════╪═════════════════════════════════════════════════════════════════════════╡
+│ 1 ┆   6.2 ┆ B3      ┆   50 ┆       83% ┆    1.8% ┆  $259 ┆ Enchantress, Unnatural, Lands Matter, Cascade, Legends, Ramp, Artifacts │
+│ 2 ┆   6.1 ┆ B2      ┆   47 ┆      100% ┆    5.5% ┆  $222 ┆ Time Lords, Anthems, Legends                                            │
+│ 3 ┆   6.1 ┆ B3      ┆   52 ┆       91% ┆    2.2% ┆  $171 ┆ Commander Matters, +1/+1 Counters, Modified Creatures, Humans           │
+│ 4 ┆   6.3 ┆ B2      ┆   52 ┆      100% ┆    6.7% ┆  $202 ┆ Legends                                                                 │
+│ 5 ┆   6.0 ┆ B3      ┆   51 ┆       96% ┆    2.3% ┆  $360 ┆ Legends, Historic                                                       │
+│ 6 ┆   6.4 ┆ B2      ┆   51 ┆       94% ┆   16.2% ┆  $121 ┆ –                                                                       │
+╰───┴───────┴─────────┴──────┴───────────┴─────────┴───────┴─────────────────────────────────────────────────────────────────────────╯
 ```
 
-`✓` fits the target bracket, `~` fits after cuts, `✗` is above it.
+Without `--plain` the same ranking opens in an interactive browser with a detail pane per deck
+(power bar against the target band, bracket reasons, salty cards, role counts, synergy, combos) and
+the full decklist one keypress away.
 
 ## Install
 
 ```sh
-pip install -e .
+nix run . -- scout "Krenko, Mob Boss"   # from a checkout
+nix build                               # ./result/bin/edh-scout
+cargo install --path crates/edh-scout
 ```
 
-No runtime dependencies — standard library only, and intended to stay that way.
+The first run downloads the card and combo databases (see *Data sources*); after that everything
+is cached.
 
 ## Use
 
 ```sh
-edh-scout sync                                    # one-time download -> compact local DB
-edh-scout scout "Atraxa, Praetors' Voice" -n 12 --bracket 3
-edh-scout scout "Tymna the Weaver" --partner "Kraum, Ludevic's Opus" --spellbook
-edh-scout scout "Jodah, the Unifier" --declared-bracket 2-3   # trust EDHREC's own label
-edh-scout check mydeck.txt --bracket 3
+edh-scout scout "Jodah, the Unifier"                 # interactive browser, target brackets 2–3
+edh-scout scout tymna --partner "kraum, lud"         # partners; partial names work if unambiguous
+edh-scout scout krenko -b 3 --max-price 300          # bracket 3 only, budget cap
+edh-scout scout krenko -p 5.5-7                      # explicit EDHPowerLevel band instead
+edh-scout scout krenko --rank combined --weights power=0.4,salt=0.4,structure=0.2
+edh-scout scout krenko -t Tokens -t Goblins          # only decks EDHREC tagged with a theme
+edh-scout scout krenko --plain --top 15 --export out # table on stdout + report.md + decklists
+edh-scout check mydeck.txt                           # score a local list (any common export format)
+edh-scout sync                                       # refresh prices / Game Changers / combos
 ```
 
-`python -m edh_scout ...` works identically.
+In the browser: `↑↓` move · `⏎` decklist/details · `J/K` scroll · `r` cycle ranking ·
+`f` only decks in the target · `o`/`s`/`p` open on EDHREC / the source site / EDHPowerLevel ·
+`e` export the selected list · `E` export `report.md` plus the top lists · `q` quit.
 
-`sync` first — it builds the local card and combo databases everything else reads. Re-run it every
-few weeks to pick up Game Changer list changes and price movement.
+When stdout isn't a terminal (or with `--plain`) you get a table instead.
 
-Each run writes a directory containing `report.md` (one linkable section per deck) and `decks/*.txt`
-(the decklists themselves, ready to paste elsewhere).
+### Exports (proxies)
 
-`check` reads most decklist formats: plain `1 Sol Ring`, Archidekt categories, `(SET) 123` suffixes,
-`*CMDR*` markers, and `Commander` / `Deck` / `Sideboard` section headers.
+Decklists are written as plain `1 Card Name` lines, commander first, nothing else — the format
+MPCFill and most proxy printers take, and that Moxfield/Archidekt import cleanly. `--format
+sectioned` writes `Commander` / `Deck` sections instead. `report.md` links every deck to EDHREC,
+its source page and a prefilled EDHPowerLevel check.
 
-### Useful flags
+## How decks are scored
 
-| Flag | Effect |
+| Signal | Meaning |
 |---|---|
-| `--bracket N` | Target bracket to triage against (default 3) |
-| `--spellbook` | Ask Commander Spellbook's `/estimate-bracket` — slower, online, more accurate |
-| `--no-power-level` | Skip the 1-10 score |
-| `--declared-bracket SPEC` | Only decks whose submitter declared this bracket (`3`, `1-3`, `2,4`) |
-| `--offline` | Never touch the network; cache and local DB only |
-| `--sample recent\|random\|cheapest` | How to pick which decks to evaluate |
+| **Power** | EDHPowerLevel's 0–10 score (card prices & popularity, scaled by curve efficiency). |
+| **Bracket** | EDHPowerLevel's bracket: the higher of its rules floor (extra turns, land denial, Game Changers, early/late 2-card combos) and the bracket the power level implies. |
+| **Salt** | EDHREC's deck salt (sum of its cards' salt). The detail view lists the saltiest cards. |
+| **Structure** | Closeness to a ~36 land / 10 ramp / 10 draw / 8 removal / 2 wipe template, using Scryfall Tagger's community card tags. |
+| **Synergy** | Average EDHREC synergy of the deck's cards with this commander: how on-plan it is. |
 
-## What the two numbers mean
+**Target.** `-b 2-3` (default) means "EDHPowerLevel would call it bracket 2 or 3", i.e. power
+4.7–7.7 using the site's own power→bracket curve, with no rule pushing it higher. `-p` sets an
+explicit power band instead.
 
-**Bracket floor (`B>=`)** is the *minimum* bracket a deck can claim, from hard signals only: Game
-Changers, banned cards, mass land denial, extra turns and known combos. It cannot see speed, synergy
-or pilot intent, so it is a floor, never a verdict. A deck can sit far above its floor.
+**Ranking.** `--rank power` (default) puts decks in the target first, then those whose power sits
+closest to the middle of the band. `combined` blends power fit, salt, structure and synergy with
+`--weights` (default `power=0.5,salt=0.2,structure=0.15,synergy=0.15`); `salt`, `structure` and
+`synergy` sort by one signal. Salt and synergy are scored relative to the decks being compared.
+Press `r` in the browser to cycle.
 
-**Power level (`PL`)** is [EDHPowerLevel](https://edhpowerlevel.com)'s 1-10 scale. Their site has no
-API, so `src/edh_scout/powerlevel.py` reimplements the scoring they run in the browser: each card's
-impact comes from its market price and EDHREC rank, the total is scaled by an efficiency factor
-derived from the mana curve, and the result is read off a power curve.
+**Which decks get fetched.** EDHREC lists tens of thousands of decks for popular commanders with
+no quality signal, so the deck table (one request) is filtered first: incomplete lists, decks
+declared outside the target, and duplicates are dropped; a salt and price ceiling is calibrated
+from the decks whose owners declared a target bracket (their 90th percentile); the fetch budget
+(`-n`, default 60) is then spread across themes and salt/price tiers. Decks fetched earlier are
+reused for free, so repeated runs grow the pool.
 
-Because the inputs are Scryfall's price and rank rather than EDHPowerLevel's own snapshot, the
-number can drift a little from the site. Every deck in `report.md` carries a prefilled
-`edhpowerlevel.com?d=` link, so checking is one click. See `tools/README.md` for how the port is
-verified and how to re-derive it if they retune their constants.
+## Data sources and politeness
 
-## Data sources
+| Source | Used for | Requests |
+|---|---|---|
+| EDHREC | deck table, deck pages, commander synergy, combo votes, top-salt list | 1 table + 3 side pages per commander (cached 1–14 days); 1 per new deck (cached forever) |
+| Scryfall | `default_cards` bulk (cheapest printing prices, Game Changers, oracle text) and `oracle_tags` bulk (card roles) | 4 per `sync` |
+| Commander Spellbook | full combo dump | 1 per `sync` |
+| EDHPowerLevel | nothing — scored locally; links go to the site | 0 |
 
-All public and keyless. Everything is cached on disk; please keep it polite.
+Requests are strictly sequential with a per-host minimum gap (2 s for EDHREC deck pages, 1 s for
+EDHREC JSON, 150 ms for Scryfall), `Retry-After` is honoured, and a host that rate-limits twice is
+left alone for the rest of the run. Every run ends with a count of the requests it made. `--offline`
+never touches the network. Everything lives in `$XDG_CACHE_HOME/edh-scout` (`--cache-dir` to move it).
 
-| Source | Used for |
-|---|---|
-| EDHREC | The undocumented JSON its own frontend uses: deck tables and deck contents |
-| Scryfall | `oracle-cards` bulk: Game Changer flag, legality, oracle text, price, EDHREC rank |
-| Commander Spellbook | Combo dump (offline) and `/estimate-bracket` (online, `--spellbook`) |
-| EDHPowerLevel | No API; power level is scored locally, with prefilled links back to the site |
-
-Cache and databases live in `$XDG_CACHE_HOME/edh-scout` (default `~/.cache/edh-scout`).
+A first `scout` for a commander costs about 64 requests (≈2 minutes at the default pace); running it
+again within a day costs none.
 
 ## Development
 
 ```sh
-pip install -e ".[dev]"
-pytest
+nix develop          # cargo, clippy, rustfmt, rust-analyzer, node
+cargo test --workspace
+cargo clippy --workspace --all-targets
 ```
 
-The test suite is fully offline: card data is pinned in `tests/data/cards.json`, and the power-level
-expectations in `tests/data/powerlevel_golden.json` and `tests/data/curve_golden.json` are derived
-from a JavaScript transcription of EDHPowerLevel's own scoring (`tools/`). Regenerate fixtures with
-`tools/build_card_fixture.py` and `tools/build_curve_fixture.js`.
-
-### Layout
+The test suite is offline: EDHREC payloads, deck fixtures and golden values live in
+`crates/*/tests/data`.
 
 ```
-src/edh_scout/
-  config.py       paths, endpoints, shared constants
-  storage.py      gzip + streaming JSON readers for the bulk dumps
-  fetch.py        polite, file-cached HTTP
-  cards.py        card/combo DB building and lookup
-  deck.py         the Deck model, decklist parsing, slugs
-  edhrec.py       reading EDHREC's deck tables and deck contents
-  powerlevel.py   the EDHPowerLevel port
-  evaluate.py     bracket triage
-  report.py       stdout table + report.md
-  cli.py          argument parsing and the three subcommands
+crates/
+  edhpl/       EDHPowerLevel's power level + bracket, ported from the site (see its README)
+  edh-data/    polite cached HTTP, Scryfall/Spellbook databases and sync, EDHREC readers, decks
+  edh-scout/   the app: analysis, roles, ranking, candidate selection, exports, CLI and TUI
 ```

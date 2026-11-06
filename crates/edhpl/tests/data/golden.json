@@ -1,0 +1,164 @@
+{
+ "atraxa_four_colour.txt": {
+  "level": 7.69759110667099,
+  "score": 699.5182213341981,
+  "impact": 722.1162109959538,
+  "efficiency": 0.9687058823529412,
+  "avgCost": 2.98,
+  "curveCmc": 3,
+  "lands": 36,
+  "nonlands": 64,
+  "bracket": 3,
+  "floor": 3,
+  "fromLevel": 3,
+  "turns": [
+   "Ichormoon Gauntlet"
+  ],
+  "turnsChainable": [],
+  "denial": [],
+  "denialListed": [],
+  "gameChangers": [
+   "Aura Shards",
+   "Necropotence",
+   "Notion Thief"
+  ],
+  "early": [],
+  "late": [
+   "1131-7873",
+   "1529-1887"
+  ]
+ },
+ "bracket_bait.txt": {
+  "level": 0.9732906719167136,
+  "score": 243.3226679791784,
+  "impact": 272.4777916900094,
+  "efficiency": 0.893,
+  "avgCost": 3.41,
+  "curveCmc": 4,
+  "lands": 28,
+  "nonlands": 17,
+  "bracket": 4,
+  "floor": 4,
+  "fromLevel": 1,
+  "turns": [
+   "Temporal Mastery",
+   "Time Warp"
+  ],
+  "turnsChainable": [
+   "Time Warp"
+  ],
+  "denial": [
+   "Armageddon",
+   "Glowrider",
+   "Winter Orb"
+  ],
+  "denialListed": [],
+  "gameChangers": [
+   "Cyclonic Rift",
+   "Demonic Tutor",
+   "Rhystic Study",
+   "Smothering Tithe",
+   "Thassa's Oracle"
+  ],
+  "early": [
+   "742-1295"
+  ],
+  "late": [
+   "690-3966"
+  ]
+ },
+ "jank_mono_red.txt": {
+  "level": 0.23261632630307028,
+  "score": 58.15408157576757,
+  "impact": 54.170925303454716,
+  "efficiency": 1.073529411764706,
+  "avgCost": 3,
+  "curveCmc": 1,
+  "lands": 20,
+  "nonlands": 3,
+  "bracket": 1,
+  "floor": 1,
+  "fromLevel": 1,
+  "turns": [],
+  "turnsChainable": [],
+  "denial": [],
+  "denialListed": [],
+  "gameChangers": [],
+  "early": [],
+  "late": []
+ },
+ "kozilek_colourless.txt": {
+  "level": 6.381311351043331,
+  "score": 504.31802159389974,
+  "impact": 643.7457851851851,
+  "efficiency": 0.7834117647058824,
+  "avgCost": 4.48,
+  "curveCmc": 5,
+  "lands": 38,
+  "nonlands": 62,
+  "bracket": 3,
+  "floor": 3,
+  "fromLevel": 2,
+  "turns": [],
+  "turnsChainable": [],
+  "denial": [],
+  "denialListed": [],
+  "gameChangers": [],
+  "early": [],
+  "late": [
+   "4131-4547"
+  ]
+ },
+ "krenko_mono_red.txt": {
+  "level": 7.001561205281499,
+  "score": 560.3122410562999,
+  "impact": 570.6169111577965,
+  "efficiency": 0.9819411764705883,
+  "avgCost": 2.73,
+  "curveCmc": 3,
+  "lands": 36,
+  "nonlands": 64,
+  "bracket": 4,
+  "floor": 4,
+  "fromLevel": 3,
+  "turns": [],
+  "turnsChainable": [],
+  "denial": [],
+  "denialListed": [],
+  "gameChangers": [],
+  "early": [
+   "3750-6410"
+  ],
+  "late": []
+ },
+ "partial_cedh_stub.txt": {
+  "level": 2.111136313357455,
+  "score": 323.33408940072366,
+  "impact": 288.1161295634921,
+  "efficiency": 1.122235294117647,
+  "avgCost": 1.08,
+  "curveCmc": 2,
+  "lands": 13,
+  "nonlands": 12,
+  "bracket": 4,
+  "floor": 4,
+  "fromLevel": 1,
+  "turns": [],
+  "turnsChainable": [],
+  "denial": [],
+  "denialListed": [],
+  "gameChangers": [
+   "Chrome Mox",
+   "Demonic Tutor",
+   "Fierce Guardianship",
+   "Force of Will",
+   "Gaea's Cradle",
+   "Mox Diamond",
+   "Mystical Tutor",
+   "Rhystic Study",
+   "Vampiric Tutor"
+  ],
+  "early": [],
+  "late": []
+ }
+}

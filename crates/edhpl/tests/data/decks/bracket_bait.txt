@@ -1,0 +1,27 @@
+// Not a real deck: one of everything EDHPowerLevel's bracket rules look for.
+Commander
+1 Kenrith, the Returned King
+
+Deck
+1 Time Warp
+1 Temporal Mastery
+1 Armageddon
+1 Winter Orb
+1 Glowrider
+1 Thalia, Guardian of Thraben
+1 Charitable Levy
+1 Thassa's Oracle
+1 Demonic Consultation
+1 Exquisite Blood
+1 Sanguine Bond
+1 Rhystic Study
+1 Cyclonic Rift
+1 Demonic Tutor
+1 Smothering Tithe
+1 Esika, God of the Tree
+1 Emeria's Call
+1 Sol Ring
+1 Command Tower
+10 Island
+10 Swamp
+5 Plains

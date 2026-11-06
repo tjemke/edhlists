@@ -1,0 +1,5388 @@
+[
+  {
+    "cards": [
+      {
+        "cmc": 4.0,
+        "colors": [
+          "B",
+          "G",
+          "U",
+          "W"
+        ],
+        "edhrec_rank": 2356,
+        "gamechanger": false,
+        "isCommander": true,
+        "layout": "normal",
+        "name": "Atraxa, Praetors' Voice",
+        "oracle_text": [
+          "Flying, vigilance, deathtouch, lifelink\nAt the beginning of your end step, proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 24.09,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Phyrexian Angel Horror"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "W"
+        ],
+        "edhrec_rank": 21841,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Allay",
+        "oracle_text": [
+          "Buyback {3} (You may pay an additional {3} as you cast this spell. If you do, put this card into your hand as it resolves.)\nDestroy target enchantment."
+        ],
+        "price": 0.17,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 9923,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Apprentice Wizard",
+        "oracle_text": [
+          "{U}, {T}: Add {C}{C}{C}."
+        ],
+        "price": 0.16,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Human Wizard"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 351,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Arcane Sanctum",
+        "oracle_text": [
+          "This land enters tapped.\n{T}: Add {W}, {U}, or {B}."
+        ],
+        "price": 0.23,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 3,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Arcane Signet",
+        "oracle_text": [
+          "{T}: Add one mana of any color in your commander's color identity."
+        ],
+        "price": 0.4,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 1914,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "As Foretold",
+        "oracle_text": [
+          "At the beginning of your upkeep, put a time counter on this enchantment.\nOnce each turn, you may pay {0} rather than pay the mana cost for a spell you cast with mana value X or less, where X is the number of time counters on this enchantment."
+        ],
+        "price": 1.14,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 1313,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Astral Cornucopia",
+        "oracle_text": [
+          "This artifact enters with X charge counters on it.\n{T}: Choose a color. Add one mana of that color for each charge counter on this artifact."
+        ],
+        "price": 0.25,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "W"
+        ],
+        "edhrec_rank": 13927,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Aura Blast",
+        "oracle_text": [
+          "Destroy target enchantment.\nDraw a card."
+        ],
+        "price": 0.19,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "G",
+          "W"
+        ],
+        "edhrec_rank": 1068,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Aura Shards",
+        "oracle_text": [
+          "Whenever a creature you control enters, you may destroy target artifact or enchantment."
+        ],
+        "price": 17.74,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "B"
+        ],
+        "edhrec_rank": 2826,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Blightbelly Rat",
+        "oracle_text": [
+          "Toxic 1 (Players dealt combat damage by this creature also get a poison counter.)\nWhen this creature dies, proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 0.22,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Phyrexian Rat"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "G"
+        ],
+        "edhrec_rank": 2636,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Bloated Contaminator",
+        "oracle_text": [
+          "Trample\nToxic 1 (Players dealt combat damage by this creature also get a poison counter.)\nWhenever this creature deals combat damage to a player, proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 2.92,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Phyrexian Beast"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 61,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Breeding Pool",
+        "oracle_text": [
+          "({T}: Add {G} or {U}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped."
+        ],
+        "price": 6.45,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land — Forest Island"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "G",
+          "U",
+          "W"
+        ],
+        "edhrec_rank": 2853,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Brokers Ascendancy",
+        "oracle_text": [
+          "At the beginning of your end step, put a +1/+1 counter on each creature you control and a loyalty counter on each planeswalker you control."
+        ],
+        "price": 2.27,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 5.0,
+        "colors": [
+          "G",
+          "U",
+          "W"
+        ],
+        "edhrec_rank": 10349,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Brokers Confluence",
+        "oracle_text": [
+          "Choose three. You may choose the same mode more than once.\n• Proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)\n• Target creature phases out. (Treat it and anything attached to it as though they don't exist until its controller's next turn.)\n• Counter target activated or triggered ability."
+        ],
+        "price": 1.36,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [],
+        "edhrec_rank": 85,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Chromatic Lantern",
+        "oracle_text": [
+          "Lands you control have \"{T}: Add one mana of any color.\"\n{T}: Add one mana of any color."
+        ],
+        "price": 0.51,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 2,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Command Tower",
+        "oracle_text": [
+          "{T}: Add one mana of any color in your commander's color identity."
+        ],
+        "price": 0.19,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 1415,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Contagion Clasp",
+        "oracle_text": [
+          "When this artifact enters, put a -1/-1 counter on target creature.\n{4}, {T}: Proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 0.37,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 6.0,
+        "colors": [],
+        "edhrec_rank": 1859,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Contagion Engine",
+        "oracle_text": [
+          "When this artifact enters, put a -1/-1 counter on each creature target player controls.\n{4}, {T}: Proliferate twice. (Choose any number of permanents and/or players, then give each another counter of each kind already there. Then do it again.)"
+        ],
+        "price": 12.6,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 2198,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Contentious Plan",
+        "oracle_text": [
+          "Proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)\nDraw a card."
+        ],
+        "price": 0.37,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 16,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Counterspell",
+        "oracle_text": [
+          "Counter target spell."
+        ],
+        "price": 2.18,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [],
+        "edhrec_rank": 2882,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Crystalline Crawler",
+        "oracle_text": [
+          "Converge — This creature enters with a +1/+1 counter on it for each color of mana spent to cast it.\nRemove a +1/+1 counter from this creature: Add one mana of any color.\n{T}: Put a +1/+1 counter on this creature."
+        ],
+        "price": 0.28,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact Creature — Construct"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [],
+        "edhrec_rank": 3588,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Darksteel Reactor",
+        "oracle_text": [
+          "Indestructible (Effects that say \"destroy\" don't destroy this artifact.)\nAt the beginning of your upkeep, you may put a charge counter on this artifact.\nWhen this artifact has twenty or more charge counters on it, you win the game."
+        ],
+        "price": 0.38,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [
+          "W"
+        ],
+        "edhrec_rank": 14758,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Demystify",
+        "oracle_text": [
+          "Destroy target enchantment."
+        ],
+        "price": 0.04,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 1187,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Dreamtide Whale",
+        "oracle_text": [
+          "Vanishing 2 (This creature enters with two time counters on it. At the beginning of your upkeep, remove a time counter from it. When the last is removed, sacrifice it.)\nWhenever a player casts their second spell each turn, proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 5.18,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Whale"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 251,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Everflowing Chalice",
+        "oracle_text": [
+          "Multikicker {2} (You may pay an additional {2} any number of times as you cast this spell.)\nThis artifact enters with a charge counter on it for each time it was kicked.\n{T}: Add {C} for each charge counter on this artifact."
+        ],
+        "price": 0.28,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "G"
+        ],
+        "edhrec_rank": 400,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Evolution Sage",
+        "oracle_text": [
+          "Landfall — Whenever a land you control enters, proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 2.06,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Elf Druid"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 9,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Exotic Orchard",
+        "oracle_text": [
+          "{T}: Add one mana of any color that a land an opponent controls could produce."
+        ],
+        "price": 0.21,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 5577,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Expansion Algorithm",
+        "oracle_text": [
+          "Proliferate X times. (To proliferate, choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 2.53,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 1325,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Experimental Augury",
+        "oracle_text": [
+          "Look at the top three cards of your library. Put one of them into your hand and the rest on the bottom of your library in any order. Proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 0.2,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "G",
+          "U"
+        ],
+        "edhrec_rank": 3283,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Ezuri, Stalker of Spheres",
+        "oracle_text": [
+          "When Ezuri enters, you may pay {3}. If you do, proliferate twice.\nWhenever you proliferate, draw a card."
+        ],
+        "price": 0.61,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Phyrexian Elf Warrior"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 37,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Flooded Strand",
+        "oracle_text": [
+          "{T}, Pay 1 life, Sacrifice this land: Search your library for a Plains or Island card, put it onto the battlefield, then shuffle."
+        ],
+        "price": 15.73,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 1241,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Flux Channeler",
+        "oracle_text": [
+          "Whenever you cast a noncreature spell, proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 2.59,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Human Wizard"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": null,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Forest",
+        "oracle_text": [
+          "({T}: Add {G}.)"
+        ],
+        "price": 0.09,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Basic Land — Forest"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 6599,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Fuel for the Cause",
+        "oracle_text": [
+          "Counter target spell, then proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 0.4,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [],
+        "edhrec_rank": 2922,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Glistening Sphere",
+        "oracle_text": [
+          "This artifact enters tapped.\nWhen this artifact enters, proliferate.\n{T}: Add one mana of any color.\nCorrupted — {T}: Add three mana of any one color. Activate only if an opponent has three or more poison counters."
+        ],
+        "price": 13.27,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 59,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Godless Shrine",
+        "oracle_text": [
+          "({T}: Add {W} or {B}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped."
+        ],
+        "price": 5.22,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land — Plains Swamp"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "W"
+        ],
+        "edhrec_rank": 1815,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Grateful Apparition",
+        "oracle_text": [
+          "Flying\nWhenever this creature deals combat damage to a player or planeswalker, proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 0.18,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Spirit"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "B"
+        ],
+        "edhrec_rank": 4559,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Grim Affliction",
+        "oracle_text": [
+          "Put a -1/-1 counter on target creature, then proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 0.34,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 60,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Hallowed Fountain",
+        "oracle_text": [
+          "({T}: Add {W} or {U}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped."
+        ],
+        "price": 6.88,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land — Plains Island"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 6202,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Hickory Woodlot",
+        "oracle_text": [
+          "This land enters tapped with two depletion counters on it.\n{T}, Remove a depletion counter from this land: Add {G}{G}. If there are no depletion counters on this land, sacrifice it."
+        ],
+        "price": 4.68,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "G",
+          "W"
+        ],
+        "edhrec_rank": 15964,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Huatli's Raptor",
+        "oracle_text": [
+          "Vigilance\nWhen this creature enters, proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 0.27,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Dinosaur"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 2505,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Ichormoon Gauntlet",
+        "oracle_text": [
+          "Planeswalkers you control have \"[0]: Proliferate\" and \"[−12]: Take an extra turn after this one.\"\nWhenever you cast a noncreature spell, choose a counter on target permanent. Put an additional counter of that kind on that permanent."
+        ],
+        "price": 17.17,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 479,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Indatha Triome",
+        "oracle_text": [
+          "({T}: Add {W}, {B}, or {G}.)\nThis land enters tapped.\nCycling {3} ({3}, Discard this card: Draw a card.)"
+        ],
+        "price": 16.04,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land — Plains Swamp Forest"
+      },
+      {
+        "cmc": 5.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 992,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Inexorable Tide",
+        "oracle_text": [
+          "Whenever you cast a spell, proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 1.11,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "G"
+        ],
+        "edhrec_rank": 2791,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Infectious Bite",
+        "oracle_text": [
+          "Target creature you control deals damage equal to its power to target creature you don't control. Each opponent gets a poison counter."
+        ],
+        "price": 0.4,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "B"
+        ],
+        "edhrec_rank": 2475,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Infectious Inquiry",
+        "oracle_text": [
+          "You draw two cards and you lose 2 life. Each opponent gets a poison counter."
+        ],
+        "price": 0.38,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": null,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Island",
+        "oracle_text": [
+          "({T}: Add {U}.)"
+        ],
+        "price": 0.08,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Basic Land — Island"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 207,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Karn's Bastion",
+        "oracle_text": [
+          "{T}: Add {C}.\n{4}, {T}: Proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 3.25,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 114,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Mana Confluence",
+        "oracle_text": [
+          "{T}, Pay 1 life: Add one mana of any color."
+        ],
+        "price": 34.01,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 6.0,
+        "colors": [
+          "G"
+        ],
+        "edhrec_rank": 1847,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Mana Reflection",
+        "oracle_text": [
+          "If you tap a permanent for mana, it produces twice as much of that mana instead."
+        ],
+        "price": 2.58,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 51,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Marsh Flats",
+        "oracle_text": [
+          "{T}, Pay 1 life, Sacrifice this land: Search your library for a Plains or Swamp card, put it onto the battlefield, then shuffle."
+        ],
+        "price": 32.03,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "W"
+        ],
+        "edhrec_rank": 1519,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Metastatic Evangel",
+        "oracle_text": [
+          "Whenever another nontoken creature you control enters, proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 0.39,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Phyrexian Human Cleric"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 42,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Misty Rainforest",
+        "oracle_text": [
+          "{T}, Pay 1 life, Sacrifice this land: Search your library for a Forest or Island card, put it onto the battlefield, then shuffle."
+        ],
+        "price": 36.45,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "G"
+        ],
+        "edhrec_rank": 9338,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Myth Unbound",
+        "oracle_text": [
+          "Your commander costs {1} less to cast for each time it's been cast from the command zone this game.\nWhenever your commander is put into the command zone from anywhere, draw a card."
+        ],
+        "price": 4.9,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "B"
+        ],
+        "edhrec_rank": 526,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Necropotence",
+        "oracle_text": [
+          "Skip your draw step.\nWhenever you discard a card, exile that card from your graveyard.\nPay 1 life: Exile the top card of your library face down. Put that card into your hand at the beginning of your next end step."
+        ],
+        "price": 30.31,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "B",
+          "U"
+        ],
+        "edhrec_rank": 1223,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Notion Thief",
+        "oracle_text": [
+          "Flash\nIf an opponent would draw a card except the first one they draw in each of their draw steps, instead that player skips that draw and you draw a card."
+        ],
+        "price": 1.73,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Human Rogue"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 6228,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Peat Bog",
+        "oracle_text": [
+          "This land enters tapped with two depletion counters on it.\n{T}, Remove a depletion counter from this land: Add {B}{B}. If there are no depletion counters on this land, sacrifice it."
+        ],
+        "price": 1.28,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": null,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Plains",
+        "oracle_text": [
+          "({T}: Add {W}.)"
+        ],
+        "price": 0.08,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Basic Land — Plains"
+      },
+      {
+        "cmc": 8.0,
+        "colors": [],
+        "edhrec_rank": 4857,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Platinum Emperion",
+        "oracle_text": [
+          "Your life total can't change. (You can't gain or lose life. You can't pay any amount of life except 0.)"
+        ],
+        "price": 19.01,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact Creature — Golem"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "G"
+        ],
+        "edhrec_rank": 5742,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Pollenbright Druid",
+        "oracle_text": [
+          "When this creature enters, choose one —\n• Put a +1/+1 counter on target creature.\n• Proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 0.15,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Elf Druid"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 36,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Polluted Delta",
+        "oracle_text": [
+          "{T}, Pay 1 life, Sacrifice this land: Search your library for an Island or Swamp card, put it onto the battlefield, then shuffle."
+        ],
+        "price": 20.53,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 2668,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Prologue to Phyresis",
+        "oracle_text": [
+          "Each opponent gets a poison counter.\nDraw a card."
+        ],
+        "price": 0.61,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 3123,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Radstorm",
+        "oracle_text": [
+          "Storm (When you cast this spell, copy it for each spell cast before it this turn.)\nProliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 4.26,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "W"
+        ],
+        "edhrec_rank": 21067,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Ray of Revelation",
+        "oracle_text": [
+          "Destroy target enchantment.\nFlashback {G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+        ],
+        "price": 0.14,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 4803,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Reject Imperfection",
+        "oracle_text": [
+          "Counter target spell. If that spell's mana value was 3 or less, proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 0.31,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 9086,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Remote Farm",
+        "oracle_text": [
+          "This land enters tapped with two depletion counters on it.\n{T}, Remove a depletion counter from this land: Add {W}{W}. If there are no depletion counters on this land, sacrifice it."
+        ],
+        "price": 1.27,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [],
+        "edhrec_rank": 1642,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Replicating Ring",
+        "oracle_text": [
+          "{T}: Add one mana of any color.\nAt the beginning of your upkeep, put a night counter on this artifact. Then if it has eight or more night counters on it, remove all of them and create eight colorless snow artifact tokens named Replicated Ring with \"{T}: Add one mana of any color.\""
+        ],
+        "price": 0.45,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Snow Artifact"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [
+          "W"
+        ],
+        "edhrec_rank": 1196,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Requisition Raid",
+        "oracle_text": [
+          "Spree (Choose one or more additional costs.)\n+ {1} — Destroy target artifact.\n+ {1} — Destroy target enchantment.\n+ {1} — Put a +1/+1 counter on each creature target player controls."
+        ],
+        "price": 0.33,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 513,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Sandsteppe Citadel",
+        "oracle_text": [
+          "This land enters tapped.\n{T}: Add {W}, {B}, or {G}."
+        ],
+        "price": 0.27,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 6165,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Saprazzan Skerry",
+        "oracle_text": [
+          "This land enters tapped with two depletion counters on it.\n{T}, Remove a depletion counter from this land: Add {U}{U}. If there are no depletion counters on this land, sacrifice it."
+        ],
+        "price": 3.17,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 458,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Savannah",
+        "oracle_text": [
+          "({T}: Add {G} or {W}.)"
+        ],
+        "price": 408.23,
+        "quantity": 1,
+        "reserved": true,
+        "type_line": "Land — Forest Plains"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 379,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Scrubland",
+        "oracle_text": [
+          "({T}: Add {W} or {B}.)"
+        ],
+        "price": 452.96,
+        "quantity": 1,
+        "reserved": true,
+        "type_line": "Land — Plains Swamp"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 412,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Seaside Citadel",
+        "oracle_text": [
+          "This land enters tapped.\n{T}: Add {G}, {W}, or {U}."
+        ],
+        "price": 0.28,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 4625,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Serum Snare",
+        "oracle_text": [
+          "Return target nonland permanent to its owner's hand. If that permanent had mana value 3 or less, proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 0.25,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [],
+        "edhrec_rank": 1,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Sol Ring",
+        "oracle_text": [
+          "{T}: Add {C}{C}."
+        ],
+        "price": 1.22,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 398,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Spara's Headquarters",
+        "oracle_text": [
+          "({T}: Add {G}, {W}, or {U}.)\nThis land enters tapped.\nCycling {3} ({3}, Discard this card: Draw a card.)"
+        ],
+        "price": 12.81,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land — Forest Plains Island"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [],
+        "edhrec_rank": 1343,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Staff of Compleation",
+        "oracle_text": [
+          "{T}, Pay 1 life: Destroy target permanent you own.\n{T}, Pay 2 life: Add one mana of any color.\n{T}, Pay 3 life: Proliferate.\n{T}, Pay 4 life: Draw a card.\n{5}: Untap this artifact."
+        ],
+        "price": 4.01,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "B"
+        ],
+        "edhrec_rank": 4927,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Super Shredder",
+        "oracle_text": [
+          "Menace\nWhenever another permanent leaves the battlefield, put a +1/+1 counter on Super Shredder."
+        ],
+        "price": 17.59,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Mutant Ninja Human"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": null,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Swamp",
+        "oracle_text": [
+          "({T}: Add {B}.)"
+        ],
+        "price": 0.11,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Basic Land — Swamp"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [
+          "W"
+        ],
+        "edhrec_rank": 11,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Swords to Plowshares",
+        "oracle_text": [
+          "Exile target creature. Its controller gains life equal to its power."
+        ],
+        "price": 1.22,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 1168,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Tekuthal, Inquiry Dominus",
+        "oracle_text": [
+          "Flying\nIf you would proliferate, proliferate twice instead.\n{1}{U/P}{U/P}, Remove three counters from among other artifacts, creatures, and planeswalkers you control: Put an indestructible counter on Tekuthal. ({U/P} can be paid with either {U} or 2 life.)"
+        ],
+        "price": 1.97,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Phyrexian Horror"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 81,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Temple Garden",
+        "oracle_text": [
+          "({T}: Add {G} or {W}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped."
+        ],
+        "price": 2.76,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land — Forest Plains"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [
+          "G"
+        ],
+        "edhrec_rank": 2403,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Thirsting Roots",
+        "oracle_text": [
+          "Choose one —\n• Search your library for a basic land card, reveal it, put it into your hand, then shuffle.\n• Proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 0.46,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 352,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Tropical Island",
+        "oracle_text": [
+          "({T}: Add {G} or {U}.)"
+        ],
+        "price": 603.57,
+        "quantity": 1,
+        "reserved": true,
+        "type_line": "Land — Forest Island"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 348,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Tundra",
+        "oracle_text": [
+          "({T}: Add {W} or {U}.)"
+        ],
+        "price": 715.24,
+        "quantity": 1,
+        "reserved": true,
+        "type_line": "Land — Plains Island"
+      },
+      {
+        "cmc": 7.0,
+        "colors": [
+          "G"
+        ],
+        "edhrec_rank": 3141,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Tyrranax Rex",
+        "oracle_text": [
+          "This spell can't be countered.\nTrample, ward {4}, haste\nToxic 4 (Players dealt combat damage by this creature also get four poison counters.)"
+        ],
+        "price": 5.97,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Phyrexian Dinosaur"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 296,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Underground Sea",
+        "oracle_text": [
+          "({T}: Add {U} or {B}.)"
+        ],
+        "price": 1099.49,
+        "quantity": 1,
+        "reserved": true,
+        "type_line": "Land — Island Swamp"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 17304,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Undiscovered Paradise",
+        "oracle_text": [
+          "{T}: Add one mana of any color. During your next untap step, as you untap your permanents, return this land to its owner's hand."
+        ],
+        "price": 34.97,
+        "quantity": 1,
+        "reserved": true,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "G"
+        ],
+        "edhrec_rank": 1549,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Unnatural Restoration",
+        "oracle_text": [
+          "Return target permanent card from your graveyard to your hand. Proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 0.9,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 76,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Urborg, Tomb of Yawgmoth",
+        "oracle_text": [
+          "Each land is a Swamp in addition to its other land types."
+        ],
+        "price": 52.47,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Land"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 48,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Verdant Catacombs",
+        "oracle_text": [
+          "{T}, Pay 1 life, Sacrifice this land: Search your library for a Swamp or Forest card, put it onto the battlefield, then shuffle."
+        ],
+        "price": 28.72,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 5.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 7938,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Vivisurgeon's Insight",
+        "oracle_text": [
+          "Draw three cards. Proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 0.28,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "B",
+          "U"
+        ],
+        "edhrec_rank": 7611,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Voidwing Hybrid",
+        "oracle_text": [
+          "Flying\nToxic 1 (Players dealt combat damage by this creature also get a poison counter.)\nWhen you proliferate, return this card from your graveyard to your hand."
+        ],
+        "price": 0.32,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Phyrexian Bat"
+      },
+      {
+        "cmc": 6.0,
+        "colors": [
+          "G"
+        ],
+        "edhrec_rank": 1256,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Vorinclex, Monstrous Raider",
+        "oracle_text": [
+          "Trample, haste\nIf you would put one or more counters on a permanent or player, put twice that many of each of those kinds of counters on that permanent or player instead.\nIf an opponent would put one or more counters on a permanent or player, they put half that many of each of those kinds of counters on that permanent or player instead, rounded down."
+        ],
+        "price": 36.8,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Phyrexian Praetor"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "B"
+        ],
+        "edhrec_rank": 2349,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Vraska's Fall",
+        "oracle_text": [
+          "Each opponent sacrifices a creature or planeswalker of their choice and gets a poison counter."
+        ],
+        "price": 0.39,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 6.0,
+        "colors": [
+          "B"
+        ],
+        "edhrec_rank": 1250,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Vraska, Betrayal's Sting",
+        "oracle_text": [
+          "Compleated ({B/P} can be paid with {B} or 2 life. If life was paid, this planeswalker enters with two fewer loyalty counters.)\n0: You draw a card and lose 1 life. Proliferate.\n−2: Target creature becomes a Treasure artifact with \"{T}, Sacrifice this artifact: Add one mana of any color\" and loses all other card types and abilities.\n−9: If target player has fewer than nine poison counters, they get a number of poison counters equal to the difference."
+        ],
+        "price": 2.77,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Planeswalker — Vraska"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [
+          "B"
+        ],
+        "edhrec_rank": 3710,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Whisper of the Dross",
+        "oracle_text": [
+          "Target creature gets -1/-1 until end of turn. Proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)"
+        ],
+        "price": 0.36,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 45,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Windswept Heath",
+        "oracle_text": [
+          "{T}, Pay 1 life, Sacrifice this land: Search your library for a Forest or Plains card, put it onto the battlefield, then shuffle."
+        ],
+        "price": 11.6,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 80,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Yavimaya, Cradle of Growth",
+        "oracle_text": [
+          "Each land is a Forest in addition to its other land types."
+        ],
+        "price": 11.88,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Land"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 401,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Zagoth Triome",
+        "oracle_text": [
+          "({T}: Add {B}, {G}, or {U}.)\nThis land enters tapped.\nCycling {3} ({3}, Discard this card: Draw a card.)"
+        ],
+        "price": 20.54,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land — Swamp Forest Island"
+      }
+    ],
+    "combos": [
+      {
+        "cards": [
+          {
+            "name": "Prologue to Phyresis",
+            "zone": [
+              "H"
+            ]
+          },
+          {
+            "name": "Expansion Algorithm",
+            "zone": [
+              "H"
+            ]
+          }
+        ],
+        "id": "1131-7873",
+        "mv": 13.0,
+        "notablePrerequisites": "",
+        "produces": [
+          {
+            "id": 2
+          }
+        ],
+        "requires": []
+      },
+      {
+        "cards": [
+          {
+            "name": "Vraska, Betrayal's Sting",
+            "zone": [
+              "H"
+            ]
+          },
+          {
+            "name": "Vorinclex, Monstrous Raider",
+            "zone": [
+              "B"
+            ]
+          }
+        ],
+        "id": "1529-1887",
+        "mv": 6.0,
+        "notablePrerequisites": "An opponent has eight or fewer poison counters.",
+        "produces": [
+          {
+            "id": 63
+          }
+        ],
+        "requires": []
+      }
+    ],
+    "file": "atraxa_four_colour.txt"
+  },
+  {
+    "cards": [
+      {
+        "cmc": 5.0,
+        "colors": [
+          "W"
+        ],
+        "edhrec_rank": 3160,
+        "gamechanger": false,
+        "isCommander": true,
+        "layout": "normal",
+        "name": "Kenrith, the Returned King",
+        "oracle_text": [
+          "{R}: All creatures gain trample and haste until end of turn.\n{1}{G}: Put a +1/+1 counter on target creature.\n{2}{W}: Target player gains 5 life.\n{3}{U}: Target player draws a card.\n{4}{B}: Put target creature card from a graveyard onto the battlefield under its owner's control."
+        ],
+        "price": 0.84,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Human Noble"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "W"
+        ],
+        "edhrec_rank": 4078,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Armageddon",
+        "oracle_text": [
+          "Destroy all lands."
+        ],
+        "price": 7.2,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "W"
+        ],
+        "edhrec_rank": 7117,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Charitable Levy",
+        "oracle_text": [
+          "Noncreature spells cost {1} more to cast.\nWhenever a player casts a noncreature spell, put a collection counter on this enchantment. Then if there are three or more collection counters on it, sacrifice it. If you do, draw a card, then you may search your library for a Plains card, put it onto the battlefield tapped, then shuffle."
+        ],
+        "price": 0.22,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 2,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Command Tower",
+        "oracle_text": [
+          "{T}: Add one mana of any color in your commander's color identity."
+        ],
+        "price": 0.19,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 58,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Cyclonic Rift",
+        "oracle_text": [
+          "Return target nonland permanent you don't control to its owner's hand.\nOverload {6}{U} (You may cast this spell for its overload cost. If you do, change \"target\" in its text to \"each.\")"
+        ],
+        "price": 29.49,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [
+          "B"
+        ],
+        "edhrec_rank": 931,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Demonic Consultation",
+        "oracle_text": [
+          "Choose a card name. Exile the top six cards of your library, then reveal cards from the top of your library until you reveal a card with the chosen name. Put that card into your hand and exile all other cards revealed this way."
+        ],
+        "price": 5.08,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "B"
+        ],
+        "edhrec_rank": 64,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Demonic Tutor",
+        "oracle_text": [
+          "Search your library for a card, put that card into your hand, then shuffle."
+        ],
+        "price": 59.36,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 7.0,
+        "colors": [
+          "W"
+        ],
+        "edhrec_rank": 2759,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "modal_dfc",
+        "name": "Emeria's Call // Emeria, Shattered Skyclave",
+        "oracle_text": [
+          "Create two 4/4 white Angel Warrior creature tokens with flying. Non-Angel creatures you control gain indestructible until your next turn.",
+          "As this land enters, you may pay 3 life. If you don't, it enters tapped.\n{T}: Add {W}."
+        ],
+        "price": 4.02,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery // Land"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "G"
+        ],
+        "edhrec_rank": 2503,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "modal_dfc",
+        "name": "Esika, God of the Tree // The Prismatic Bridge",
+        "oracle_text": [
+          "Vigilance\n{T}: Add one mana of any color.\nOther legendary creatures you control have vigilance and \"{T}: Add one mana of any color.\"",
+          "At the beginning of your upkeep, reveal cards from the top of your library until you reveal a creature or planeswalker card. Put that card onto the battlefield and the rest on the bottom of your library in a random order."
+        ],
+        "price": 17.39,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — God // Legendary Enchantment"
+      },
+      {
+        "cmc": 5.0,
+        "colors": [
+          "B"
+        ],
+        "edhrec_rank": 521,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Exquisite Blood",
+        "oracle_text": [
+          "Whenever an opponent loses life, you gain that much life."
+        ],
+        "price": 40.65,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "W"
+        ],
+        "edhrec_rank": 15465,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Glowrider",
+        "oracle_text": [
+          "Noncreature spells cost {1} more to cast."
+        ],
+        "price": 6.87,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Human Cleric"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": null,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Island",
+        "oracle_text": [
+          "({T}: Add {U}.)"
+        ],
+        "price": 0.08,
+        "quantity": 10,
+        "reserved": false,
+        "type_line": "Basic Land — Island"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": null,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Plains",
+        "oracle_text": [
+          "({T}: Add {W}.)"
+        ],
+        "price": 0.08,
+        "quantity": 5,
+        "reserved": false,
+        "type_line": "Basic Land — Plains"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 46,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Rhystic Study",
+        "oracle_text": [
+          "Whenever an opponent casts a spell, you may draw a card unless that player pays {1}."
+        ],
+        "price": 65.76,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 5.0,
+        "colors": [
+          "B"
+        ],
+        "edhrec_rank": 505,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Sanguine Bond",
+        "oracle_text": [
+          "Whenever you gain life, target opponent loses that much life."
+        ],
+        "price": 5.37,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "W"
+        ],
+        "edhrec_rank": 68,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Smothering Tithe",
+        "oracle_text": [
+          "Whenever an opponent draws a card, that player may pay {2}. If the player doesn't, you create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")"
+        ],
+        "price": 55.62,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [],
+        "edhrec_rank": 1,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Sol Ring",
+        "oracle_text": [
+          "{T}: Add {C}{C}."
+        ],
+        "price": 1.22,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": null,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Swamp",
+        "oracle_text": [
+          "({T}: Add {B}.)"
+        ],
+        "price": 0.11,
+        "quantity": 10,
+        "reserved": false,
+        "type_line": "Basic Land — Swamp"
+      },
+      {
+        "cmc": 7.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 2681,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Temporal Mastery",
+        "oracle_text": [
+          "Take an extra turn after this one. Exile Temporal Mastery.\nMiracle {1}{U} (You may cast this card for its miracle cost when you draw it if it's the first card you drew this turn.)"
+        ],
+        "price": 4.56,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "W"
+        ],
+        "edhrec_rank": 2407,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Thalia, Guardian of Thraben",
+        "oracle_text": [
+          "First strike\nNoncreature spells cost {1} more to cast."
+        ],
+        "price": 0.43,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Human Soldier"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 461,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Thassa's Oracle",
+        "oracle_text": [
+          "When this creature enters, look at the top X cards of your library, where X is your devotion to blue. Put up to one of them on top of your library and the rest on the bottom of your library in a random order. If X is greater than or equal to the number of cards in your library, you win the game. (Each {U} in the mana costs of permanents you control counts toward your devotion to blue.)"
+        ],
+        "price": 17.26,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Merfolk Wizard"
+      },
+      {
+        "cmc": 5.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 2006,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Time Warp",
+        "oracle_text": [
+          "Target player takes an extra turn after this one."
+        ],
+        "price": 7.16,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 3464,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Winter Orb",
+        "oracle_text": [
+          "As long as this artifact is untapped, players can't untap more than one land during their untap steps."
+        ],
+        "price": 11.65,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      }
+    ],
+    "combos": [
+      {
+        "cards": [
+          {
+            "name": "Sanguine Bond",
+            "zone": [
+              "B"
+            ]
+          },
+          {
+            "name": "Exquisite Blood",
+            "zone": [
+              "B"
+            ]
+          }
+        ],
+        "id": "690-3966",
+        "mv": 0.0,
+        "notablePrerequisites": "You have a way to gain life.",
+        "produces": [
+          {
+            "id": 14
+          },
+          {
+            "id": 26
+          },
+          {
+            "id": 15
+          }
+        ],
+        "requires": []
+      },
+      {
+        "cards": [
+          {
+            "name": "Demonic Consultation",
+            "zone": [
+              "H"
+            ]
+          },
+          {
+            "name": "Thassa's Oracle",
+            "zone": [
+              "H"
+            ]
+          }
+        ],
+        "id": "742-1295",
+        "mv": 3.0,
+        "notablePrerequisites": "",
+        "produces": [
+          {
+            "id": 88
+          },
+          {
+            "id": 2
+          }
+        ],
+        "requires": []
+      }
+    ],
+    "file": "bracket_bait.txt"
+  },
+  {
+    "cards": [
+      {
+        "cmc": 1.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 4973,
+        "gamechanger": false,
+        "isCommander": true,
+        "layout": "normal",
+        "name": "Norin the Wary",
+        "oracle_text": [
+          "When a player casts a spell or a creature attacks, exile Norin. Return it to the battlefield under its owner's control at the beginning of the next end step."
+        ],
+        "price": 18.14,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Human Warrior"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 26125,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Goblin Piker",
+        "oracle_text": [
+          ""
+        ],
+        "price": 0.03,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin Warrior"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": null,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Mountain",
+        "oracle_text": [
+          "({T}: Add {R}.)"
+        ],
+        "price": 0.09,
+        "quantity": 20,
+        "reserved": false,
+        "type_line": "Basic Land — Mountain"
+      },
+      {
+        "cmc": 6.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 11183,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Shivan Dragon",
+        "oracle_text": [
+          "Flying\n{R}: This creature gets +1/+0 until end of turn."
+        ],
+        "price": 0.12,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Dragon"
+      }
+    ],
+    "combos": [],
+    "file": "jank_mono_red.txt"
+  },
+  {
+    "cards": [
+      {
+        "cmc": 10.0,
+        "colors": [],
+        "edhrec_rank": 1109,
+        "gamechanger": false,
+        "isCommander": true,
+        "layout": "normal",
+        "name": "Kozilek, Butcher of Truth",
+        "oracle_text": [
+          "When you cast this spell, draw four cards.\nAnnihilator 4 (Whenever this creature attacks, defending player sacrifices four permanents of their choice.)\nWhen Kozilek is put into a graveyard from anywhere, its owner shuffles their graveyard into their library."
+        ],
+        "price": 43.09,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Eldrazi"
+      },
+      {
+        "cmc": 7.0,
+        "colors": [],
+        "edhrec_rank": 976,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "All Is Dust",
+        "oracle_text": [
+          "Each player sacrifices all permanents they control that are one or more colors."
+        ],
+        "price": 3.18,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Kindred Sorcery — Eldrazi"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [],
+        "edhrec_rank": 566,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Basalt Monolith",
+        "oracle_text": [
+          "This artifact doesn't untap during your untap step.\n{T}: Add {C}{C}{C}.\n{3}: Untap this artifact."
+        ],
+        "price": 2.99,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 193,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Buried Ruin",
+        "oracle_text": [
+          "{T}: Add {C}.\n{2}, {T}, Sacrifice this land: Return target artifact card from your graveyard to your hand."
+        ],
+        "price": 0.27,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [],
+        "edhrec_rank": 522,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Burnished Hart",
+        "oracle_text": [
+          "{3}, Sacrifice this creature: Search your library for up to two basic land cards, put them onto the battlefield tapped, then shuffle."
+        ],
+        "price": 0.11,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact Creature — Elk"
+      },
+      {
+        "cmc": 6.0,
+        "colors": [],
+        "edhrec_rank": 4600,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Calamity of the Titans",
+        "oracle_text": [
+          "As an additional cost to cast this spell, reveal a colorless creature card from your hand.\nExile each creature and planeswalker with mana value less than the revealed card's mana value."
+        ],
+        "price": 3.79,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 7.0,
+        "colors": [],
+        "edhrec_rank": 3912,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Desecrate Reality",
+        "oracle_text": [
+          "For each opponent, exile up to one target permanent that player controls with an even mana value. (Zero is even.)\nAdamant — If at least three colorless mana was spent to cast this spell, return a permanent card with an odd mana value from your graveyard to the battlefield."
+        ],
+        "price": 4.93,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 6.0,
+        "colors": [],
+        "edhrec_rank": 1957,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Dreamstone Hedron",
+        "oracle_text": [
+          "{T}: Add {C}{C}{C}.\n{3}, {T}, Sacrifice this artifact: Draw three cards."
+        ],
+        "price": 0.17,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [],
+        "edhrec_rank": 2590,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Eldrazi Confluence",
+        "oracle_text": [
+          "Choose three. You may choose the same mode more than once.\n• Target creature gets +3/-3 until end of turn.\n• Exile target nonland permanent, then return it to the battlefield tapped under its owner's control.\n• Create a 1/1 colorless Eldrazi Scion creature token with \"Sacrifice this token: Add {C}.\""
+        ],
+        "price": 18.73,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [],
+        "edhrec_rank": 1918,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Eldritch Immunity",
+        "oracle_text": [
+          "Target creature you control gains protection from each color until end of turn.\nOverload {4}{C} (You may cast this spell for its overload cost. If you do, change \"target\" in its text to \"each.\")"
+        ],
+        "price": 9.77,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Kindred Instant — Eldrazi"
+      },
+      {
+        "cmc": 10.0,
+        "colors": [],
+        "edhrec_rank": 7905,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Emrakul, the Exigent Doom",
+        "oracle_text": [
+          "When you cast this spell, untap all lands you control.\nFlying, trample\nWard—Sacrifice three permanents.\n{3}, Exile this card from your hand: Target land gains \"{T}: Add {C}{C}\" until this card is cast from exile. You may cast this card for as long as it remains exiled."
+        ],
+        "price": 12.58,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Eldrazi"
+      },
+      {
+        "cmc": 12.0,
+        "colors": [],
+        "edhrec_rank": 2420,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Emrakul, the World Anew",
+        "oracle_text": [
+          "When you cast this spell, gain control of all creatures target player controls.\nFlying, protection from spells and from permanents that were cast this turn\nWhen Emrakul leaves the battlefield, sacrifice all creatures you control.\nMadness—Pay six {C}."
+        ],
+        "price": 6.09,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Eldrazi"
+      },
+      {
+        "cmc": 6.0,
+        "colors": [],
+        "edhrec_rank": 2405,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Endbringer",
+        "oracle_text": [
+          "Untap this creature during each other player's untap step.\n{T}: This creature deals 1 damage to any target.\n{C}, {T}: Target creature can't attack or block this turn.\n{C}{C}, {T}: Draw a card."
+        ],
+        "price": 0.37,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Eldrazi"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 251,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Everflowing Chalice",
+        "oracle_text": [
+          "Multikicker {2} (You may pay an additional {2} any number of times as you cast this spell.)\nThis artifact enters with a charge counter on it for each time it was kicked.\n{T}: Add {C} for each charge counter on this artifact."
+        ],
+        "price": 0.28,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [],
+        "edhrec_rank": 452,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Expedition Map",
+        "oracle_text": [
+          "{2}, {T}, Sacrifice this artifact: Search your library for a land card, reveal it, put it into your hand, then shuffle."
+        ],
+        "price": 1.44,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 17,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Fellwar Stone",
+        "oracle_text": [
+          "{T}: Add one mana of any color that a land an opponent controls could produce."
+        ],
+        "price": 0.84,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 5.0,
+        "colors": [],
+        "edhrec_rank": 869,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Forsaken Monument",
+        "oracle_text": [
+          "Colorless creatures you control get +2/+2.\nWhenever you tap a permanent for {C}, add an additional {C}.\nWhenever you cast a colorless spell, you gain 2 life."
+        ],
+        "price": 3.57,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Artifact"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [],
+        "edhrec_rank": 249,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Foundry Inspector",
+        "oracle_text": [
+          "Artifact spells you cast cost {1} less to cast."
+        ],
+        "price": 0.31,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact Creature — Construct"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 445,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Geier Reach Sanitarium",
+        "oracle_text": [
+          "{T}: Add {C}.\n{2}, {T}: Each player draws a card, then discards a card."
+        ],
+        "price": 0.82,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Land"
+      },
+      {
+        "cmc": 5.0,
+        "colors": [],
+        "edhrec_rank": 3244,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Geode Golem",
+        "oracle_text": [
+          "Trample\nWhenever this creature deals combat damage to a player, you may cast your commander from the command zone without paying its mana cost. (You still pay any additional costs.)"
+        ],
+        "price": 0.25,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact Creature — Golem"
+      },
+      {
+        "cmc": 5.0,
+        "colors": [],
+        "edhrec_rank": 415,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Gilded Lotus",
+        "oracle_text": [
+          "{T}: Add three mana of any one color."
+        ],
+        "price": 0.91,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [],
+        "edhrec_rank": 1197,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Glaring Fleshraker",
+        "oracle_text": [
+          "Whenever you cast a colorless spell, create a 0/1 colorless Eldrazi Spawn creature token with \"Sacrifice this token: Add {C}.\"\nWhenever another colorless creature you control enters, this creature deals 1 damage to each opponent."
+        ],
+        "price": 1.96,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Eldrazi Drone"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [],
+        "edhrec_rank": 545,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Hedron Archive",
+        "oracle_text": [
+          "{T}: Add {C}{C}.\n{2}, {T}, Sacrifice this artifact: Draw two cards."
+        ],
+        "price": 0.24,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [],
+        "edhrec_rank": 152,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Herald's Horn",
+        "oracle_text": [
+          "As this artifact enters, choose a creature type.\nCreature spells you cast of the chosen type cost {1} less to cast.\nAt the beginning of your upkeep, look at the top card of your library. If it's a creature card of the chosen type, you may reveal it and put it into your hand."
+        ],
+        "price": 3.01,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 5170,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Idol of False Gods",
+        "oracle_text": [
+          "{1}{C}, {T}: Create a 0/1 colorless Eldrazi Spawn creature token with \"Sacrifice this token: Add {C}.\"\nWhenever another Eldrazi you control dies, put a +1/+1 counter on this artifact.\nAs long as this artifact has eight or more +1/+1 counters on it, it's a 0/0 creature in addition to its other types and it has annihilator 2."
+        ],
+        "price": 0.33,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Kindred Artifact — Eldrazi"
+      },
+      {
+        "cmc": 12.0,
+        "colors": [],
+        "edhrec_rank": 1558,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "It That Betrays",
+        "oracle_text": [
+          "Annihilator 2 (Whenever this creature attacks, defending player sacrifices two permanents of their choice.)\nWhenever an opponent sacrifices a nontoken permanent, put that card onto the battlefield under your control."
+        ],
+        "price": 11.21,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Eldrazi"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 2285,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "It That Heralds the End",
+        "oracle_text": [
+          "Colorless spells you cast with mana value 7 or greater cost {1} less to cast.\nOther colorless creatures you control get +1/+1."
+        ],
+        "price": 0.34,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Eldrazi Drone"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [],
+        "edhrec_rank": 1067,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Jhoira's Familiar",
+        "oracle_text": [
+          "Flying\nHistoric spells you cast cost {1} less to cast. (Artifacts, legendaries, and Sagas are historic.)"
+        ],
+        "price": 1.56,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact Creature — Bird"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 2051,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Kozilek's Command",
+        "oracle_text": [
+          "Choose two —\n• Target player creates X 0/1 colorless Eldrazi Spawn creature tokens with \"Sacrifice this token: Add {C}.\"\n• Target player scries X, then draws a card.\n• Exile target creature with mana value X or less.\n• Exile up to X target cards from graveyards."
+        ],
+        "price": 7.46,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Kindred Instant — Eldrazi"
+      },
+      {
+        "cmc": 9.0,
+        "colors": [],
+        "edhrec_rank": 2466,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Kozilek, the Broken Reality",
+        "oracle_text": [
+          "When you cast this spell, up to two target players each manifest two cards from their hands. For each card manifested this way, you draw a card. (To manifest a card, put it onto the battlefield face down as a 2/2 creature. Turn it face up any time for its mana cost if it's a creature card.)\nOther colorless creatures you control get +3/+2."
+        ],
+        "price": 5.22,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Eldrazi"
+      },
+      {
+        "cmc": 10.0,
+        "colors": [],
+        "edhrec_rank": 1569,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Kozilek, the Great Distortion",
+        "oracle_text": [
+          "When you cast this spell, if you have fewer than seven cards in hand, draw cards equal to the difference.\nMenace\nDiscard a card with mana value X: Counter target spell with mana value X."
+        ],
+        "price": 4.78,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Eldrazi"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 13,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Lightning Greaves",
+        "oracle_text": [
+          "Equipped creature has haste and shroud. (It can't be the target of spells or abilities.)\nEquip {0}"
+        ],
+        "price": 3.88,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact — Equipment"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [],
+        "edhrec_rank": 8101,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Matter Reshaper",
+        "oracle_text": [
+          "({C} represents colorless mana.)\nWhen this creature dies, reveal the top card of your library. You may put that card onto the battlefield if it's a permanent card with mana value 3 or less. Otherwise, put that card into your hand."
+        ],
+        "price": 0.42,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Eldrazi"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 32,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Mind Stone",
+        "oracle_text": [
+          "{T}: Add {C}.\n{1}, {T}, Sacrifice this artifact: Draw a card."
+        ],
+        "price": 0.21,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 5.0,
+        "colors": [],
+        "edhrec_rank": 2191,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Mind's Eye",
+        "oracle_text": [
+          "Whenever an opponent draws a card, you may pay {1}. If you do, draw a card."
+        ],
+        "price": 0.33,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 1715,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Moonsilver Key",
+        "oracle_text": [
+          "{1}, {T}, Sacrifice this artifact: Search your library for an artifact card with a mana ability or a basic land card, reveal it, put it into your hand, then shuffle."
+        ],
+        "price": 1.02,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 7.0,
+        "colors": [],
+        "edhrec_rank": 932,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Myr Battlesphere",
+        "oracle_text": [
+          "When this creature enters, create four 1/1 colorless Myr artifact creature tokens.\nWhenever this creature attacks, you may tap X untapped Myr you control. If you do, this creature gets +X/+0 until end of turn and deals X damage to the player or planeswalker it's attacking."
+        ],
+        "price": 0.24,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact Creature — Myr Construct"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [],
+        "edhrec_rank": 416,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Mystic Forge",
+        "oracle_text": [
+          "You may look at the top card of your library any time.\nYou may cast artifact spells and colorless spells from the top of your library.\n{T}, Pay 1 life: Exile the top card of your library."
+        ],
+        "price": 2.85,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 7.0,
+        "colors": [],
+        "edhrec_rank": 2370,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Not of This World",
+        "oracle_text": [
+          "Counter target spell or ability that targets a permanent you control.\nThis spell costs {7} less to cast if it targets a spell or ability that targets a creature you control with power 7 or greater."
+        ],
+        "price": 6.01,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Kindred Instant — Eldrazi"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [],
+        "edhrec_rank": 1544,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Null Elemental Blast",
+        "oracle_text": [
+          "Choose one —\n• Counter target multicolored spell.\n• Destroy target multicolored permanent."
+        ],
+        "price": 0.36,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 6.0,
+        "colors": [],
+        "edhrec_rank": 2352,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Oblivion Sower",
+        "oracle_text": [
+          "When you cast this spell, target opponent exiles the top four cards of their library, then you may put any number of land cards that player owns from exile onto the battlefield under your control."
+        ],
+        "price": 0.55,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Eldrazi"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 219,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Ornithopter of Paradise",
+        "oracle_text": [
+          "Flying\n{T}: Add one mana of any color."
+        ],
+        "price": 0.39,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact Creature — Thopter"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [],
+        "edhrec_rank": 724,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Palladium Myr",
+        "oracle_text": [
+          "{T}: Add {C}{C}."
+        ],
+        "price": 0.29,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact Creature — Myr"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 2147,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Plague Myr",
+        "oracle_text": [
+          "Infect (This creature deals damage to creatures in the form of -1/-1 counters and to players in the form of poison counters.)\n{T}: Add {C}."
+        ],
+        "price": 2.79,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact Creature — Phyrexian Myr"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 10,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Reliquary Tower",
+        "oracle_text": [
+          "You have no maximum hand size.\n{T}: Add {C}."
+        ],
+        "price": 3.4,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 18,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Rogue's Passage",
+        "oracle_text": [
+          "{T}: Add {C}.\n{4}, {T}: Target creature can't be blocked this turn."
+        ],
+        "price": 0.38,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 5.0,
+        "colors": [],
+        "edhrec_rank": 3469,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Selective Obliteration",
+        "oracle_text": [
+          "Each player chooses a color. Then exile each permanent unless it's colorless or it's only the color its controller chose."
+        ],
+        "price": 1.99,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 1220,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Shrine of the Forsaken Gods",
+        "oracle_text": [
+          "{T}: Add {C}.\n{T}: Add {C}{C}. Spend this mana only to cast colorless spells. Activate only if you control seven or more lands."
+        ],
+        "price": 0.33,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 7.0,
+        "colors": [],
+        "edhrec_rank": 1992,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Sire of Seven Deaths",
+        "oracle_text": [
+          "Reach, first strike\nVigilance, menace\nTrample, lifelink\nWard—Pay 7 life."
+        ],
+        "price": 18.02,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Eldrazi"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [],
+        "edhrec_rank": 4879,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Sisay's Ring",
+        "oracle_text": [
+          "{T}: Add {C}{C}."
+        ],
+        "price": 0.31,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [],
+        "edhrec_rank": 1,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Sol Ring",
+        "oracle_text": [
+          "{T}: Add {C}{C}."
+        ],
+        "price": 1.22,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [],
+        "edhrec_rank": 43,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Solemn Simulacrum",
+        "oracle_text": [
+          "When this creature enters, you may search your library for a basic land card, put that card onto the battlefield tapped, then shuffle.\nWhen this creature dies, you may draw a card."
+        ],
+        "price": 0.24,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact Creature — Golem"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [],
+        "edhrec_rank": 1963,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Sonic Screwdriver",
+        "oracle_text": [
+          "{T}: Add one mana of any color.\n{1}, {T}: Untap another target artifact.\n{2}, {T}: Scry 1. (Look at the top card of your library. You may put that card on the bottom.)\n{3}, {T}: Target creature can't be blocked this turn."
+        ],
+        "price": 3.17,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 12,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Swiftfoot Boots",
+        "oracle_text": [
+          "Equipped creature has hexproof and haste. (It can't be the target of spells or abilities your opponents control. It can attack and {T} no matter when it came under your control.)\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)"
+        ],
+        "price": 1.89,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact — Equipment"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 84,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Temple of the False God",
+        "oracle_text": [
+          "{T}: Add {C}{C}. Activate only if you control five or more lands."
+        ],
+        "price": 0.19,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 21,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Thought Vessel",
+        "oracle_text": [
+          "You have no maximum hand size.\n{T}: Add {C}."
+        ],
+        "price": 2.36,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [],
+        "edhrec_rank": 194,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Thran Dynamo",
+        "oracle_text": [
+          "{T}: Add {C}{C}{C}."
+        ],
+        "price": 2.32,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [],
+        "edhrec_rank": 3478,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Titan's Presence",
+        "oracle_text": [
+          "As an additional cost to cast this spell, reveal a colorless creature card from your hand.\nExile target creature if its power is less than or equal to the revealed card's power."
+        ],
+        "price": 0.34,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 6.0,
+        "colors": [],
+        "edhrec_rank": 1099,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Ugin, the Ineffable",
+        "oracle_text": [
+          "Colorless spells you cast cost {2} less to cast.\n+1: Exile the top card of your library face down and look at it. Create a 2/2 colorless Spirit creature token. When that token leaves the battlefield, put the exiled card into your hand.\n−3: Destroy target permanent that's one or more colors."
+        ],
+        "price": 1.96,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Planeswalker — Ugin"
+      },
+      {
+        "cmc": 10.0,
+        "colors": [],
+        "edhrec_rank": 1337,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Ulamog, the Ceaseless Hunger",
+        "oracle_text": [
+          "When you cast this spell, exile two target permanents.\nIndestructible\nWhenever Ulamog attacks, defending player exiles the top twenty cards of their library."
+        ],
+        "price": 21.68,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Eldrazi"
+      },
+      {
+        "cmc": 11.0,
+        "colors": [],
+        "edhrec_rank": 1377,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Ulamog, the Infinite Gyre",
+        "oracle_text": [
+          "When you cast this spell, destroy target permanent.\nIndestructible\nAnnihilator 4 (Whenever this creature attacks, defending player sacrifices four permanents of their choice.)\nWhen Ulamog is put into a graveyard from anywhere, its owner shuffles their graveyard into their library."
+        ],
+        "price": 35.03,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Eldrazi"
+      },
+      {
+        "cmc": 5.0,
+        "colors": [],
+        "edhrec_rank": 2837,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Ultima, Origin of Oblivion",
+        "oracle_text": [
+          "Flying\nWhenever Ultima attacks, put a blight counter on target land. For as long as that land has a blight counter on it, it loses all land types and abilities and has \"{T}: Add {C}.\"\nWhenever you tap a land for {C}, add an additional {C}."
+        ],
+        "price": 1.15,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — God"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [],
+        "edhrec_rank": 5107,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Unstable Obelisk",
+        "oracle_text": [
+          "{T}: Add {C}.\n{7}, {T}, Sacrifice this artifact: Destroy target permanent."
+        ],
+        "price": 0.14,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [],
+        "edhrec_rank": 311,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Urza's Incubator",
+        "oracle_text": [
+          "As this artifact enters, choose a creature type.\nCreature spells of the chosen type cost {2} less to cast."
+        ],
+        "price": 21.05,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [],
+        "edhrec_rank": 1712,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Voltaic Key",
+        "oracle_text": [
+          "{1}, {T}: Untap target artifact."
+        ],
+        "price": 3.85,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 138,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "War Room",
+        "oracle_text": [
+          "{T}: Add {C}.\n{3}, {T}, Pay life equal to the number of colors in your commanders' color identity: Draw a card."
+        ],
+        "price": 1.12,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 1977,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Warping Wail",
+        "oracle_text": [
+          "({C} represents colorless mana.)\nChoose one —\n• Exile target creature with power or toughness 1 or less.\n• Counter target sorcery spell.\n• Create a 1/1 colorless Eldrazi Scion creature token. It has \"Sacrifice this token: Add {C}.\""
+        ],
+        "price": 0.49,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": null,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Wastes",
+        "oracle_text": [
+          "{T}: Add {C}."
+        ],
+        "price": 0.68,
+        "quantity": 31,
+        "reserved": false,
+        "type_line": "Basic Land"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [],
+        "edhrec_rank": 126,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Wayfarer's Bauble",
+        "oracle_text": [
+          "{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle."
+        ],
+        "price": 0.2,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 6.0,
+        "colors": [],
+        "edhrec_rank": 1080,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Wurmcoil Engine",
+        "oracle_text": [
+          "Deathtouch, lifelink\nWhen this creature dies, create a 3/3 colorless Phyrexian Wurm artifact creature token with deathtouch and a 3/3 colorless Phyrexian Wurm artifact creature token with lifelink."
+        ],
+        "price": 9.44,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact Creature — Phyrexian Wurm"
+      }
+    ],
+    "combos": [
+      {
+        "cards": [
+          {
+            "name": "Basalt Monolith",
+            "zone": [
+              "B"
+            ]
+          },
+          {
+            "name": "Forsaken Monument",
+            "zone": [
+              "B"
+            ]
+          }
+        ],
+        "id": "4131-4547",
+        "mv": 0.0,
+        "notablePrerequisites": "",
+        "produces": [
+          {
+            "id": 11
+          }
+        ],
+        "requires": []
+      }
+    ],
+    "file": "kozilek_colourless.txt"
+  },
+  {
+    "cards": [
+      {
+        "cmc": 4.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 1090,
+        "gamechanger": false,
+        "isCommander": true,
+        "layout": "normal",
+        "name": "Krenko, Mob Boss",
+        "oracle_text": [
+          "{T}: Create X 1/1 red Goblin creature tokens, where X is the number of Goblins you control."
+        ],
+        "price": 2.28,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Goblin Warrior"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 145,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Abrade",
+        "oracle_text": [
+          "Choose one —\n• Abrade deals 3 damage to target creature.\n• Destroy target artifact."
+        ],
+        "price": 0.18,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 695,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Aggravated Assault",
+        "oracle_text": [
+          "{3}{R}{R}: Untap all creatures you control. After this main phase, there is an additional combat phase followed by an additional main phase. Activate only as a sorcery."
+        ],
+        "price": 24.87,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 3,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Arcane Signet",
+        "oracle_text": [
+          "{T}: Add one mana of any color in your commander's color identity."
+        ],
+        "price": 0.4,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 2645,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Arch of Orazca",
+        "oracle_text": [
+          "Ascend (If you control ten or more permanents, you get the city's blessing for the rest of the game.)\n{T}: Add {C}.\n{5}, {T}: Draw a card. Activate only if you have the city's blessing."
+        ],
+        "price": 0.34,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 372,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Arena of Glory",
+        "oracle_text": [
+          "This land enters tapped unless you control a Mountain.\n{T}: Add {R}.\n{R}, {T}, Exert this land: Add {R}{R}. If any of that mana is spent on a creature spell, it gains haste until end of turn. (An exerted permanent won't untap during your next untap step.)"
+        ],
+        "price": 8.33,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 137,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Big Score",
+        "oracle_text": [
+          "As an additional cost to cast this spell, discard a card.\nDraw two cards and create two Treasure tokens. (They're artifacts with \"{T}, Sacrifice this token: Add one mana of any color.\")"
+        ],
+        "price": 0.49,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 9.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 22,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Blasphemous Act",
+        "oracle_text": [
+          "This spell costs {1} less to cast for each creature on the battlefield.\nBlasphemous Act deals 13 damage to each creature."
+        ],
+        "price": 0.78,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 1102,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Castle Embereth",
+        "oracle_text": [
+          "This land enters tapped unless you control a Mountain.\n{T}: Add {R}.\n{1}{R}{R}, {T}: Creatures you control get +1/+0 until end of turn."
+        ],
+        "price": 0.31,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 29,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Chaos Warp",
+        "oracle_text": [
+          "The owner of target permanent shuffles it into their library, then reveals the top card of their library. If it's a permanent card, they put it onto the battlefield."
+        ],
+        "price": 0.32,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 5.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 2949,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Collective Inferno",
+        "oracle_text": [
+          "Convoke (Your creatures can help cast this spell. Each creature you tap while casting this spell pays for {1} or one mana of that creature's color.)\nAs this enchantment enters, choose a creature type.\nDouble all damage that sources you control of the chosen type would deal."
+        ],
+        "price": 1.37,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 3263,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Conspicuous Snoop",
+        "oracle_text": [
+          "Play with the top card of your library revealed.\nYou may cast Goblin spells from the top of your library.\nAs long as the top card of your library is a Goblin card, this creature has all activated abilities of that card."
+        ],
+        "price": 3.21,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin Rogue"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 7538,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Dark-Dweller Oracle",
+        "oracle_text": [
+          "{1}, Sacrifice a creature: Exile the top card of your library. You may play that card this turn. (You still pay its costs. You can play a land this way only if you have an available land play remaining.)"
+        ],
+        "price": 0.21,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin Shaman"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 3056,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Den of the Bugbear",
+        "oracle_text": [
+          "If you control two or more other lands, this land enters tapped.\n{T}: Add {R}.\n{3}{R}: Until end of turn, this land becomes a 3/2 red Goblin creature with \"Whenever this creature attacks, create a 1/1 red Goblin creature token that's tapped and attacking.\" It's still a land."
+        ],
+        "price": 1.53,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 2732,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Dwarven Mine",
+        "oracle_text": [
+          "({T}: Add {R}.)\nThis land enters tapped unless you control three or more other Mountains.\nWhen this land enters untapped, create a 1/1 red Dwarf creature token."
+        ],
+        "price": 0.35,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land — Mountain"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 2538,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Empty the Warrens",
+        "oracle_text": [
+          "Create two 1/1 red Goblin creature tokens.\nStorm (When you cast this spell, copy it for each spell cast before it this turn.)"
+        ],
+        "price": 0.17,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 10.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 10056,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Explosive Singularity",
+        "oracle_text": [
+          "As an additional cost to cast this spell, you may tap any number of untapped creatures you control. This spell costs {1} less to cast for each creature tapped this way.\nExplosive Singularity deals 10 damage to any target."
+        ],
+        "price": 0.45,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 13223,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Exuberant Fuseling",
+        "oracle_text": [
+          "Trample\nThis creature gets +1/+0 for each oil counter on it.\nWhen this creature enters and whenever another creature or artifact you control is put into a graveyard from the battlefield, put an oil counter on this creature."
+        ],
+        "price": 0.12,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Phyrexian Goblin Warrior"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 1758,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "transform",
+        "name": "Fable of the Mirror-Breaker // Reflection of Kiki-Jiki",
+        "oracle_text": [
+          "(As this Saga enters and after your draw step, add a lore counter.)\nI — Create a 2/2 red Goblin Shaman creature token with \"Whenever this token attacks, create a Treasure token.\"\nII — You may discard up to two cards. If you do, draw that many cards.\nIII — Exile this Saga, then return it to the battlefield transformed under your control.",
+          "{1}, {T}: Create a token that's a copy of another target nonlegendary creature you control, except it has haste. Sacrifice it at the beginning of the next end step."
+        ],
+        "price": 5.75,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment — Saga // Enchantment Creature — Goblin Shaman"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 17,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Fellwar Stone",
+        "oracle_text": [
+          "{T}: Add one mana of any color that a land an opponent controls could produce."
+        ],
+        "price": 0.84,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 741,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Fire Diamond",
+        "oracle_text": [
+          "This artifact enters tapped.\n{T}: Add {R}."
+        ],
+        "price": 0.26,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 2168,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "General Kreat, the Boltbringer",
+        "oracle_text": [
+          "Whenever one or more Goblins you control attack, create a 1/1 red Goblin creature token that's tapped and attacking.\nWhenever another creature you control enters, General Kreat deals 1 damage to each opponent."
+        ],
+        "price": 6.91,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Goblin Soldier"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 6105,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Geosurge",
+        "oracle_text": [
+          "Add {R}{R}{R}{R}{R}{R}{R}. Spend this mana only to cast artifact or creature spells."
+        ],
+        "price": 4.15,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 465,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Goblin Bombardment",
+        "oracle_text": [
+          "Sacrifice a creature: This enchantment deals 1 damage to any target."
+        ],
+        "price": 2.47,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 2580,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Goblin Chieftain",
+        "oracle_text": [
+          "Haste (This creature can attack and {T} as soon as it comes under your control.)\nOther Goblin creatures you control get +1/+1 and have haste."
+        ],
+        "price": 4.55,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 3348,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Goblin Chirurgeon",
+        "oracle_text": [
+          "Sacrifice a Goblin: Regenerate target creature."
+        ],
+        "price": 1.0,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin Shaman"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 1803,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Goblin Matron",
+        "oracle_text": [
+          "When this creature enters, you may search your library for a Goblin card, reveal that card, put it into your hand, then shuffle."
+        ],
+        "price": 0.22,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 3366,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Goblin Recruiter",
+        "oracle_text": [
+          "When this creature enters, search your library for any number of Goblin cards, reveal them, then shuffle and put those cards on top in any order."
+        ],
+        "price": 3.84,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 4410,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Goblin Ringleader",
+        "oracle_text": [
+          "Haste (This creature can attack and {T} as soon as it comes under your control.)\nWhen this creature enters, reveal the top four cards of your library. Put all Goblin cards revealed this way into your hand and the rest on the bottom of your library in any order."
+        ],
+        "price": 0.46,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 8021,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Goblin Traprunner",
+        "oracle_text": [
+          "Whenever this creature attacks, flip three coins. For each flip you win, create a 1/1 red Goblin creature token that's tapped and attacking."
+        ],
+        "price": 0.35,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 4704,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Goblin War Strike",
+        "oracle_text": [
+          "Goblin War Strike deals damage to target player or planeswalker equal to the number of Goblins you control."
+        ],
+        "price": 2.86,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 2066,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Goblin Warchief",
+        "oracle_text": [
+          "Goblin spells you cast cost {1} less to cast.\nGoblins you control have haste."
+        ],
+        "price": 0.98,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin Warrior"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 3303,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Goro-Goro, Disciple of Ryusei",
+        "oracle_text": [
+          "{R}: Creatures you control gain haste until end of turn.\n{3}{R}{R}: Create a 5/5 red Dragon Spirit creature token with flying. Activate only if you control an attacking modified creature. (Equipment, Auras you control, and counters are modifications.)"
+        ],
+        "price": 0.97,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Goblin Samurai"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 7114,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Gut, True Soul Zealot",
+        "oracle_text": [
+          "Whenever you attack, you may sacrifice another creature or an artifact. If you do, create a 4/1 black Skeleton creature token with menace that's tapped and attacking. (It can't be blocked except by two or more creatures.)\nChoose a Background (You can have a Background as a second commander.)"
+        ],
+        "price": 0.14,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Goblin Shaman"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 3022,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Hammer of Purphoros",
+        "oracle_text": [
+          "Creatures you control have haste.\n{2}{R}, {T}, Sacrifice a land: Create a 3/3 colorless Golem enchantment artifact creature token."
+        ],
+        "price": 0.33,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Enchantment Artifact"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 5709,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Hellrider",
+        "oracle_text": [
+          "Haste\nWhenever a creature you control attacks, this creature deals 1 damage to the player or planeswalker it's attacking."
+        ],
+        "price": 0.51,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Devil"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 3707,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Hobgoblin Bandit Lord",
+        "oracle_text": [
+          "Other Goblins you control get +1/+1.\n{R}, {T}: This creature deals damage equal to the number of Goblins that entered the battlefield under your control this turn to any target."
+        ],
+        "price": 3.39,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin Rogue"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 2957,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Howlsquad Heavy",
+        "oracle_text": [
+          "Start your engines!\nOther Goblins you control have haste.\nAt the beginning of combat on your turn, create a 1/1 red Goblin creature token. That token attacks this combat if able.\nMax speed — {T}: Add {R} for each Goblin you control."
+        ],
+        "price": 2.43,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin Mercenary"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 204,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Impact Tremors",
+        "oracle_text": [
+          "Whenever a creature you control enters, this enchantment deals 1 damage to each opponent."
+        ],
+        "price": 2.32,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 4427,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Legion Loyalist",
+        "oracle_text": [
+          "Haste\nBattalion — Whenever this creature and at least two other creatures attack, creatures you control gain first strike and trample until end of turn and can't be blocked by creature tokens this turn."
+        ],
+        "price": 4.27,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin Soldier"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 158,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Lightning Bolt",
+        "oracle_text": [
+          "Lightning Bolt deals 3 damage to any target."
+        ],
+        "price": 0.1,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 512,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Liquimetal Torque",
+        "oracle_text": [
+          "{T}: Add {C}.\n{T}: Target nonland permanent becomes an artifact in addition to its other types until end of turn."
+        ],
+        "price": 2.87,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 11395,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Makeshift Munitions",
+        "oracle_text": [
+          "{1}, Sacrifice an artifact or creature: This enchantment deals 1 damage to any target."
+        ],
+        "price": 0.23,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 32,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Mind Stone",
+        "oracle_text": [
+          "{T}: Add {C}.\n{1}, {T}, Sacrifice this artifact: Draw a card."
+        ],
+        "price": 0.21,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 3041,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Mogg War Marshal",
+        "oracle_text": [
+          "Echo {1}{R} (At the beginning of your upkeep, if this came under your control since the beginning of your last upkeep, sacrifice it unless you pay its echo cost.)\nWhen this creature enters or dies, create a 1/1 red Goblin creature token."
+        ],
+        "price": 0.17,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin Warrior"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": null,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Mountain",
+        "oracle_text": [
+          "({T}: Add {R}.)"
+        ],
+        "price": 0.09,
+        "quantity": 29,
+        "reserved": false,
+        "type_line": "Basic Land — Mountain"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 3326,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Ogre Battledriver",
+        "oracle_text": [
+          "Whenever another creature you control enters, that creature gets +2/+0 and gains haste until end of turn. (It can attack and {T} this turn.)"
+        ],
+        "price": 0.33,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Ogre Warrior"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 2690,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Pashalik Mons",
+        "oracle_text": [
+          "Whenever Pashalik Mons or another Goblin you control dies, Pashalik Mons deals 1 damage to any target.\n{3}{R}, Sacrifice a Goblin: Create two 1/1 red Goblin creature tokens."
+        ],
+        "price": 2.26,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Goblin Warrior"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [],
+        "edhrec_rank": 1252,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Patriar's Seal",
+        "oracle_text": [
+          "{T}: Add one mana of any color.\n{1}, {T}: Untap target legendary creature you control."
+        ],
+        "price": 2.73,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 697,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Purphoros, God of the Forge",
+        "oracle_text": [
+          "Indestructible\nAs long as your devotion to red is less than five, Purphoros isn't a creature.\nWhenever another creature you control enters, Purphoros deals 2 damage to each opponent.\n{2}{R}: Creatures you control get +1/+0 until end of turn."
+        ],
+        "price": 24.73,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Enchantment Creature — God"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 16391,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Raging Goblin",
+        "oracle_text": [
+          "Haste (This creature can attack and {T} as soon as it comes under your control.)"
+        ],
+        "price": 0.09,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin Berserker"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 3597,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Raid Bombardment",
+        "oracle_text": [
+          "Whenever a creature you control with power 2 or less attacks, this enchantment deals 1 damage to the player or planeswalker that creature is attacking."
+        ],
+        "price": 0.18,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 746,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Rising of the Day",
+        "oracle_text": [
+          "Creatures you control have haste.\nLegendary creatures you control get +1/+0."
+        ],
+        "price": 0.44,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 5655,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Sea Gate Wreckage",
+        "oracle_text": [
+          "{T}: Add {C}. ({C} represents colorless mana.)\n{2}{C}, {T}: Draw a card. Activate only if you have no cards in hand."
+        ],
+        "price": 0.3,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 687,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Shared Animosity",
+        "oracle_text": [
+          "Whenever a creature you control attacks, it gets +1/+0 until end of turn for each other attacking creature that shares a creature type with it."
+        ],
+        "price": 4.64,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 5.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 1615,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Siege-Gang Commander",
+        "oracle_text": [
+          "When this creature enters, create three 1/1 red Goblin creature tokens.\n{1}{R}, Sacrifice a Goblin: This creature deals 2 damage to any target."
+        ],
+        "price": 0.25,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 1357,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Skirk Prospector",
+        "oracle_text": [
+          "Sacrifice a Goblin: Add {R}."
+        ],
+        "price": 0.3,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [],
+        "edhrec_rank": 38,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Skullclamp",
+        "oracle_text": [
+          "Equipped creature gets +1/-1.\nWhenever equipped creature dies, draw two cards.\nEquip {1}"
+        ],
+        "price": 4.9,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact — Equipment"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [],
+        "edhrec_rank": 1,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Sol Ring",
+        "oracle_text": [
+          "{T}: Add {C}{C}."
+        ],
+        "price": 1.22,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 2273,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Song of Totentanz",
+        "oracle_text": [
+          "Create X 1/1 black Rat creature tokens with \"This token can't block.\" Creatures you control gain haste until end of turn."
+        ],
+        "price": 2.67,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [],
+        "edhrec_rank": 563,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Springleaf Drum",
+        "oracle_text": [
+          "{T}, Tap an untapped creature you control: Add one mana of any color."
+        ],
+        "price": 0.25,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 5.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 9623,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Swarming Goblins",
+        "oracle_text": [
+          "When this creature enters, roll a d20.\n1—9 | Create a 1/1 red Goblin creature token.\n10—19 | Create two of those tokens.\n20 | Create three of those tokens."
+        ],
+        "price": 0.15,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 12,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Swiftfoot Boots",
+        "oracle_text": [
+          "Equipped creature has hexproof and haste. (It can't be the target of spells or abilities your opponents control. It can attack and {T} no matter when it came under your control.)\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)"
+        ],
+        "price": 1.89,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact — Equipment"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [],
+        "edhrec_rank": 21,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Thought Vessel",
+        "oracle_text": [
+          "You have no maximum hand size.\n{T}: Add {C}."
+        ],
+        "price": 2.36,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 214,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Thrill of Possibility",
+        "oracle_text": [
+          "As an additional cost to cast this spell, discard a card.\nDraw two cards."
+        ],
+        "price": 0.22,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 1011,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Torbran, Thane of Red Fell",
+        "oracle_text": [
+          "If a red source you control would deal damage to an opponent or a permanent an opponent controls, it deals that much damage plus 2 instead."
+        ],
+        "price": 2.88,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Dwarf Noble"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 1485,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Treasure Nabber",
+        "oracle_text": [
+          "Whenever an opponent taps an artifact for mana, gain control of that artifact until the end of your next turn."
+        ],
+        "price": 1.81,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Creature — Goblin Rogue"
+      },
+      {
+        "cmc": 4.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 270,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Unexpected Windfall",
+        "oracle_text": [
+          "As an additional cost to cast this spell, discard a card.\nDraw two cards and create two Treasure tokens. (They're artifacts with \"{T}, Sacrifice this token: Add one mana of any color.\")"
+        ],
+        "price": 1.93,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 265,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Untimely Malfunction",
+        "oracle_text": [
+          "Choose one —\n• Destroy target artifact.\n• Change the target of target spell or ability with a single target.\n• One or two target creatures can't block this turn."
+        ],
+        "price": 7.65,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 138,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "War Room",
+        "oracle_text": [
+          "{T}: Add {C}.\n{3}, {T}, Pay life equal to the number of colors in your commanders' color identity: Draw a card."
+        ],
+        "price": 1.12,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Land"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 1999,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Wild Magic Surge",
+        "oracle_text": [
+          "Destroy target permanent an opponent controls. Its controller reveals cards from the top of their library until they reveal a permanent card that shares a card type with that permanent. They put that card onto the battlefield and the rest on the bottom of their library in a random order."
+        ],
+        "price": 1.34,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "R"
+        ],
+        "edhrec_rank": 7150,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "You See a Pair of Goblins",
+        "oracle_text": [
+          "Choose one —\n• Charge Them — Creatures you control get +2/+0 until end of turn.\n• Befriend Them — Create two 1/1 red Goblin creature tokens."
+        ],
+        "price": 0.32,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      }
+    ],
+    "combos": [
+      {
+        "cards": [
+          {
+            "name": "Howlsquad Heavy",
+            "zone": [
+              "B"
+            ]
+          },
+          {
+            "name": "Aggravated Assault",
+            "zone": [
+              "B"
+            ]
+          }
+        ],
+        "id": "3750-6410",
+        "mv": 0.0,
+        "notablePrerequisites": "You have max speed.\nYou control five or more Goblins.",
+        "produces": [
+          {
+            "id": 4
+          },
+          {
+            "id": 19
+          },
+          {
+            "id": 20
+          },
+          {
+            "id": 39
+          },
+          {
+            "id": 57
+          },
+          {
+            "id": 65
+          }
+        ],
+        "requires": []
+      },
+      {
+        "cards": [
+          {
+            "name": "Krenko, Mob Boss",
+            "zone": [
+              "B"
+            ]
+          },
+          {
+            "name": "Skirk Prospector",
+            "zone": [
+              "B"
+            ]
+          },
+          {
+            "name": "Hammer of Purphoros",
+            "zone": [
+              "B"
+            ]
+          }
+        ],
+        "id": "38-659-1115",
+        "mv": 0.0,
+        "notablePrerequisites": "You control a number of Goblins that is equal to or greater than six plus Krenko's commander tax.",
+        "produces": [
+          {
+            "id": 3
+          },
+          {
+            "id": 4
+          },
+          {
+            "id": 6
+          },
+          {
+            "id": 7
+          },
+          {
+            "id": 17
+          },
+          {
+            "id": 20
+          },
+          {
+            "id": 39
+          },
+          {
+            "id": 160
+          }
+        ],
+        "requires": []
+      },
+      {
+        "cards": [
+          {
+            "name": "Krenko, Mob Boss",
+            "zone": [
+              "B"
+            ]
+          },
+          {
+            "name": "Skirk Prospector",
+            "zone": [
+              "B"
+            ]
+          },
+          {
+            "name": "Goblin Warchief",
+            "zone": [
+              "B"
+            ]
+          }
+        ],
+        "id": "38-659-1288",
+        "mv": 0.0,
+        "notablePrerequisites": "You control a number of Goblins that is equal to or greater than six plus Krenko's commander tax.",
+        "produces": [
+          {
+            "id": 160
+          },
+          {
+            "id": 39
+          },
+          {
+            "id": 7
+          },
+          {
+            "id": 4
+          },
+          {
+            "id": 3
+          },
+          {
+            "id": 20
+          },
+          {
+            "id": 6
+          },
+          {
+            "id": 17
+          }
+        ],
+        "requires": []
+      },
+      {
+        "cards": [
+          {
+            "name": "Krenko, Mob Boss",
+            "zone": [
+              "B"
+            ]
+          },
+          {
+            "name": "Skirk Prospector",
+            "zone": [
+              "B"
+            ]
+          },
+          {
+            "name": "Rising of the Day",
+            "zone": [
+              "B"
+            ]
+          }
+        ],
+        "id": "38-659-1879",
+        "mv": 0.0,
+        "notablePrerequisites": "You control a number of Goblins that is equal to or greater than six plus Krenko's commander tax.",
+        "produces": [
+          {
+            "id": 3
+          },
+          {
+            "id": 4
+          },
+          {
+            "id": 6
+          },
+          {
+            "id": 7
+          },
+          {
+            "id": 17
+          },
+          {
+            "id": 20
+          },
+          {
+            "id": 39
+          },
+          {
+            "id": 160
+          }
+        ],
+        "requires": []
+      },
+      {
+        "cards": [
+          {
+            "name": "Skirk Prospector",
+            "zone": [
+              "B"
+            ]
+          },
+          {
+            "name": "Krenko, Mob Boss",
+            "zone": [
+              "B"
+            ]
+          },
+          {
+            "name": "Aggravated Assault",
+            "zone": [
+              "B"
+            ]
+          }
+        ],
+        "id": "38-659-3750",
+        "mv": 0.0,
+        "notablePrerequisites": "You control at least five Goblins.",
+        "produces": [
+          {
+            "id": 21
+          },
+          {
+            "id": 7
+          },
+          {
+            "id": 4
+          },
+          {
+            "id": 3
+          },
+          {
+            "id": 6
+          },
+          {
+            "id": 19
+          },
+          {
+            "id": 20
+          },
+          {
+            "id": 57
+          },
+          {
+            "id": 65
+          }
+        ],
+        "requires": []
+      },
+      {
+        "cards": [
+          {
+            "name": "Krenko, Mob Boss",
+            "zone": [
+              "B"
+            ]
+          },
+          {
+            "name": "Skirk Prospector",
+            "zone": [
+              "B"
+            ]
+          },
+          {
+            "name": "Goblin Chieftain",
+            "zone": [
+              "B"
+            ]
+          }
+        ],
+        "id": "38-659-3954",
+        "mv": 0.0,
+        "notablePrerequisites": "You control a number of Goblins that is equal to or greater than six plus Krenko's commander tax.",
+        "produces": [
+          {
+            "id": 160
+          },
+          {
+            "id": 39
+          },
+          {
+            "id": 7
+          },
+          {
+            "id": 4
+          },
+          {
+            "id": 3
+          },
+          {
+            "id": 20
+          },
+          {
+            "id": 6
+          },
+          {
+            "id": 17
+          }
+        ],
+        "requires": []
+      },
+      {
+        "cards": [
+          {
+            "name": "Krenko, Mob Boss",
+            "zone": [
+              "B"
+            ]
+          },
+          {
+            "name": "Skirk Prospector",
+            "zone": [
+              "B"
+            ]
+          },
+          {
+            "name": "Howlsquad Heavy",
+            "zone": [
+              "B"
+            ]
+          }
+        ],
+        "id": "38-659-6410",
+        "mv": 0.0,
+        "notablePrerequisites": "You control a number of Goblins that is equal to or greater than six plus Krenko's commander tax.",
+        "produces": [
+          {
+            "id": 3
+          },
+          {
+            "id": 4
+          },
+          {
+            "id": 6
+          },
+          {
+            "id": 7
+          },
+          {
+            "id": 17
+          },
+          {
+            "id": 20
+          },
+          {
+            "id": 39
+          },
+          {
+            "id": 160
+          }
+        ],
+        "requires": []
+      }
+    ],
+    "file": "krenko_mono_red.txt"
+  },
+  {
+    "cards": [
+      {
+        "cmc": 2.0,
+        "colors": [
+          "G",
+          "U"
+        ],
+        "edhrec_rank": 2575,
+        "gamechanger": false,
+        "isCommander": true,
+        "layout": "normal",
+        "name": "Thrasios, Triton Hero",
+        "oracle_text": [
+          "{4}: Scry 1, then reveal the top card of your library. If it's a land card, put it onto the battlefield tapped. Otherwise, draw a card.\nPartner (You can have two commanders if both have partner.)"
+        ],
+        "price": 16.25,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Merfolk Wizard"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "B",
+          "W"
+        ],
+        "edhrec_rank": 4157,
+        "gamechanger": false,
+        "isCommander": true,
+        "layout": "normal",
+        "name": "Tymna the Weaver",
+        "oracle_text": [
+          "Lifelink\nAt the beginning of each of your postcombat main phases, you may pay X life, where X is the number of opponents that were dealt combat damage this turn. If you do, draw X cards.\nPartner (You can have two commanders if both have partner.)"
+        ],
+        "price": 10.42,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Legendary Creature — Human Cleric"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 156,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Chrome Mox",
+        "oracle_text": [
+          "Imprint — When this artifact enters, you may exile a nonartifact, nonland card from your hand.\n{T}: Add one mana of any of the exiled card's colors."
+        ],
+        "price": 153.13,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 2.0,
+        "colors": [
+          "B"
+        ],
+        "edhrec_rank": 64,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Demonic Tutor",
+        "oracle_text": [
+          "Search your library for a card, put that card into your hand, then shuffle."
+        ],
+        "price": 59.36,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Sorcery"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 83,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Fierce Guardianship",
+        "oracle_text": [
+          "If you control a commander, you may cast this spell without paying its mana cost.\nCounter target noncreature spell."
+        ],
+        "price": 63.71,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 5.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 205,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Force of Will",
+        "oracle_text": [
+          "You may pay 1 life and exile a blue card from your hand rather than pay this spell's mana cost.\nCounter target spell."
+        ],
+        "price": 55.16,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": null,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Forest",
+        "oracle_text": [
+          "({T}: Add {G}.)"
+        ],
+        "price": 0.09,
+        "quantity": 5,
+        "reserved": false,
+        "type_line": "Basic Land — Forest"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 444,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Gaea's Cradle",
+        "oracle_text": [
+          "{T}: Add {G} for each creature you control."
+        ],
+        "price": 1649.66,
+        "quantity": 1,
+        "reserved": true,
+        "type_line": "Legendary Land"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": null,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Island",
+        "oracle_text": [
+          "({T}: Add {U}.)"
+        ],
+        "price": 0.08,
+        "quantity": 5,
+        "reserved": false,
+        "type_line": "Basic Land — Island"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": null,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Mana Crypt",
+        "oracle_text": [
+          "At the beginning of your upkeep, flip a coin. If you lose the flip, this artifact deals 3 damage to you.\n{T}: Add {C}{C}."
+        ],
+        "price": 35.98,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 247,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Mox Diamond",
+        "oracle_text": [
+          "If this artifact would enter, you may discard a land card instead. If you do, put this artifact onto the battlefield. If you don't, put it into its owner's graveyard.\n{T}: Add one mana of any color."
+        ],
+        "price": 1119.7,
+        "quantity": 1,
+        "reserved": true,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 164,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Mystical Tutor",
+        "oracle_text": [
+          "Search your library for an instant or sorcery card, reveal it, then shuffle and put that card on top."
+        ],
+        "price": 16.04,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      },
+      {
+        "cmc": 3.0,
+        "colors": [
+          "U"
+        ],
+        "edhrec_rank": 46,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Rhystic Study",
+        "oracle_text": [
+          "Whenever an opponent casts a spell, you may draw a card unless that player pays {1}."
+        ],
+        "price": 65.76,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Enchantment"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [],
+        "edhrec_rank": 1,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Sol Ring",
+        "oracle_text": [
+          "{T}: Add {C}{C}."
+        ],
+        "price": 1.22,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Artifact"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 352,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Tropical Island",
+        "oracle_text": [
+          "({T}: Add {G} or {U}.)"
+        ],
+        "price": 603.57,
+        "quantity": 1,
+        "reserved": true,
+        "type_line": "Land — Forest Island"
+      },
+      {
+        "cmc": 0.0,
+        "colors": [],
+        "edhrec_rank": 296,
+        "gamechanger": false,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Underground Sea",
+        "oracle_text": [
+          "({T}: Add {U} or {B}.)"
+        ],
+        "price": 1099.49,
+        "quantity": 1,
+        "reserved": true,
+        "type_line": "Land — Island Swamp"
+      },
+      {
+        "cmc": 1.0,
+        "colors": [
+          "B"
+        ],
+        "edhrec_rank": 117,
+        "gamechanger": true,
+        "isCommander": false,
+        "layout": "normal",
+        "name": "Vampiric Tutor",
+        "oracle_text": [
+          "Search your library for a card, then shuffle and put that card on top. You lose 2 life."
+        ],
+        "price": 49.68,
+        "quantity": 1,
+        "reserved": false,
+        "type_line": "Instant"
+      }
+    ],
+    "combos": [],
+    "file": "partial_cedh_stub.txt"
+  }
+]
