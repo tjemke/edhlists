@@ -126,7 +126,8 @@ impl Http {
         std::mem::take(&mut *lock(&self.notices))
     }
 
-    fn notice(&self, msg: String) {
+    /// Print a notice, or queue it while quiet (a full-screen UI owns the terminal).
+    pub fn notice(&self, msg: String) {
         if self.quiet.load(Ordering::Relaxed) {
             lock(&self.notices).push(msg);
         } else {

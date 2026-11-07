@@ -42,6 +42,10 @@ edh-scout scout "Jodah, the Unifier"                 # interactive browser, targ
 edh-scout scout tymna --partner kraum                # partners; partial names work
 edh-scout scout krenko -b 3 --max-price 300          # bracket 3 only, budget cap
 edh-scout scout krenko --price                       # also show EDHREC's deck prices
+edh-scout scout -T planeswalkers=10+                 # superfriends decks, across commanders
+edh-scout scout -T spells=30+ -b 3                   # spell-heavy decks at bracket 3
+edh-scout scout -T creatures=..5                     # (nearly) creatureless decks
+edh-scout scout jodah -T planeswalkers=10+           # one commander's decks, narrowed by type
 edh-scout scout krenko -p 5.5-7                      # explicit EDHPowerLevel band instead
 edh-scout scout krenko --rank combined --weights power=0.4,salt=0.4,structure=0.2
 edh-scout scout krenko -t Tokens -t Goblins          # only decks EDHREC tagged with a theme
@@ -54,6 +58,22 @@ Names are matched loosely (any order, case, accents and punctuation ignored: `kr
 If several commanders match, or none do, a picker opens below the prompt, prefilled with what you
 typed: keep typing to narrow it, `↑↓` and `⏎` to choose (each row shows color identity and EDHREC
 rank to tell look-alikes apart). Without a terminal you get the list of matches instead.
+
+### Searching by card types
+
+`-T TYPE=RANGE` filters on how many cards of a type a deck runs, using the counts EDHREC lists for
+every deck (no extra requests). Types: `creatures`, `instants`, `sorceries`, `spells` (instants +
+sorceries), `artifacts`, `enchantments`, `planeswalkers`, `battles`, `lands`. Ranges: `10+`, `..5`,
+`25-40` or an exact number. Repeat `-T` to combine filters; all must match.
+
+With a commander, `-T` narrows that commander's decks. Without one, it searches across commanders:
+the filters pick matching EDHREC themes (`planeswalkers`, `spellslinger`, `creatureless`,
+`artifacts`, `enchantress`, `lands-matter`) and their top commanders are scanned, or EDHREC's
+most-built commanders when no theme fits (e.g. `creatures=40+`). `--commanders N` (default 30)
+caps how many deck tables are scanned. The browser opens right away and fills as each commander's
+table and decks come in; a commander column shows whose deck is whose. Cost: one request per
+theme, one per deck table scanned (cached for a day), two per commander that ends up with decks
+(synergy and combo votes, cached for a week), plus the usual deck budget.
 
 In the browser: `↑↓` move · `⏎` decklist/details · `J/K` scroll · `r` cycle ranking ·
 `f` only decks in the target · `o`/`s`/`p` open on EDHREC / the source site / EDHPowerLevel ·
@@ -100,7 +120,7 @@ reused for free, so repeated runs grow the pool.
 
 | Source | Used for | Requests |
 |---|---|---|
-| EDHREC | deck table, deck pages, commander synergy, combo votes, top-salt list | 1 table + 3 side pages per commander (cached 1–14 days); 1 per new deck (cached forever) |
+| EDHREC | deck tables, deck pages, commander synergy, combo votes, top-salt list, theme pages | 1 table + 2 side pages per commander and 1 salt list (cached 1–14 days); 1 per new deck (kept for good); 1 per theme when searching by type |
 | Scryfall | `default_cards` bulk (cheapest printing prices, Game Changers, oracle text) and `oracle_tags` bulk (card roles) | 4 per `sync` |
 | Commander Spellbook | full combo dump | 1 per `sync` |
 | EDHPowerLevel | nothing — scored locally; links go to the site | 0 |

@@ -9,6 +9,7 @@ use anyhow::Result;
 use crate::analysis::Analysis;
 use crate::rank::{RankMode, Ranked, Target};
 use edh_data::deck::Deck;
+use edh_data::text::front_face;
 use edhpl::edhpowerlevel_url;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
@@ -85,16 +86,27 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
          friendlier). Structure compares the deck to a ~36 land / 10 ramp / 10 draw / 8 removal / 2 wipe template. \
          Synergy is the average EDHREC synergy of the deck's cards with this commander.\n"
     )?;
+    let commanders_of = |d: &Deck| d.commanders.iter().map(|c| front_face(c)).collect::<Vec<_>>().join(" + ");
+    let shown: Vec<&Ranked> = input.ranking.iter().take(input.limit).collect();
+    let many_commanders =
+        shown.iter().map(|r| commanders_of(&input.decks[r.index].0)).collect::<std::collections::HashSet<_>>().len()
+            > 1;
     let price_col = if input.show_price { " price |" } else { "" };
-    writeln!(md, "| # | fits | power | bracket | salt | structure | synergy |{price_col} themes | list |")?;
-    writeln!(md, "|---|---|---|---|---|---|---|{}---|---|", if input.show_price { "---|" } else { "" })?;
+    let cmdr_col = if many_commanders { " commander |" } else { "" };
+    writeln!(md, "| # | fits | power | bracket | salt | structure | synergy |{price_col}{cmdr_col} themes | list |")?;
+    writeln!(
+        md,
+        "|---|---|---|---|---|---|---|{}{}---|---|",
+        if input.show_price { "---|" } else { "" },
+        if many_commanders { "---|" } else { "" }
+    )?;
     for (pos, r) in input.ranking.iter().take(input.limit).enumerate() {
         let (deck, a) = &input.decks[r.index];
         let file = write_deck(dir, pos + 1, deck, input.format)?;
         let rel = file.strip_prefix(dir).unwrap_or(&file).display().to_string();
         writeln!(
             md,
-            "| [{n}](#deck-{n}) | {fit} | {pl} | B{b} | {salt} | {st:.0}% | {syn} |{price} {tags} | [{rel}]({rel}) |",
+            "| [{n}](#deck-{n}) | {fit} | {pl} | B{b} | {salt} | {st:.0}% | {syn} |{price}{cmdr} {tags} | [{rel}]({rel}) |",
             n = pos + 1,
             fit = if r.fits { "✓" } else { "✗" },
             pl = a.power.label(),
@@ -103,13 +115,14 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
             st = a.structure.score * 100.0,
             syn = fmt_opt(a.synergy.as_ref().map(|s| s.average * 100.0), 1),
             price = if input.show_price { format!(" ${} |", fmt_opt(deck.meta.price, 0)) } else { String::new() },
+            cmdr = if many_commanders { format!(" {} |", commanders_of(deck)) } else { String::new() },
             tags = if deck.meta.tags.is_empty() { "–".into() } else { deck.meta.tags.join(", ") },
         )?;
     }
     writeln!(md)?;
     for (pos, r) in input.ranking.iter().take(input.limit).enumerate() {
         let (deck, a) = &input.decks[r.index];
-        writeln!(md, "## Deck {}\n", pos + 1)?;
+        writeln!(md, "## Deck {} · {}\n", pos + 1, commanders_of(deck))?;
         let mut links = Vec::new();
         if let Some(u) = &deck.meta.edhrec_url {
             links.push(format!("[EDHREC]({u})"));

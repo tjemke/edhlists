@@ -6,6 +6,7 @@
 
 pub mod analysis;
 pub mod export;
+pub mod filters;
 pub mod picker;
 pub mod plain;
 pub mod rank;

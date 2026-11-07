@@ -14,6 +14,8 @@ use std::collections::{BTreeMap, HashSet};
 
 use edh_data::edhrec::TableRow;
 
+use crate::filters::TypeFilter;
+
 #[derive(Clone, Debug)]
 pub struct SelectOptions {
     pub brackets: (u8, u8),
@@ -28,6 +30,8 @@ pub struct SelectOptions {
     pub tags: Vec<String>,
     /// Keep only decks saved on/after this date (YYYY-MM-DD).
     pub since: Option<String>,
+    /// Card-type count filters (`-T planeswalkers=10+`); all must match.
+    pub types: Vec<TypeFilter>,
     /// How many not-yet-cached decks we may fetch.
     pub budget: usize,
 }
@@ -99,6 +103,7 @@ pub fn select<'a>(rows: &'a [TableRow], opts: &SelectOptions, is_cached: impl Fn
         .filter(|r| opts.max_salt.is_none_or(|m| r.salt <= m))
         .filter(|r| opts.since.as_ref().is_none_or(|s| r.savedate.as_str() >= s.as_str()))
         .filter(|r| tags.is_empty() || r.tags.iter().any(|t| tags.contains(&t.to_lowercase())))
+        .filter(|r| opts.types.iter().all(|f| f.matches(r)))
         // Owners' labels are a weak signal (a $11k, salt-93 list declared "B3" exists), so the
         // ceiling applies to declared decks too.
         .filter(|r| {
@@ -167,12 +172,17 @@ pub fn select<'a>(rows: &'a [TableRow], opts: &SelectOptions, is_cached: impl Fn
 /// divisors), never giving a group more than it has. Small themes get a voice; big ones still get
 /// the most.
 pub fn allocate(sizes: &[usize], budget: usize) -> Vec<usize> {
-    let mut quotas = vec![0usize; sizes.len()];
     let weights: Vec<f64> = sizes.iter().map(|&s| (s as f64).sqrt()).collect();
+    allocate_weighted(&weights, sizes, budget)
+}
+
+/// [`allocate`] with explicit weights and capacities.
+pub fn allocate_weighted(weights: &[f64], caps: &[usize], budget: usize) -> Vec<usize> {
+    let mut quotas = vec![0usize; caps.len()];
     let priority = |i: usize, q: usize| weights[i] / (q as f64 + 0.5);
     for _ in 0..budget {
-        let best = (0..sizes.len())
-            .filter(|&i| quotas[i] < sizes[i])
+        let best = (0..caps.len())
+            .filter(|&i| quotas[i] < caps[i])
             .max_by(|&a, &b| priority(a, quotas[a]).total_cmp(&priority(b, quotas[b])).then(b.cmp(&a)));
         match best {
             Some(i) => quotas[i] += 1,
@@ -213,6 +223,7 @@ mod tests {
             max_salt: None,
             tags: vec![],
             since: None,
+            types: vec![],
             budget,
         }
     }
@@ -271,6 +282,22 @@ mod tests {
         assert_eq!(allocate(&[25, 25], 12), vec![6, 6]);
         assert_eq!(allocate(&[2, 1], 10), vec![2, 1]);
         assert_eq!(allocate(&[], 5), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn type_filters_apply() {
+        let mut walkers = row("walkers", None, 50.0, 100.0, &[], "2026-01-01");
+        walkers.planeswalker = 12;
+        walkers.creature = 18; // keep it a complete 100-card list
+        let rows = vec![walkers, row("plain", None, 50.0, 101.0, &[], "2026-01-01")];
+        let o = SelectOptions { types: vec!["planeswalkers=10+".parse().unwrap()], ..opts(10) };
+        let s = select(&rows, &o, |_| false);
+        assert_eq!(s.to_fetch.iter().map(|r| r.urlhash.as_str()).collect::<Vec<_>>(), vec!["walkers"]);
+    }
+
+    #[test]
+    fn weighted_allocation_respects_caps() {
+        assert_eq!(allocate_weighted(&[100.0, 1.0], &[3, 50], 10), vec![3, 7]);
     }
 
     #[test]

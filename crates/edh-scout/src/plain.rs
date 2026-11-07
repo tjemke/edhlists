@@ -7,6 +7,7 @@ use crate::analysis::Analysis;
 use crate::rank::{RankMode, Ranked, Target};
 use crate::view;
 use edh_data::deck::Deck;
+use edh_data::text::front_face;
 
 fn tc(c: ratatui::style::Color) -> Color {
     match c {
@@ -18,20 +19,28 @@ fn tc(c: ratatui::style::Color) -> Color {
     }
 }
 
+/// Optional columns.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Columns {
+    pub price: bool,
+    pub commander: bool,
+}
+
 pub fn ranked_table(
     decks: &[(Deck, Analysis)],
     ranking: &[Ranked],
     target: &Target,
     top: usize,
-    show_price: bool,
+    columns: Columns,
 ) -> Table {
+    let show_price = columns.price;
     let mut t = Table::new();
     t.load_style(UTF8_FULL_CONDENSED.with_rounded_corners())
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_header(
-            ["#", "Power", "Bracket", "Salt", "Structure", "Synergy", "Price", "Themes", "EDHREC"]
+            ["#", "Power", "Bracket", "Salt", "Structure", "Synergy", "Price", "Commander", "Themes", "EDHREC"]
                 .into_iter()
-                .filter(|h| show_price || *h != "Price")
+                .filter(|h| (show_price || *h != "Price") && (columns.commander || *h != "Commander"))
                 .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
         );
     for (pos, r) in ranking.iter().take(top).enumerate() {
@@ -49,6 +58,10 @@ pub fn ranked_table(
         ];
         if show_price {
             row.push(dim(Cell::new(deck.meta.price.map(|p| format!("${p:.0}")).unwrap_or("–".into()))));
+        }
+        if columns.commander {
+            let names: Vec<&str> = deck.commanders.iter().map(|c| front_face(c)).collect();
+            row.push(Cell::new(names.join(" + ")).fg(Color::Cyan));
         }
         row.push(dim(Cell::new(if deck.meta.tags.is_empty() { "–".into() } else { deck.meta.tags.join(", ") })));
         row.push(dim(Cell::new(deck.meta.edhrec_url.clone().unwrap_or_default())));

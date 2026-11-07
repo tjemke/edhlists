@@ -298,6 +298,61 @@ pub fn parse_combos_page(v: &Value) -> Vec<EdhrecCombo> {
     out
 }
 
+// --- themes and top commanders ---------------------------------------------------------------------
+
+/// A commander as EDHREC lists it on theme and "top commanders" pages.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ListedCommander {
+    pub name: String,
+    /// EDHREC page slug (also the deck-table slug).
+    pub slug: String,
+    /// Decks with this commander (on a theme page: with this commander *and* theme).
+    pub num_decks: u64,
+}
+
+fn listed_commanders(v: &Value, tags: &[&str]) -> Vec<ListedCommander> {
+    let mut out: Vec<ListedCommander> = Vec::new();
+    for list in v["container"]["json_dict"]["cardlists"].as_array().into_iter().flatten() {
+        if !tags.is_empty() && !tags.contains(&list["tag"].as_str().unwrap_or("")) {
+            continue;
+        }
+        for cv in list["cardviews"].as_array().into_iter().flatten() {
+            let (Some(name), Some(slug)) = (cv["name"].as_str(), cv["sanitized"].as_str()) else { continue };
+            if out.iter().any(|c| c.slug == slug) {
+                continue;
+            }
+            out.push(ListedCommander {
+                name: name.to_string(),
+                slug: slug.to_string(),
+                num_decks: cv["num_decks"].as_u64().unwrap_or(0),
+            });
+        }
+    }
+    out
+}
+
+/// The commanders EDHREC lists for a theme (`edhrec.com/tags/<theme>`): its top and newest ones.
+pub fn theme_commanders(http: &Http, theme: &str) -> Result<Vec<ListedCommander>> {
+    let url = format!("{EDHREC_JSON}/tags/{theme}.json");
+    let v: Value = http.cached_json(&url, None, Ttl::For(TTL_COMMANDER_PAGE))?;
+    Ok(parse_theme_commanders(&v))
+}
+
+pub fn parse_theme_commanders(v: &Value) -> Vec<ListedCommander> {
+    listed_commanders(v, &["topcommanders", "newcommanders"])
+}
+
+/// EDHREC's most-built commanders of the past two years.
+pub fn top_commanders(http: &Http) -> Result<Vec<ListedCommander>> {
+    let url = format!("{EDHREC_JSON}/commanders/year.json");
+    let v: Value = http.cached_json(&url, None, Ttl::For(TTL_COMMANDER_PAGE))?;
+    Ok(listed_commanders(&v, &[]))
+}
+
+pub fn parse_top_commanders(v: &Value) -> Vec<ListedCommander> {
+    listed_commanders(v, &[])
+}
+
 // --- salt -----------------------------------------------------------------------------------------
 
 /// EDHREC's 100 saltiest cards with their salt score (0-4 scale), keyed by front-face name.
@@ -400,6 +455,18 @@ mod tests {
         assert_eq!(c.len(), 25);
         assert_eq!(c[0].cards, vec!["Najeela, the Blade-Blossom", "Esika, God of the Tree"]);
         assert_eq!(c[1].vote_bracket.as_deref(), Some("4-5"));
+    }
+
+    #[test]
+    fn theme_and_top_commander_lists() {
+        let v: Value = serde_json::from_str(&read("tag_tokens.json")).unwrap();
+        let t = parse_theme_commanders(&v);
+        assert_eq!(t.len(), 29); // 5 new + 24 top, no duplicates
+        assert!(t.iter().any(|c| c.slug == "baylen-the-haymaker" && c.num_decks == 3605));
+        let v: Value = serde_json::from_str(&read("commanders_year.json")).unwrap();
+        let top = parse_top_commanders(&v);
+        assert_eq!(top.len(), 40);
+        assert_eq!(top[0].slug, "yshtola-nights-blessed");
     }
 
     #[test]

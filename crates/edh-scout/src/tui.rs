@@ -7,6 +7,7 @@ use std::time::Duration;
 use anyhow::Result;
 use edh_data::deck::Deck;
 use edh_data::http::Http;
+use edh_data::text::front_face;
 use edhpl::edhpowerlevel_url;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -38,6 +39,8 @@ pub struct Settings {
     pub report_top: usize,
     /// Show EDHREC's deck price (off by default: it's usually one or two cards).
     pub show_price: bool,
+    /// Searching across commanders: show which commander each deck is for.
+    pub show_commander: bool,
 }
 
 pub struct App<'a> {
@@ -107,7 +110,7 @@ impl<'a> App<'a> {
         if let Some(f) = &self.fetcher {
             while let Some(event) = f.try_next() {
                 finished |= matches!(event, FetchEvent::Done | FetchEvent::Stopped(_));
-                arrived |= matches!(event, FetchEvent::Deck(_));
+                arrived |= matches!(event, FetchEvent::Deck(_) | FetchEvent::StoredDeck(_));
                 if let Some(msg) = self.pool.apply(event) {
                     self.status = Some((msg, true));
                 }
@@ -272,12 +275,14 @@ impl<'a> App<'a> {
             Span::styled(format!(" target {} ", self.settings.target.describe()), Style::new().fg(GOOD)),
             Span::styled(format!(" rank: {} ", self.settings.mode.label()), Style::new().fg(ACCENT)),
         ];
-        if let Some(f) = &self.fetcher {
-            let done = st.fetched + st.failed;
-            spans.push(Span::styled(
-                format!(" {} fetching {done}/{} ", SPINNER[self.tick % SPINNER.len()], f.total),
-                Style::new().bold().fg(OK),
-            ));
+        if self.fetcher.is_some() {
+            let spin = SPINNER[self.tick % SPINNER.len()];
+            let progress = if st.scanning() {
+                format!(" {spin} scanning commanders {}/{} ", st.commanders_scanned, st.commanders_total)
+            } else {
+                format!(" {spin} fetching {}/{} ", st.fetched + st.failed, st.queued)
+            };
+            spans.push(Span::styled(progress, Style::new().bold().fg(OK)));
         }
         spans.push(Span::styled(
             format!(" {} decks, {fits} fit · {summary}", self.pool.decks.len()),
@@ -288,10 +293,11 @@ impl<'a> App<'a> {
 
     fn draw_table(&mut self, frame: &mut Frame, area: Rect) {
         let show_price = self.settings.show_price;
+        let show_commander = self.settings.show_commander;
         let header = Row::new(
-            ["#", "Power", "B", "Salt", "Struct", "Syn", "Price", "Themes"]
+            ["#", "Power", "B", "Salt", "Struct", "Syn", "Price", "Commander", "Themes"]
                 .into_iter()
-                .filter(|h| show_price || *h != "Price"),
+                .filter(|h| (show_price || *h != "Price") && (show_commander || *h != "Commander")),
         )
         .style(Style::new().bold().fg(DIM));
         let rows: Vec<Row> = self
@@ -324,6 +330,10 @@ impl<'a> App<'a> {
                         deck.meta.price.map(|p| format!("{:>6}", format!("${p:.0}"))).unwrap_or("–".into()),
                     ));
                 }
+                if show_commander {
+                    let names: Vec<&str> = deck.commanders.iter().map(|c| front_face(c)).collect();
+                    cells.push(Cell::from(names.join(" + ")).style(Style::new().fg(ACCENT)));
+                }
                 cells.push(Cell::from(themes));
                 Row::new(cells).style(base)
             })
@@ -338,6 +348,9 @@ impl<'a> App<'a> {
         ];
         if show_price {
             widths.push(Constraint::Length(6));
+        }
+        if show_commander {
+            widths.push(Constraint::Fill(1));
         }
         widths.push(Constraint::Fill(1));
         let title = if self.fits_only { " Decks in target " } else { " Decks " };
@@ -382,7 +395,7 @@ impl<'a> App<'a> {
         let inner = block.inner(area);
         frame.render_widget(block, area);
         let mut lines: Vec<Line> = Vec::new();
-        for (group, cards) in grouped_list(deck, self.pool.ctx.cards) {
+        for (group, cards) in grouped_list(deck, self.pool.cards()) {
             let n: u32 = cards.iter().map(|(q, _)| q).sum();
             lines.push(Line::from(Span::styled(format!("{group} ({n})"), Style::new().bold().fg(ACCENT))));
             for (q, name) in cards {

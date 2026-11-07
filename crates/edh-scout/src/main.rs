@@ -6,15 +6,18 @@ use std::sync::Arc;
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use edh_data::cards::CardDb;
+use edh_data::combos::ComboDb;
 use edh_data::config::Paths;
 use edh_data::deck::parse_decklist;
 use edh_data::edhrec::DeckStore;
+use edh_data::edhrec::{self, ListedCommander};
 use edh_data::http::{Http, OfflineMiss, summarize_counts};
 use edh_data::sync::{SyncWhat, ensure_databases, sync};
-use edh_data::text::{commander_slug, date_days_ago};
+use edh_data::text::{commander_slug, date_days_ago, front_face, slugify};
 use edh_scout::export::{self, ExportFormat, ReportInput};
+use edh_scout::filters::{self, TypeFilter};
 use edh_scout::rank::{RankMode, Target, Weights, parse_range, rank};
-use edh_scout::scout::{Fetcher, Pool, PoolStats, Prepared, ScoutOptions, load_sources, prepare};
+use edh_scout::scout::{Fetcher, Pool, PoolStats, Prepared, ScoutOptions, load_commander_sources, load_salt, prepare};
 use edh_scout::select::SelectOptions;
 use edh_scout::{picker, plain, tui, view};
 
@@ -39,6 +42,7 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)] // parsed once at startup
 enum Command {
     /// Pull EDHREC decklists for a commander and rank them for your table.
     Scout(ScoutArgs),
@@ -61,13 +65,23 @@ struct TargetArgs {
 #[derive(Args)]
 struct ScoutArgs {
     /// Commander name. Partial names work; if several commanders match you get to pick.
-    commander: String,
+    /// May be left out when -T filters are given: then decks are searched across commanders.
+    #[arg(required_unless_present = "types")]
+    commander: Option<String>,
     /// Second commander (partner, background, ...).
-    #[arg(long)]
+    #[arg(long, requires = "commander")]
     partner: Option<String>,
     /// Override the EDHREC page slug, e.g. kraum-ludevics-opus-tymna-the-weaver.
-    #[arg(long)]
+    #[arg(long, requires = "commander")]
     slug: Option<String>,
+    /// Card-type count filter, repeatable: planeswalkers=10+, creatures=..5, spells=25-40, lands=36
+    /// (spells = instants + sorceries). With a commander it narrows that commander's decks; without
+    /// one it searches across commanders.
+    #[arg(short = 'T', long = "type", value_name = "TYPE=RANGE")]
+    types: Vec<String>,
+    /// Searching across commanders: how many commanders' deck tables to scan (1 request each).
+    #[arg(long, default_value_t = 30, value_name = "N")]
+    commanders: usize,
     #[command(flatten)]
     target: TargetArgs,
     /// How to rank decks.
@@ -197,6 +211,16 @@ fn resolve_commander(cards: &CardDb, query: &str, role: &str) -> Result<String> 
     )
 }
 
+/// A scout in progress: decks so far, and the background work still filling them in.
+struct Session<'a> {
+    title: String,
+    /// Default export directory name (`edh-scout-<name>`).
+    name: String,
+    pool: Pool<'a>,
+    fetcher: Option<Fetcher>,
+    show_commander: bool,
+}
+
 fn run_scout(http: &Arc<Http>, paths: &Paths, args: ScoutArgs) -> Result<()> {
     let target = target_from(&args.target)?;
     let weights: Weights = args.weights.parse().context("--weights")?;
@@ -206,33 +230,55 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, args: ScoutArgs) -> Result<()> {
         Some(s) => bail!("--since takes YYYY-MM-DD or a number of days, got '{s}'"),
         None => None,
     };
+    let types: Vec<TypeFilter> = args.types.iter().map(|t| t.parse()).collect::<Result<_>>().context("-T")?;
     let (cards, combos) = ensure_databases(http, paths)?;
-
-    let mut commanders = vec![resolve_commander(&cards, &args.commander, "commander")?];
-    if let Some(p) = &args.partner {
-        commanders.push(resolve_commander(&cards, p, "partner")?);
-    }
-    let slug = args.slug.clone().unwrap_or_else(|| commander_slug(&commanders));
-    let title = commanders.iter().map(|c| edh_data::text::front_face(c)).collect::<Vec<_>>().join(" + ");
     http.set_min_gap("edhrec.com", std::time::Duration::from_secs_f64(args.deck_delay.max(2.0)));
-    eprintln!("scouting {title} (edhrec.com/commanders/{slug}) for {} ...", target.describe());
-
-    let opts = ScoutOptions {
-        commanders,
-        slug: slug.clone(),
-        select: SelectOptions {
-            brackets: target.brackets,
-            declared_only: args.declared_only,
-            max_price: args.max_price,
-            price_ceiling: args.output.price,
-            max_salt: args.max_salt,
-            tags: args.tags.clone(),
-            since,
-            budget: args.fetch,
-        },
+    let select = SelectOptions {
+        brackets: target.brackets,
+        declared_only: args.declared_only,
+        max_price: args.max_price,
+        price_ceiling: args.output.price,
+        max_salt: args.max_salt,
+        tags: args.tags.clone(),
+        since,
+        types: types.clone(),
+        budget: args.fetch,
     };
     let store = DeckStore::new(paths.decks());
-    let Prepared { decks, sources, stats, to_fetch } = prepare(http, &store, &opts)?;
+    let salt = load_salt(http);
+    let session = match &args.commander {
+        Some(name) => start_single(http, &store, &cards, &combos, salt, &args, name, &target, select)?,
+        None => start_search(http, &store, &cards, &combos, salt, &args, &types, &target, select)?,
+    };
+    finish(http, session, &args, target, weights)
+}
+
+/// One commander (optionally narrowed by `-T` filters): its table and stored decks now, the
+/// rest in the background.
+#[allow(clippy::too_many_arguments)]
+fn start_single<'a>(
+    http: &Arc<Http>,
+    store: &DeckStore,
+    cards: &'a CardDb,
+    combos: &'a ComboDb,
+    salt: std::collections::HashMap<String, f64>,
+    args: &ScoutArgs,
+    name: &str,
+    target: &Target,
+    select: SelectOptions,
+) -> Result<Session<'a>> {
+    let mut commanders = vec![resolve_commander(cards, name, "commander")?];
+    if let Some(p) = &args.partner {
+        commanders.push(resolve_commander(cards, p, "partner")?);
+    }
+    let slug = args.slug.clone().unwrap_or_else(|| commander_slug(&commanders));
+    let mut title = commanders.iter().map(|c| front_face(c)).collect::<Vec<_>>().join(" + ");
+    if !select.types.is_empty() {
+        title += &format!(" · {}", filters::describe(&select.types));
+    }
+    eprintln!("scouting {title} (edhrec.com/commanders/{slug}) for {} ...", target.describe());
+    let opts = ScoutOptions { commanders, slug: slug.clone(), select };
+    let Prepared { decks, sources, stats, to_fetch } = prepare(http, store, &opts)?;
     if let Some(c) = stats.ceiling {
         let price = if args.output.price { format!(" / ${:.0}", c.price) } else { String::new() };
         eprintln!(
@@ -257,9 +303,68 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, args: ScoutArgs) -> Result<()> {
     );
     let fetcher = (!to_fetch.is_empty())
         .then(|| Fetcher::spawn(Arc::clone(http), store.clone(), to_fetch, opts.commanders.clone()));
-    let mut pool = Pool::new(sources.context(&cards, &combos), decks, stats);
+    let mut pool = Pool::new(cards, combos, salt, stats);
+    pool.add_commander(&slug, sources);
+    for d in decks {
+        pool.add(d);
+    }
+    Ok(Session { title, name: slug, pool, fetcher, show_commander: false })
+}
 
-    let export_dir = args.output.export.clone().unwrap_or_else(|| PathBuf::from(format!("edh-scout-{slug}")));
+/// No commander: find decks matching the `-T` filters across the commanders EDHREC lists for the
+/// matching themes (or its most-built commanders). Deck tables load in the background too.
+#[allow(clippy::too_many_arguments)]
+fn start_search<'a>(
+    http: &Arc<Http>,
+    store: &DeckStore,
+    cards: &'a CardDb,
+    combos: &'a ComboDb,
+    salt: std::collections::HashMap<String, f64>,
+    args: &ScoutArgs,
+    types: &[TypeFilter],
+    target: &Target,
+    select: SelectOptions,
+) -> Result<Session<'a>> {
+    let themes = filters::themes(types);
+    let mut candidates: Vec<ListedCommander> = Vec::new();
+    for theme in &themes {
+        match edhrec::theme_commanders(http, theme) {
+            Ok(list) => candidates.extend(list),
+            Err(e) => eprintln!("  note: couldn't load EDHREC's '{theme}' theme ({e:#})"),
+        }
+    }
+    let source = if candidates.is_empty() {
+        candidates = edhrec::top_commanders(http).context("EDHREC's top commanders")?;
+        "EDHREC's most-built commanders".to_string()
+    } else {
+        format!("EDHREC theme{} {}", if themes.len() > 1 { "s" } else { "" }, themes.join(", "))
+    };
+    let mut seen = std::collections::HashSet::new();
+    candidates.retain(|c| seen.insert(c.slug.clone()));
+    candidates.sort_by_key(|c| std::cmp::Reverse(c.num_decks));
+    candidates.truncate(args.commanders.max(1));
+    let wanted = filters::describe(types);
+    eprintln!(
+        "searching {} commanders from {source} for decks with {wanted}, {} ...",
+        candidates.len(),
+        target.describe()
+    );
+    let stats = PoolStats { commanders_total: candidates.len(), ..Default::default() };
+    let pool = Pool::new(cards, combos, salt, stats);
+    let fetcher = Fetcher::spawn_search(Arc::clone(http), store.clone(), candidates, select);
+    Ok(Session {
+        title: format!("decks with {wanted}"),
+        name: format!("search-{}", slugify(&wanted)),
+        pool,
+        fetcher: Some(fetcher),
+        show_commander: true,
+    })
+}
+
+/// Browse (or print) the session, then report what it cost.
+fn finish(http: &Arc<Http>, session: Session, args: &ScoutArgs, target: Target, weights: Weights) -> Result<()> {
+    let Session { title, name, mut pool, fetcher, show_commander } = session;
+    let export_dir = args.output.export.clone().unwrap_or_else(|| PathBuf::from(format!("edh-scout-{name}")));
     if interactive(args.output.plain) {
         let settings = tui::Settings {
             title,
@@ -270,6 +375,7 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, args: ScoutArgs) -> Result<()> {
             format: args.output.format,
             report_top: args.output.top,
             show_price: args.output.price,
+            show_commander,
         };
         let mut app = tui::App::new(settings, pool, fetcher, Some(http));
         tui::run(&mut app)?;
@@ -278,35 +384,36 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, args: ScoutArgs) -> Result<()> {
             eprintln!("  stopped fetching early: {why}");
         }
         eprintln!("  {} · {}", stats.summary(), summarize_counts(&http.request_counts()));
-    } else {
-        if let Some(f) = fetcher {
-            pool.drain(f);
-        }
-        if let Some(why) = &pool.stats.stopped {
-            eprintln!("  stopped fetching early: {why}");
-        }
-        eprintln!("  {} · {}", pool.stats.summary(), summarize_counts(&http.request_counts()));
-        if pool.decks.is_empty() {
-            bail!("no decks could be fetched");
-        }
-        let refs: Vec<_> = pool.decks.iter().map(|(_, a)| a).collect();
-        let ranking = rank(&refs, &target, args.rank, &weights);
-        println!("{}", plain::ranked_table(&pool.decks, &ranking, &target, args.output.top, args.output.price));
-        println!("{}", plain::legend(&target, args.rank));
-        if args.output.export.is_some() {
-            let input = ReportInput {
-                title: &title,
-                target: &target,
-                mode: args.rank,
-                decks: &pool.decks,
-                ranking: &ranking,
-                limit: args.output.top,
-                format: args.output.format,
-                show_price: args.output.price,
-            };
-            let path = export::write_report(&export_dir, &input)?;
-            eprintln!("wrote {} and the top {} decklists", path.display(), args.output.top.min(ranking.len()));
-        }
+        return Ok(());
+    }
+    if let Some(f) = fetcher {
+        pool.drain(f);
+    }
+    if let Some(why) = &pool.stats.stopped {
+        eprintln!("  stopped fetching early: {why}");
+    }
+    eprintln!("  {} · {}", pool.stats.summary(), summarize_counts(&http.request_counts()));
+    if pool.decks.is_empty() {
+        bail!("no decks matched");
+    }
+    let refs: Vec<_> = pool.decks.iter().map(|(_, a)| a).collect();
+    let ranking = rank(&refs, &target, args.rank, &weights);
+    let columns = plain::Columns { price: args.output.price, commander: show_commander };
+    println!("{}", plain::ranked_table(&pool.decks, &ranking, &target, args.output.top, columns));
+    println!("{}", plain::legend(&target, args.rank));
+    if args.output.export.is_some() {
+        let input = ReportInput {
+            title: &title,
+            target: &target,
+            mode: args.rank,
+            decks: &pool.decks,
+            ranking: &ranking,
+            limit: args.output.top,
+            format: args.output.format,
+            show_price: args.output.price,
+        };
+        let path = export::write_report(&export_dir, &input)?;
+        eprintln!("wrote {} and the top {} decklists", path.display(), args.output.top.min(ranking.len()));
     }
     Ok(())
 }
@@ -322,9 +429,12 @@ fn run_check(http: &Http, paths: &Paths, args: CheckArgs) -> Result<()> {
     }
     let canonical: Vec<String> = deck.commanders.iter().map(|c| cards.canonical(c).unwrap_or(c).to_string()).collect();
     let slug = (!canonical.is_empty()).then(|| commander_slug(&canonical));
-    let sources = load_sources(http, slug.as_deref());
     let title = format!("{} ({})", deck.id, deck.commanders.join(" + "));
-    let pool = Pool::new(sources.context(&cards, &combos), vec![deck], PoolStats::default());
+    let mut pool = Pool::new(&cards, &combos, load_salt(http), PoolStats::default());
+    if let Some(slug) = &slug {
+        pool.add_commander(slug, load_commander_sources(http, slug));
+    }
+    pool.add(deck);
     if interactive(args.plain) {
         let settings = tui::Settings {
             title,
@@ -335,6 +445,7 @@ fn run_check(http: &Http, paths: &Paths, args: CheckArgs) -> Result<()> {
             format: ExportFormat::Plain,
             report_top: 1,
             show_price: args.price,
+            show_commander: false,
         };
         tui::run(&mut tui::App::new(settings, pool, None, None))?;
     } else {
