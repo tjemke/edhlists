@@ -82,6 +82,7 @@ pub fn deck_url(urlhash: &str) -> String {
 /// The decklists we have fetched, kept as the raw deck pages (`<urlhash>.html`) so a parser fix
 /// never needs a refetch. Decks are snapshots: once stored, a deck never costs a request again.
 /// Lives in the XDG *state* dir (see [`crate::config::Paths`]) so cache cleanups don't eat it.
+#[derive(Clone, Debug)]
 pub struct DeckStore {
     dir: PathBuf,
 }

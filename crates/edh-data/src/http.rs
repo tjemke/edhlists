@@ -8,12 +8,13 @@
 //! * if the network fails but a stale cache entry exists, the stale copy is used;
 //! * `--offline` never touches the network.
 
-use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context, Result, bail};
@@ -66,11 +67,22 @@ pub struct Http {
     agent: ureq::Agent,
     offline: bool,
     cache_dir: PathBuf,
-    last: RefCell<HashMap<String, Instant>>,
-    counts: RefCell<BTreeMap<String, u32>>,
-    strikes: RefCell<HashMap<String, u32>>,
-    blocked: RefCell<HashSet<String>>,
-    gap_override: RefCell<HashMap<String, Duration>>,
+    last: Mutex<HashMap<String, Instant>>,
+    counts: Mutex<BTreeMap<String, u32>>,
+    strikes: Mutex<HashMap<String, u32>>,
+    blocked: Mutex<HashSet<String>>,
+    gap_override: Mutex<HashMap<String, Duration>>,
+    /// Held for a whole request (pacing, sending, reading the body): even when several threads
+    /// share this client, there is never more than one request in flight.
+    in_flight: Mutex<()>,
+    /// While a full-screen UI owns the terminal, notices are queued instead of printed.
+    quiet: AtomicBool,
+    notices: Mutex<Vec<String>>,
+}
+
+/// Lock a mutex, ignoring poisoning (a panicked thread can't leave these maps inconsistent).
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 const MAX_ATTEMPTS: u32 = 3;
@@ -93,11 +105,32 @@ impl Http {
             agent: config.into(),
             offline,
             cache_dir,
-            last: RefCell::default(),
-            counts: RefCell::default(),
-            strikes: RefCell::default(),
-            blocked: RefCell::default(),
-            gap_override: RefCell::default(),
+            last: Mutex::default(),
+            counts: Mutex::default(),
+            strikes: Mutex::default(),
+            blocked: Mutex::default(),
+            gap_override: Mutex::default(),
+            in_flight: Mutex::new(()),
+            quiet: AtomicBool::new(false),
+            notices: Mutex::default(),
+        }
+    }
+
+    /// Queue notices (retries, back-offs, stale copies) instead of printing them; see [`Http::take_notices`].
+    pub fn set_quiet(&self, quiet: bool) {
+        self.quiet.store(quiet, Ordering::Relaxed);
+    }
+
+    /// Notices queued while quiet.
+    pub fn take_notices(&self) -> Vec<String> {
+        std::mem::take(&mut *lock(&self.notices))
+    }
+
+    fn notice(&self, msg: String) {
+        if self.quiet.load(Ordering::Relaxed) {
+            lock(&self.notices).push(msg);
+        } else {
+            eprintln!("  {msg}");
         }
     }
 
@@ -108,28 +141,29 @@ impl Http {
     /// Slow a host down further than the default (never speeds it up).
     pub fn set_min_gap(&self, host: &str, gap: Duration) {
         if gap > host_gap(host) {
-            self.gap_override.borrow_mut().insert(host.to_string(), gap);
+            lock(&self.gap_override).insert(host.to_string(), gap);
         }
     }
 
     /// Requests actually sent this run, per host.
     pub fn request_counts(&self) -> BTreeMap<String, u32> {
-        self.counts.borrow().clone()
+        lock(&self.counts).clone()
     }
 
     pub fn is_blocked(&self, host: &str) -> bool {
-        self.blocked.borrow().contains(host)
+        lock(&self.blocked).contains(host)
     }
 
     fn pace(&self, host: &str) {
-        let gap = self.gap_override.borrow().get(host).copied().unwrap_or_else(|| host_gap(host));
-        if let Some(prev) = self.last.borrow().get(host) {
+        let gap = lock(&self.gap_override).get(host).copied().unwrap_or_else(|| host_gap(host));
+        let prev = lock(&self.last).get(host).copied();
+        if let Some(prev) = prev {
             let since = prev.elapsed();
             if since < gap {
                 std::thread::sleep(gap - since);
             }
         }
-        self.last.borrow_mut().insert(host.to_string(), Instant::now());
+        lock(&self.last).insert(host.to_string(), Instant::now());
     }
 
     /// Send one GET with pacing and retries; returns the successful response.
@@ -145,13 +179,13 @@ impl Http {
         loop {
             attempt += 1;
             self.pace(&host);
-            *self.counts.borrow_mut().entry(host.clone()).or_default() += 1;
+            *lock(&self.counts).entry(host.clone()).or_default() += 1;
             let result = self.agent.get(url).header("Accept", "application/json, text/html;q=0.9, */*;q=0.5").call();
             let resp = match result {
                 Ok(r) => r,
                 Err(e) if attempt < MAX_ATTEMPTS => {
                     let wait = 2u64.pow(attempt);
-                    eprintln!("  network error for {url} ({e}); retrying in {wait}s");
+                    self.notice(format!("network error for {url} ({e}); retrying in {wait}s"));
                     std::thread::sleep(Duration::from_secs(wait));
                     continue;
                 }
@@ -163,13 +197,13 @@ impl Http {
             }
             if code == 429 || code == 503 {
                 let strikes = {
-                    let mut s = self.strikes.borrow_mut();
+                    let mut s = lock(&self.strikes);
                     let n = s.entry(host.clone()).or_default();
                     *n += 1;
                     *n
                 };
                 if strikes >= 2 {
-                    self.blocked.borrow_mut().insert(host.clone());
+                    lock(&self.blocked).insert(host.clone());
                     return Err(HostBlocked(host).into());
                 }
                 let wait = resp
@@ -179,7 +213,7 @@ impl Http {
                     .and_then(|s| s.trim().parse::<u64>().ok())
                     .unwrap_or(30)
                     .min(MAX_RETRY_AFTER);
-                eprintln!("  {host} answered {code}; waiting {wait}s as asked");
+                self.notice(format!("{host} answered {code}; waiting {wait}s as asked"));
                 std::thread::sleep(Duration::from_secs(wait));
                 continue;
             }
@@ -193,12 +227,14 @@ impl Http {
 
     /// GET a URL into memory, uncached.
     pub fn get_bytes(&self, url: &str) -> Result<Vec<u8>> {
+        let _one_at_a_time = lock(&self.in_flight);
         let mut resp = self.send(url)?;
         Ok(resp.body_mut().with_config().limit(BODY_LIMIT).read_to_vec()?)
     }
 
     /// Stream a (large) download to `dest`, atomically.
     pub fn download(&self, url: &str, dest: &Path) -> Result<u64> {
+        let _one_at_a_time = lock(&self.in_flight);
         let resp = self.send(url)?;
         if let Some(dir) = dest.parent() {
             fs::create_dir_all(dir)?;
@@ -241,7 +277,7 @@ impl Http {
                 Ok(text)
             }
             Err(e) if fresh.is_some() && e.downcast_ref::<HttpStatus>().is_none_or(|s| s.code != 404) => {
-                eprintln!("  using stale cached copy of {url} ({e})");
+                self.notice(format!("using stale cached copy of {url} ({e})"));
                 Ok(fs::read_to_string(&path)?)
             }
             Err(e) => Err(e),
@@ -274,6 +310,12 @@ pub fn ensure_online(http: &Http, what: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shareable_across_threads() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<Http>();
+    }
 
     #[test]
     fn host_parsing() {

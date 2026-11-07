@@ -1,10 +1,12 @@
-//! The interactive deck browser.
+//! The interactive deck browser. Opens at once with the decks already on disk; decks fetched in
+//! the background slot into the ranking as they arrive.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use anyhow::Result;
-use edh_data::cards::CardDb;
 use edh_data::deck::Deck;
+use edh_data::http::Http;
 use edhpl::edhpowerlevel_url;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -16,7 +18,8 @@ use ratatui::{DefaultTerminal, Frame};
 use crate::analysis::Analysis;
 use crate::export::{self, ExportFormat, ReportInput};
 use crate::rank::{RankMode, Ranked, Target, Weights, rank};
-use crate::view::{ACCENT, BAD, DIM, GOOD, detail_lines, grouped_list, power_color, score_color};
+use crate::scout::{FetchEvent, Fetcher, Pool};
+use crate::view::{ACCENT, BAD, DIM, GOOD, OK, detail_lines, grouped_list, power_color, score_color};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Pane {
@@ -24,66 +27,102 @@ enum Pane {
     Decklist,
 }
 
-pub struct App<'a> {
+/// Everything the browser shows that isn't the decks themselves.
+pub struct Settings {
     pub title: String,
-    pub summary: String,
     pub target: Target,
     pub mode: RankMode,
     pub weights: Weights,
-    pub decks: &'a [(Deck, Analysis)],
-    pub cards: &'a CardDb,
     pub export_dir: PathBuf,
     pub format: ExportFormat,
     pub report_top: usize,
+}
+
+pub struct App<'a> {
+    settings: Settings,
+    pool: Pool<'a>,
+    /// Still fetching decks in the background?
+    fetcher: Option<Fetcher>,
+    /// Shared HTTP client, to surface its notices (retries, back-offs) in the status line.
+    http: Option<&'a Http>,
     ranking: Vec<Ranked>,
     fits_only: bool,
     pane: Pane,
     state: TableState,
     scroll: u16,
     status: Option<(String, bool)>,
+    tick: usize,
 }
 
+const SPINNER: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
+
 impl<'a> App<'a> {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        title: String,
-        summary: String,
-        target: Target,
-        mode: RankMode,
-        weights: Weights,
-        decks: &'a [(Deck, Analysis)],
-        cards: &'a CardDb,
-        export_dir: PathBuf,
-        format: ExportFormat,
-        report_top: usize,
-    ) -> Self {
+    pub fn new(settings: Settings, pool: Pool<'a>, fetcher: Option<Fetcher>, http: Option<&'a Http>) -> Self {
         let mut app = Self {
-            title,
-            summary,
-            target,
-            mode,
-            weights,
-            decks,
-            cards,
-            export_dir,
-            format,
-            report_top,
+            settings,
+            pool,
+            fetcher,
+            http,
             ranking: Vec::new(),
             fits_only: false,
             pane: Pane::Details,
             state: TableState::default(),
             scroll: 0,
             status: None,
+            tick: 0,
         };
-        app.rerank();
+        app.rerank(false);
         app
     }
 
-    fn rerank(&mut self) {
-        let refs: Vec<&Analysis> = self.decks.iter().map(|(_, a)| a).collect();
-        self.ranking = rank(&refs, &self.target, self.mode, &self.weights);
-        self.state.select(if self.visible().is_empty() { None } else { Some(0) });
-        self.scroll = 0;
+    /// Re-rank. With `keep`, the cursor stays on the deck it was on (decks arriving in the
+    /// background reshuffle the list; the user's place shouldn't move).
+    fn rerank(&mut self, keep: bool) {
+        let keep_deck = if keep { self.selected().map(|(_, r)| r.index) } else { None };
+        let refs: Vec<&Analysis> = self.pool.decks.iter().map(|(_, a)| a).collect();
+        self.ranking = rank(&refs, &self.settings.target, self.settings.mode, &self.settings.weights);
+        let visible = self.visible();
+        let pos = keep_deck.and_then(|d| visible.iter().position(|(_, r)| r.index == d)).or(if visible.is_empty() {
+            None
+        } else {
+            Some(0)
+        });
+        self.state.select(pos);
+        if !keep {
+            self.scroll = 0;
+        }
+    }
+
+    /// Counts for the end-of-run summary.
+    pub fn stats(&self) -> &crate::scout::PoolStats {
+        &self.pool.stats
+    }
+
+    /// Take in whatever the background fetcher has delivered since the last frame.
+    fn pump(&mut self) {
+        let mut arrived = false;
+        let mut finished = false;
+        if let Some(f) = &self.fetcher {
+            while let Some(event) = f.try_next() {
+                finished |= matches!(event, FetchEvent::Done | FetchEvent::Stopped(_));
+                arrived |= matches!(event, FetchEvent::Deck(_));
+                if let Some(msg) = self.pool.apply(event) {
+                    self.status = Some((msg, true));
+                }
+            }
+        }
+        if finished {
+            self.fetcher = None;
+            if self.status.is_none() {
+                self.status = Some((format!("done: {}", self.pool.stats.summary()), false));
+            }
+        }
+        if arrived {
+            self.rerank(true);
+        }
+        if let Some(n) = self.http.and_then(|h| h.take_notices().pop()) {
+            self.status = Some((n, true));
+        }
     }
 
     fn visible(&self) -> Vec<(usize, Ranked)> {
@@ -137,32 +176,41 @@ impl<'a> App<'a> {
                 self.scroll = 0;
             }
             KeyCode::Char('r') => {
-                self.mode = self.mode.next();
-                self.rerank();
-                self.status = Some((format!("ranked by {}", self.mode.label()), false));
+                self.settings.mode = self.settings.mode.next();
+                self.rerank(true);
+                self.status = Some((format!("ranked by {}", self.settings.mode.label()), false));
             }
             KeyCode::Char('f') => {
+                let keep = self.selected().map(|(_, r)| r.index);
                 self.fits_only = !self.fits_only;
-                self.state.select(if self.visible().is_empty() { None } else { Some(0) });
+                let visible = self.visible();
+                let pos = keep.and_then(|d| visible.iter().position(|(_, r)| r.index == d));
+                self.state.select(pos.or(if visible.is_empty() { None } else { Some(0) }));
                 let msg = if self.fits_only { "showing only decks in the target" } else { "showing all decks" };
                 self.status = Some((msg.into(), false));
             }
             KeyCode::Char('o') => {
-                let url = self.selected().and_then(|(_, r)| self.decks[r.index].0.meta.edhrec_url.clone());
+                let url = self.selected().and_then(|(_, r)| self.pool.decks[r.index].0.meta.edhrec_url.clone());
                 self.open("EDHREC", url);
             }
             KeyCode::Char('s') => {
-                let url = self.selected().and_then(|(_, r)| self.decks[r.index].0.meta.source_url.clone());
+                let url = self.selected().and_then(|(_, r)| self.pool.decks[r.index].0.meta.source_url.clone());
                 self.open("source", url);
             }
             KeyCode::Char('p') => {
-                let url = self.selected().map(|(_, r)| edhpowerlevel_url(&self.decks[r.index].0.sectioned_lines()));
+                let url =
+                    self.selected().map(|(_, r)| edhpowerlevel_url(&self.pool.decks[r.index].0.sectioned_lines()));
                 self.open("EDHPowerLevel", url);
             }
             KeyCode::Char('e') => {
                 if let Some((pos, r)) = self.selected() {
                     self.status = Some(
-                        match export::write_deck(&self.export_dir, pos + 1, &self.decks[r.index].0, self.format) {
+                        match export::write_deck(
+                            &self.settings.export_dir,
+                            pos + 1,
+                            &self.pool.decks[r.index].0,
+                            self.settings.format,
+                        ) {
                             Ok(p) => (format!("wrote {}", p.display()), false),
                             Err(e) => (format!("export failed: {e:#}"), true),
                         },
@@ -172,18 +220,19 @@ impl<'a> App<'a> {
             KeyCode::Char('E') => {
                 let ranking: Vec<Ranked> = self.visible().into_iter().map(|(_, r)| r).collect();
                 let input = ReportInput {
-                    title: &self.title,
-                    target: &self.target,
-                    mode: self.mode,
-                    decks: self.decks,
+                    title: &self.settings.title,
+                    target: &self.settings.target,
+                    mode: self.settings.mode,
+                    decks: &self.pool.decks,
                     ranking: &ranking,
-                    limit: self.report_top,
-                    format: self.format,
+                    limit: self.settings.report_top,
+                    format: self.settings.format,
                 };
-                self.status = Some(match export::write_report(&self.export_dir, &input) {
-                    Ok(p) => {
-                        (format!("wrote {} and {} decklists", p.display(), ranking.len().min(self.report_top)), false)
-                    }
+                self.status = Some(match export::write_report(&self.settings.export_dir, &input) {
+                    Ok(p) => (
+                        format!("wrote {} and {} decklists", p.display(), ranking.len().min(self.settings.report_top)),
+                        false,
+                    ),
                     Err(e) => (format!("export failed: {e:#}"), true),
                 });
             }
@@ -212,14 +261,26 @@ impl<'a> App<'a> {
 
     fn draw_header(&self, frame: &mut Frame, area: Rect) {
         let fits = self.ranking.iter().filter(|r| r.fits).count();
-        let line = Line::from(vec![
+        let st = &self.pool.stats;
+        let summary = if st.listed == 0 { "local decklist".to_string() } else { st.summary() };
+        let mut spans = vec![
             Span::styled(" edh-scout ", Style::new().reversed().bold().fg(ACCENT)),
-            Span::styled(format!(" {} ", self.title), Style::new().bold()),
-            Span::styled(format!(" target {} ", self.target.describe()), Style::new().fg(GOOD)),
-            Span::styled(format!(" rank: {} ", self.mode.label()), Style::new().fg(ACCENT)),
-            Span::styled(format!(" {} decks, {fits} fit · {}", self.decks.len(), self.summary), Style::new().fg(DIM)),
-        ]);
-        frame.render_widget(Paragraph::new(line), area);
+            Span::styled(format!(" {} ", self.settings.title), Style::new().bold()),
+            Span::styled(format!(" target {} ", self.settings.target.describe()), Style::new().fg(GOOD)),
+            Span::styled(format!(" rank: {} ", self.settings.mode.label()), Style::new().fg(ACCENT)),
+        ];
+        if let Some(f) = &self.fetcher {
+            let done = st.fetched + st.failed;
+            spans.push(Span::styled(
+                format!(" {} fetching {done}/{} ", SPINNER[self.tick % SPINNER.len()], f.total),
+                Style::new().bold().fg(OK),
+            ));
+        }
+        spans.push(Span::styled(
+            format!(" {} decks, {fits} fit · {summary}", self.pool.decks.len()),
+            Style::new().fg(DIM),
+        ));
+        frame.render_widget(Paragraph::new(Line::from(spans)), area);
     }
 
     fn draw_table(&mut self, frame: &mut Frame, area: Rect) {
@@ -229,13 +290,13 @@ impl<'a> App<'a> {
             .visible()
             .iter()
             .map(|(pos, r)| {
-                let (deck, a) = &self.decks[r.index];
+                let (deck, a) = &self.pool.decks[r.index];
                 let base = if r.fits { Style::new() } else { Style::new().fg(DIM) };
                 let themes = if deck.meta.tags.is_empty() { "–".to_string() } else { deck.meta.tags.join(", ") };
                 Row::new(vec![
                     Cell::from(format!("{:>2}", pos + 1)),
                     Cell::from(format!("{:>5}", a.power.label()))
-                        .style(Style::new().fg(power_color(&self.target, a.power.level)).bold()),
+                        .style(Style::new().fg(power_color(&self.settings.target, a.power.level)).bold()),
                     Cell::from(format!("B{}", a.bracket.bracket)).style(Style::new().fg(if r.fits {
                         GOOD
                     } else {
@@ -276,18 +337,24 @@ impl<'a> App<'a> {
 
     fn pane_title(&self) -> Option<(String, &Deck)> {
         let (pos, r) = self.selected()?;
-        let deck = &self.decks[r.index].0;
+        let deck = &self.pool.decks[r.index].0;
         Some((format!(" #{} · {} ", pos + 1, deck.id), deck))
     }
 
     fn draw_details(&self, frame: &mut Frame, area: Rect) {
         let Some((title, _)) = self.pane_title() else {
-            frame.render_widget(Paragraph::new("No decks to show.").block(Block::bordered()), area);
+            let msg = if self.fetcher.is_some() {
+                "Fetching decklists in the background — they show up here as they arrive (one every few seconds)."
+            } else {
+                "No decks to show."
+            };
+            let p = Paragraph::new(Span::styled(msg, Style::new().fg(DIM))).wrap(Wrap { trim: false });
+            frame.render_widget(p.block(Block::bordered()), area);
             return;
         };
         let (_, r) = self.selected().expect("selected");
-        let (deck, a) = &self.decks[r.index];
-        let lines = detail_lines(deck, a, &self.target, Some(&r));
+        let (deck, a) = &self.pool.decks[r.index];
+        let lines = detail_lines(deck, a, &self.settings.target, Some(&r));
         let p = Paragraph::new(lines)
             .wrap(Wrap { trim: false })
             .scroll((self.scroll, 0))
@@ -301,7 +368,7 @@ impl<'a> App<'a> {
         let inner = block.inner(area);
         frame.render_widget(block, area);
         let mut lines: Vec<Line> = Vec::new();
-        for (group, cards) in grouped_list(deck, self.cards) {
+        for (group, cards) in grouped_list(deck, self.pool.ctx.cards) {
             let n: u32 = cards.iter().map(|(q, _)| q).sum();
             lines.push(Line::from(Span::styled(format!("{group} ({n})"), Style::new().bold().fg(ACCENT))));
             for (q, name) in cards {
@@ -350,19 +417,29 @@ impl<'a> App<'a> {
     }
 }
 
-pub fn run(mut app: App) -> Result<()> {
+pub fn run(app: &mut App) -> Result<()> {
+    if let Some(h) = app.http {
+        h.set_quiet(true);
+    }
     let mut terminal: DefaultTerminal = ratatui::init();
     let result = (|| -> Result<()> {
         loop {
+            app.pump();
             terminal.draw(|f| app.draw(f))?;
-            if let Event::Key(key) = event::read()?
+            // Wake up regularly to pick up decks arriving in the background.
+            if event::poll(Duration::from_millis(120))?
+                && let Event::Key(key) = event::read()?
                 && key.kind == KeyEventKind::Press
                 && !app.handle(key)
             {
                 return Ok(());
             }
+            app.tick = app.tick.wrapping_add(1);
         }
     })();
     ratatui::restore();
+    if let Some(h) = app.http {
+        h.set_quiet(false);
+    }
     result
 }

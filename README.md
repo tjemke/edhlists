@@ -118,8 +118,10 @@ Where things live (XDG):
 Override with `--cache-dir` / `--state-dir` (or `EDH_SCOUT_CACHE` / `EDH_SCOUT_STATE`). On macOS and
 Windows the platform's cache and local app-data directories are used instead.
 
-A first `scout` for a commander costs about 64 requests (≈2 minutes at the default pace); running it
-again within a day costs none.
+A first `scout` for a commander costs about 64 requests (≈2 minutes at the default pace), but you
+don't wait for them: the browser opens as soon as the deck table is in, with the decks already on
+disk, and new decks slot into the ranking as they arrive (the header shows the progress; quitting
+stops the fetching). Running it again within a day costs no requests at all.
 
 ## Development
 

@@ -1,6 +1,7 @@
 use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
@@ -11,10 +12,9 @@ use edh_data::edhrec::DeckStore;
 use edh_data::http::{Http, OfflineMiss, summarize_counts};
 use edh_data::sync::{SyncWhat, ensure_databases, sync};
 use edh_data::text::{commander_slug, date_days_ago};
-use edh_scout::analysis::analyze;
 use edh_scout::export::{self, ExportFormat, ReportInput};
 use edh_scout::rank::{RankMode, Target, Weights, parse_range, rank};
-use edh_scout::scout::{ScoutOptions, load_sources, scout};
+use edh_scout::scout::{Fetcher, Pool, PoolStats, Prepared, ScoutOptions, load_sources, prepare};
 use edh_scout::select::SelectOptions;
 use edh_scout::{picker, plain, tui, view};
 
@@ -190,7 +190,7 @@ fn resolve_commander(cards: &CardDb, query: &str, role: &str) -> Result<String> 
     )
 }
 
-fn run_scout(http: &Http, paths: &Paths, args: ScoutArgs) -> Result<()> {
+fn run_scout(http: &Arc<Http>, paths: &Paths, args: ScoutArgs) -> Result<()> {
     let target = target_from(&args.target)?;
     let weights: Weights = args.weights.parse().context("--weights")?;
     let since = match &args.since {
@@ -224,19 +224,8 @@ fn run_scout(http: &Http, paths: &Paths, args: ScoutArgs) -> Result<()> {
         },
     };
     let store = DeckStore::new(paths.decks());
-    let pool = scout(http, &store, &cards, &combos, &opts)?;
-    let s = &pool.stats;
-    let mut summary = format!("{} on EDHREC, {} eligible", s.listed, s.eligible);
-    if s.cached > 0 {
-        summary += &format!(", {} reused", s.cached);
-    }
-    if s.fetched > 0 {
-        summary += &format!(", {} fetched", s.fetched);
-    }
-    if s.failed > 0 {
-        summary += &format!(", {} failed", s.failed);
-    }
-    if let Some(c) = s.ceiling {
+    let Prepared { decks, sources, stats, to_fetch } = prepare(http, &store, &opts)?;
+    if let Some(c) = stats.ceiling {
         eprintln!(
             "  decks capped at salt {:.0} / ${:.0} (90th percentile of {} decks declared {})",
             c.salt,
@@ -245,34 +234,52 @@ fn run_scout(http: &Http, paths: &Paths, args: ScoutArgs) -> Result<()> {
             target.describe().split(" · ").next().unwrap_or("")
         );
     }
-    if let Some(why) = &s.stopped {
-        eprintln!("  stopped fetching early: {why}");
-    }
-    eprintln!("  {summary} · {}", summarize_counts(&http.request_counts()));
-    if pool.decks.is_empty() {
+    if decks.is_empty() && to_fetch.is_empty() {
         bail!(if http.offline() {
-            "no cached decks to show (offline)"
+            "no stored decks to show (offline)"
         } else {
             "no decks matched; loosen the filters"
         });
     }
+    eprintln!(
+        "  {} stored deck(s) ready, {} to fetch in the background · {}",
+        decks.len(),
+        to_fetch.len(),
+        summarize_counts(&http.request_counts())
+    );
+    let fetcher = (!to_fetch.is_empty())
+        .then(|| Fetcher::spawn(Arc::clone(http), store.clone(), to_fetch, opts.commanders.clone()));
+    let mut pool = Pool::new(sources.context(&cards, &combos), decks, stats);
 
     let export_dir = args.output.export.clone().unwrap_or_else(|| PathBuf::from(format!("edh-scout-{slug}")));
     if interactive(args.output.plain) {
-        let app = tui::App::new(
+        let settings = tui::Settings {
             title,
-            summary,
             target,
-            args.rank,
+            mode: args.rank,
             weights,
-            &pool.decks,
-            &cards,
             export_dir,
-            args.output.format,
-            args.output.top,
-        );
-        tui::run(app)?;
+            format: args.output.format,
+            report_top: args.output.top,
+        };
+        let mut app = tui::App::new(settings, pool, fetcher, Some(http));
+        tui::run(&mut app)?;
+        let stats = app.stats();
+        if let Some(why) = &stats.stopped {
+            eprintln!("  stopped fetching early: {why}");
+        }
+        eprintln!("  {} · {}", stats.summary(), summarize_counts(&http.request_counts()));
     } else {
+        if let Some(f) = fetcher {
+            pool.drain(f);
+        }
+        if let Some(why) = &pool.stats.stopped {
+            eprintln!("  stopped fetching early: {why}");
+        }
+        eprintln!("  {} · {}", pool.stats.summary(), summarize_counts(&http.request_counts()));
+        if pool.decks.is_empty() {
+            bail!("no decks could be fetched");
+        }
         let refs: Vec<_> = pool.decks.iter().map(|(_, a)| a).collect();
         let ranking = rank(&refs, &target, args.rank, &weights);
         println!("{}", plain::ranked_table(&pool.decks, &ranking, &target, args.output.top));
@@ -306,25 +313,21 @@ fn run_check(http: &Http, paths: &Paths, args: CheckArgs) -> Result<()> {
     let canonical: Vec<String> = deck.commanders.iter().map(|c| cards.canonical(c).unwrap_or(c).to_string()).collect();
     let slug = (!canonical.is_empty()).then(|| commander_slug(&canonical));
     let sources = load_sources(http, slug.as_deref());
-    let analysis = analyze(&deck, &sources.context(&cards, &combos));
     let title = format!("{} ({})", deck.id, deck.commanders.join(" + "));
-    let decks = vec![(deck, analysis)];
+    let pool = Pool::new(sources.context(&cards, &combos), vec![deck], PoolStats::default());
     if interactive(args.plain) {
-        let app = tui::App::new(
+        let settings = tui::Settings {
             title,
-            "local decklist".into(),
             target,
-            RankMode::Power,
-            Weights::default(),
-            &decks,
-            &cards,
-            PathBuf::from("."),
-            ExportFormat::Plain,
-            1,
-        );
-        tui::run(app)?;
+            mode: RankMode::Power,
+            weights: Weights::default(),
+            export_dir: PathBuf::from("."),
+            format: ExportFormat::Plain,
+            report_top: 1,
+        };
+        tui::run(&mut tui::App::new(settings, pool, None, None))?;
     } else {
-        let (deck, a) = &decks[0];
+        let (deck, a) = &pool.decks[0];
         let fits = target.fits(a);
         println!("{}", view::to_ansi(&view::detail_lines(deck, a, &target, None), color()));
         println!("{} target {}", if fits { "✓ fits" } else { "✗ outside" }, target.describe());
@@ -337,7 +340,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = (|| -> Result<()> {
         let paths = Paths::new(cli.cache_dir.clone(), cli.state_dir.clone())?;
-        let http = Http::new(paths.http(), cli.offline);
+        let http = Arc::new(Http::new(paths.http(), cli.offline));
         match cli.command {
             Command::Scout(args) => run_scout(&http, &paths, args),
             Command::Check(args) => run_check(&http, &paths, args),
