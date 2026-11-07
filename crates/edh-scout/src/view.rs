@@ -18,6 +18,34 @@ pub const BAD: Color = Color::Red;
 pub const DIM: Color = Color::DarkGray;
 pub const ACCENT: Color = Color::Cyan;
 
+/// A deck's colour identity: the union of its commanders' identities, in WUBRG order. Commanders
+/// missing from the card database add nothing.
+pub fn deck_identity(deck: &Deck, cards: &CardDb) -> Vec<&'static str> {
+    let commanders: Vec<_> = deck.commanders.iter().filter_map(|c| cards.get(c)).collect();
+    WUBRG.into_iter().filter(|c| commanders.iter().any(|card| card.identity.iter().any(|x| x == c))).collect()
+}
+
+const WUBRG: [&str; 5] = ["W", "U", "B", "R", "G"];
+
+/// Colour identity as coloured WUBRG letters (C for colourless).
+pub fn identity_line(identity: &[impl AsRef<str>]) -> Line<'static> {
+    let spans: Vec<Span> = WUBRG
+        .into_iter()
+        .filter(|c| identity.iter().any(|x| x.as_ref() == *c))
+        .map(|c| {
+            let color = match c {
+                "W" => Color::Yellow,
+                "U" => Color::Blue,
+                "B" => Color::Magenta,
+                "R" => Color::Red,
+                _ => Color::Green,
+            };
+            Span::styled(c, Style::new().fg(color).add_modifier(Modifier::BOLD))
+        })
+        .collect();
+    if spans.is_empty() { Line::from(Span::styled("C", Style::new().fg(DIM))) } else { Line::from(spans) }
+}
+
 /// Colour for a power level relative to the target band.
 pub fn power_color(target: &Target, level: f64) -> Color {
     let (lo, hi) = target.band;
@@ -457,6 +485,21 @@ mod tests {
                 "             Infinite creature tokens",
             ]
         );
+    }
+
+    #[test]
+    fn deck_identity_is_the_commanders_union_in_wubrg_order() {
+        let card = |name: &str, id: &[&str]| edh_data::cards::Card {
+            name: name.into(),
+            identity: id.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        };
+        let cards =
+            CardDb::new(vec![card("Green One", &["G"]), card("Esper One", &["U", "W", "B"]), card("Rock", &[])]);
+        let deck = |cs: &[&str]| Deck { commanders: cs.iter().map(|s| s.to_string()).collect(), ..Default::default() };
+        assert_eq!(deck_identity(&deck(&["Green One", "Esper One"]), &cards), ["W", "U", "B", "G"]);
+        assert!(deck_identity(&deck(&["Rock", "Unknown"]), &cards).is_empty());
+        assert_eq!(text(&[identity_line(&deck_identity(&deck(&["Rock"]), &cards))]), ["C"]);
     }
 
     #[test]

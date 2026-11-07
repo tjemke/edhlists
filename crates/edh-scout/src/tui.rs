@@ -20,7 +20,10 @@ use crate::analysis::Analysis;
 use crate::export::{self, ExportFormat, ReportInput};
 use crate::rank::{RankMode, Ranked, Target, Weights, rank};
 use crate::scout::{FetchEvent, Fetcher, Pool};
-use crate::view::{ACCENT, BAD, DIM, GOOD, OK, detail_lines, grouped_list, power_color, score_color, wrap_lines};
+use crate::view::{
+    ACCENT, BAD, DIM, GOOD, OK, deck_identity, detail_lines, grouped_list, identity_line, power_color, score_color,
+    wrap_lines,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Pane {
@@ -295,9 +298,9 @@ impl<'a> App<'a> {
         let show_price = self.settings.show_price;
         let show_commander = self.settings.show_commander;
         let header = Row::new(
-            ["#", "Power", "B", "Salt", "Struct", "Syn", "Price", "Commander", "Themes"]
+            ["#", "Power", "B", "Salt", "Struct", "Syn", "Price", "Color", "Commander", "Themes"]
                 .into_iter()
-                .filter(|h| (show_price || *h != "Price") && (show_commander || *h != "Commander")),
+                .filter(|h| (show_price || *h != "Price") && (show_commander || !matches!(*h, "Color" | "Commander"))),
         )
         .style(Style::new().bold().fg(DIM));
         let rows: Vec<Row> = self
@@ -331,6 +334,7 @@ impl<'a> App<'a> {
                     ));
                 }
                 if show_commander {
+                    cells.push(Cell::from(identity_line(&deck_identity(deck, self.pool.cards()))));
                     let names: Vec<&str> = deck.commanders.iter().map(|c| front_face(c)).collect();
                     cells.push(Cell::from(names.join(" + ")).style(Style::new().fg(ACCENT)));
                 }
@@ -350,6 +354,7 @@ impl<'a> App<'a> {
             widths.push(Constraint::Length(6));
         }
         if show_commander {
+            widths.push(Constraint::Length(5));
             widths.push(Constraint::Fill(1));
         }
         widths.push(Constraint::Fill(1));

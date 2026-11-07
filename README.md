@@ -71,9 +71,9 @@ the filters pick matching EDHREC themes (`planeswalkers`, `spellslinger`, `creat
 `artifacts`, `enchantress`, `lands-matter`) and their top commanders are scanned, or EDHREC's
 most-built commanders when no theme fits (e.g. `creatures=40+`). `--commanders N` (default 30)
 caps how many deck tables are scanned. The browser opens right away and fills as each commander's
-table and decks come in; a commander column shows whose deck is whose. Cost: one request per
-theme, one per deck table scanned (cached for a day), two per commander that ends up with decks
-(synergy and combo votes, cached for a week), plus the usual deck budget.
+table and decks come in; commander and colour (WUBRG) columns show whose deck is whose. Cost: one
+request per theme, one per deck table scanned (cached for a day), two per commander that ends up
+with decks (synergy and combo votes, cached for a week), plus the usual deck budget.
 
 In the browser: `↑↓` move · `⏎` decklist/details · `J/K` scroll · `r` cycle ranking ·
 `f` only decks in the target · `o`/`s`/`p` open on EDHREC / the source site / EDHPowerLevel ·

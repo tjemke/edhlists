@@ -6,6 +6,7 @@ use comfy_table::{Attribute, Cell, CellAlignment, Color, ContentArrangement, Tab
 use crate::analysis::Analysis;
 use crate::rank::{RankMode, Ranked, Target};
 use crate::view;
+use edh_data::cards::CardDb;
 use edh_data::deck::Deck;
 use edh_data::text::front_face;
 
@@ -28,6 +29,7 @@ pub struct Columns {
 
 pub fn ranked_table(
     decks: &[(Deck, Analysis)],
+    cards: &CardDb,
     ranking: &[Ranked],
     target: &Target,
     top: usize,
@@ -38,10 +40,22 @@ pub fn ranked_table(
     t.load_style(UTF8_FULL_CONDENSED.with_rounded_corners())
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_header(
-            ["#", "Power", "Bracket", "Salt", "Structure", "Synergy", "Price", "Commander", "Themes", "EDHREC"]
-                .into_iter()
-                .filter(|h| (show_price || *h != "Price") && (columns.commander || *h != "Commander"))
-                .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
+            [
+                "#",
+                "Power",
+                "Bracket",
+                "Salt",
+                "Structure",
+                "Synergy",
+                "Price",
+                "Colors",
+                "Commander",
+                "Themes",
+                "EDHREC",
+            ]
+            .into_iter()
+            .filter(|h| (show_price || *h != "Price") && (columns.commander || !matches!(*h, "Colors" | "Commander")))
+            .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
         );
     for (pos, r) in ranking.iter().take(top).enumerate() {
         let (deck, a) = &decks[r.index];
@@ -60,6 +74,8 @@ pub fn ranked_table(
             row.push(dim(Cell::new(deck.meta.price.map(|p| format!("${p:.0}")).unwrap_or("–".into()))));
         }
         if columns.commander {
+            let identity = view::deck_identity(deck, cards);
+            row.push(Cell::new(if identity.is_empty() { "C".to_string() } else { identity.concat() }));
             let names: Vec<&str> = deck.commanders.iter().map(|c| front_face(c)).collect();
             row.push(Cell::new(names.join(" + ")).fg(Color::Cyan));
         }

@@ -424,7 +424,7 @@ fn finish(http: &Arc<Http>, session: Session, args: &ScoutArgs, target: Target, 
     let refs: Vec<_> = pool.decks.iter().map(|(_, a)| a).collect();
     let ranking = rank(&refs, &target, args.rank, &weights);
     let columns = plain::Columns { price: args.output.price, commander: show_commander };
-    println!("{}", plain::ranked_table(&pool.decks, &ranking, &target, args.output.top, columns));
+    println!("{}", plain::ranked_table(&pool.decks, pool.cards(), &ranking, &target, args.output.top, columns));
     println!("{}", plain::legend(&target, args.rank));
     if args.output.export.is_some() {
         let input = ReportInput {

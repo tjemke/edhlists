@@ -9,12 +9,12 @@ use anyhow::Result;
 use edh_data::cards::{Card, CardDb, matches_terms, search_key, search_terms};
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Cell, Paragraph, Row, Table, TableState};
 use ratatui::{Frame, TerminalOptions, Viewport};
 
-use crate::view::{ACCENT, DIM};
+use crate::view::{ACCENT, DIM, identity_line};
 
 /// Picker height: room for the initial matches, within these bounds.
 const MIN_HEIGHT: u16 = 8;
@@ -112,7 +112,7 @@ impl<'a> Picker<'a> {
                 let c = self.pool[i].0;
                 Row::new(vec![
                     Cell::from(Span::styled(c.name.clone(), Style::new().add_modifier(Modifier::BOLD))),
-                    Cell::from(identity(c)),
+                    Cell::from(identity_line(&c.identity)),
                     Cell::from(Span::styled(
                         c.rank.map(|r| format!("#{r}")).unwrap_or_else(|| "–".into()),
                         Style::new().fg(DIM),
@@ -132,25 +132,6 @@ impl<'a> Picker<'a> {
             .highlight_symbol("▶ ");
         frame.render_stateful_widget(table, list, &mut self.state);
     }
-}
-
-/// Color identity as coloured WUBRG letters (C for colourless).
-fn identity(card: &Card) -> Line<'static> {
-    let spans: Vec<Span> = ["W", "U", "B", "R", "G"]
-        .iter()
-        .filter(|c| card.identity.iter().any(|x| x == *c))
-        .map(|c| {
-            let color = match *c {
-                "W" => Color::Yellow,
-                "U" => Color::Blue,
-                "B" => Color::Magenta,
-                "R" => Color::Red,
-                _ => Color::Green,
-            };
-            Span::styled(*c, Style::new().fg(color).add_modifier(Modifier::BOLD))
-        })
-        .collect();
-    if spans.is_empty() { Line::from(Span::styled("C", Style::new().fg(DIM))) } else { Line::from(spans) }
 }
 
 /// Ask the user to pick a commander. `Ok(None)` if they cancel.
