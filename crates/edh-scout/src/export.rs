@@ -62,6 +62,7 @@ pub struct ReportInput<'a> {
     /// Only the first `limit` ranked decks get a section and an exported list.
     pub limit: usize,
     pub format: ExportFormat,
+    pub show_price: bool,
 }
 
 /// Write `report.md` plus the decklists of the top `limit` decks. Returns the report path.
@@ -84,15 +85,16 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
          friendlier). Structure compares the deck to a ~36 land / 10 ramp / 10 draw / 8 removal / 2 wipe template. \
          Synergy is the average EDHREC synergy of the deck's cards with this commander.\n"
     )?;
-    writeln!(md, "| # | fits | power | bracket | salt | structure | synergy | price | themes | list |")?;
-    writeln!(md, "|---|---|---|---|---|---|---|---|---|---|")?;
+    let price_col = if input.show_price { " price |" } else { "" };
+    writeln!(md, "| # | fits | power | bracket | salt | structure | synergy |{price_col} themes | list |")?;
+    writeln!(md, "|---|---|---|---|---|---|---|{}---|---|", if input.show_price { "---|" } else { "" })?;
     for (pos, r) in input.ranking.iter().take(input.limit).enumerate() {
         let (deck, a) = &input.decks[r.index];
         let file = write_deck(dir, pos + 1, deck, input.format)?;
         let rel = file.strip_prefix(dir).unwrap_or(&file).display().to_string();
         writeln!(
             md,
-            "| [{n}](#deck-{n}) | {fit} | {pl} | B{b} | {salt} | {st:.0}% | {syn} | ${price} | {tags} | [{rel}]({rel}) |",
+            "| [{n}](#deck-{n}) | {fit} | {pl} | B{b} | {salt} | {st:.0}% | {syn} |{price} {tags} | [{rel}]({rel}) |",
             n = pos + 1,
             fit = if r.fits { "✓" } else { "✗" },
             pl = a.power.label(),
@@ -100,7 +102,7 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
             salt = fmt_opt(a.salt, 0),
             st = a.structure.score * 100.0,
             syn = fmt_opt(a.synergy.as_ref().map(|s| s.average * 100.0), 1),
-            price = fmt_opt(deck.meta.price, 0),
+            price = if input.show_price { format!(" ${} |", fmt_opt(deck.meta.price, 0)) } else { String::new() },
             tags = if deck.meta.tags.is_empty() { "–".into() } else { deck.meta.tags.join(", ") },
         )?;
     }

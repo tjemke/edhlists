@@ -36,6 +36,8 @@ pub struct Settings {
     pub export_dir: PathBuf,
     pub format: ExportFormat,
     pub report_top: usize,
+    /// Show EDHREC's deck price (off by default: it's usually one or two cards).
+    pub show_price: bool,
 }
 
 pub struct App<'a> {
@@ -227,6 +229,7 @@ impl<'a> App<'a> {
                     ranking: &ranking,
                     limit: self.settings.report_top,
                     format: self.settings.format,
+                    show_price: self.settings.show_price,
                 };
                 self.status = Some(match export::write_report(&self.settings.export_dir, &input) {
                     Ok(p) => (
@@ -284,8 +287,13 @@ impl<'a> App<'a> {
     }
 
     fn draw_table(&mut self, frame: &mut Frame, area: Rect) {
-        let header = Row::new(["#", "Power", "B", "Salt", "Struct", "Syn", "Price", "Themes"])
-            .style(Style::new().bold().fg(DIM));
+        let show_price = self.settings.show_price;
+        let header = Row::new(
+            ["#", "Power", "B", "Salt", "Struct", "Syn", "Price", "Themes"]
+                .into_iter()
+                .filter(|h| show_price || *h != "Price"),
+        )
+        .style(Style::new().bold().fg(DIM));
         let rows: Vec<Row> = self
             .visible()
             .iter()
@@ -293,7 +301,7 @@ impl<'a> App<'a> {
                 let (deck, a) = &self.pool.decks[r.index];
                 let base = if r.fits { Style::new() } else { Style::new().fg(DIM) };
                 let themes = if deck.meta.tags.is_empty() { "–".to_string() } else { deck.meta.tags.join(", ") };
-                Row::new(vec![
+                let mut cells = vec![
                     Cell::from(format!("{:>2}", pos + 1)),
                     Cell::from(format!("{:>5}", a.power.label()))
                         .style(Style::new().fg(power_color(&self.settings.target, a.power.level)).bold()),
@@ -310,22 +318,28 @@ impl<'a> App<'a> {
                         a.synergy.as_ref().map(|s| format!("{:>4.1}%", s.average * 100.0)).unwrap_or("–".into()),
                     )
                     .style(Style::new().fg(score_color(r.scores.synergy))),
-                    Cell::from(deck.meta.price.map(|p| format!("{:>6}", format!("${p:.0}"))).unwrap_or("–".into())),
-                    Cell::from(themes),
-                ])
-                .style(base)
+                ];
+                if show_price {
+                    cells.push(Cell::from(
+                        deck.meta.price.map(|p| format!("{:>6}", format!("${p:.0}"))).unwrap_or("–".into()),
+                    ));
+                }
+                cells.push(Cell::from(themes));
+                Row::new(cells).style(base)
             })
             .collect();
-        let widths = [
+        let mut widths = vec![
             Constraint::Length(3),
             Constraint::Length(5),
             Constraint::Length(2),
             Constraint::Length(4),
             Constraint::Length(6),
             Constraint::Length(5),
-            Constraint::Length(6),
-            Constraint::Fill(1),
         ];
+        if show_price {
+            widths.push(Constraint::Length(6));
+        }
+        widths.push(Constraint::Fill(1));
         let title = if self.fits_only { " Decks in target " } else { " Decks " };
         let table = Table::new(rows, widths)
             .header(header)
@@ -354,7 +368,7 @@ impl<'a> App<'a> {
         };
         let (_, r) = self.selected().expect("selected");
         let (deck, a) = &self.pool.decks[r.index];
-        let lines = detail_lines(deck, a, &self.settings.target, Some(&r));
+        let lines = detail_lines(deck, a, &self.settings.target, Some(&r), self.settings.show_price);
         let p = Paragraph::new(lines)
             .wrap(Wrap { trim: false })
             .scroll((self.scroll, 0))

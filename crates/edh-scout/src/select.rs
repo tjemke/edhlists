@@ -3,9 +3,9 @@
 //! EDHREC lists tens of thousands of decks per popular commander and gives no quality signal, so
 //! we spend the fetch budget carefully:
 //! 1. drop incomplete lists and anything the owner declared outside the target brackets;
-//! 2. calibrate a salt and price ceiling from the decks whose owners *did* declare a target
-//!    bracket (their 90th percentile), and drop decks above it — they are very likely stronger or
-//!    meaner than wanted, whatever their label says;
+//! 2. calibrate a salt ceiling (and, with `--price`, a price ceiling) from the decks whose owners
+//!    *did* declare a target bracket (their 90th percentile), and drop decks above it — they are
+//!    very likely stronger or meaner than wanted, whatever their label says;
 //! 3. drop exact duplicates (re-uploads of the same list);
 //! 4. include every already-cached deck for free, then spread the remaining budget across themes
 //!    and salt/price tiers so the pool isn't fifty copies of the same idea.
@@ -19,6 +19,9 @@ pub struct SelectOptions {
     pub brackets: (u8, u8),
     pub declared_only: bool,
     pub max_price: Option<f64>,
+    /// Also cap price at the declared decks' 90th percentile (off unless asked for: a deck's price
+    /// is often one or two cards, which says little about how it plays).
+    pub price_ceiling: bool,
     /// Skip decks whose EDHREC salt is above this.
     pub max_salt: Option<f64>,
     /// Keep only decks with one of these EDHREC tags (case-insensitive).
@@ -98,7 +101,11 @@ pub fn select<'a>(rows: &'a [TableRow], opts: &SelectOptions, is_cached: impl Fn
         .filter(|r| tags.is_empty() || r.tags.iter().any(|t| tags.contains(&t.to_lowercase())))
         // Owners' labels are a weak signal (a $11k, salt-93 list declared "B3" exists), so the
         // ceiling applies to declared decks too.
-        .filter(|r| ceiling.is_none_or(|c| r.salt <= c.salt && (opts.max_price.is_some() || r.price <= c.price)))
+        .filter(|r| {
+            ceiling.is_none_or(|c| {
+                r.salt <= c.salt && (!opts.price_ceiling || opts.max_price.is_some() || r.price <= c.price)
+            })
+        })
         .filter(|r| {
             let sig = (
                 (r.price * 100.0) as i64,
@@ -202,6 +209,7 @@ mod tests {
             brackets: (2, 3),
             declared_only: false,
             max_price: None,
+            price_ceiling: false,
             max_salt: None,
             tags: vec![],
             since: None,
@@ -223,18 +231,23 @@ mod tests {
     }
 
     #[test]
-    fn calibrated_ceiling_drops_salty_undeclared_decks() {
+    fn calibrated_ceiling_drops_salty_decks_and_pricey_ones_only_with_price() {
         let mut rows: Vec<TableRow> = (0..30)
             .map(|i| row(&format!("d{i}"), Some(3), 50.0 + i as f64 * 0.5, 300.0 + i as f64, &[], "2026-01-01"))
             .collect();
         rows.push(row("salty", None, 95.0, 400.0, &[], "2026-01-01"));
         rows.push(row("pricey", None, 55.0, 9000.0, &[], "2026-01-01"));
         rows.push(row("fine", None, 55.2, 311.5, &[], "2026-01-01"));
-        let s = select(&rows, &opts(100), |_| false);
-        let got: HashSet<&str> = s.to_fetch.iter().map(|r| r.urlhash.as_str()).collect();
-        assert!(got.contains("fine"));
-        assert!(!got.contains("salty") && !got.contains("pricey"));
-        assert!(s.ceiling.is_some());
+        let got = |o: &SelectOptions| -> HashSet<String> {
+            select(&rows, o, |_| false).to_fetch.iter().map(|r| r.urlhash.clone()).collect()
+        };
+        // default: salt ceiling only — price is ignored
+        let by_salt = got(&opts(100));
+        assert!(by_salt.contains("fine") && by_salt.contains("pricey") && !by_salt.contains("salty"));
+        // --price: the price ceiling applies too
+        let by_both = got(&SelectOptions { price_ceiling: true, ..opts(100) });
+        assert!(by_both.contains("fine") && !by_both.contains("pricey") && !by_both.contains("salty"));
+        assert!(select(&rows, &opts(100), |_| false).ceiling.is_some());
     }
 
     #[test]

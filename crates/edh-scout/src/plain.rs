@@ -18,19 +18,27 @@ fn tc(c: ratatui::style::Color) -> Color {
     }
 }
 
-pub fn ranked_table(decks: &[(Deck, Analysis)], ranking: &[Ranked], target: &Target, top: usize) -> Table {
+pub fn ranked_table(
+    decks: &[(Deck, Analysis)],
+    ranking: &[Ranked],
+    target: &Target,
+    top: usize,
+    show_price: bool,
+) -> Table {
     let mut t = Table::new();
     t.load_style(UTF8_FULL_CONDENSED.with_rounded_corners())
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_header(
             ["#", "Power", "Bracket", "Salt", "Structure", "Synergy", "Price", "Themes", "EDHREC"]
+                .into_iter()
+                .filter(|h| show_price || *h != "Price")
                 .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
         );
     for (pos, r) in ranking.iter().take(top).enumerate() {
         let (deck, a) = &decks[r.index];
         let dim = |c: Cell| if r.fits { c } else { c.fg(Color::DarkGrey) };
         let b = format!("B{}", a.bracket.bracket);
-        t.add_row(vec![
+        let mut row = vec![
             dim(Cell::new(pos + 1)),
             Cell::new(a.power.label()).fg(tc(view::power_color(target, a.power.level))).add_attribute(Attribute::Bold),
             if r.fits { Cell::new(b).fg(Color::Green) } else { Cell::new(b).fg(Color::Red) },
@@ -38,12 +46,16 @@ pub fn ranked_table(decks: &[(Deck, Analysis)], ranking: &[Ranked], target: &Tar
             Cell::new(format!("{:.0}%", a.structure.score * 100.0)).fg(tc(view::score_color(a.structure.score))),
             Cell::new(a.synergy.as_ref().map(|s| format!("{:.1}%", s.average * 100.0)).unwrap_or("–".into()))
                 .fg(tc(view::score_color(r.scores.synergy))),
-            dim(Cell::new(deck.meta.price.map(|p| format!("${p:.0}")).unwrap_or("–".into()))),
-            dim(Cell::new(if deck.meta.tags.is_empty() { "–".into() } else { deck.meta.tags.join(", ") })),
-            dim(Cell::new(deck.meta.edhrec_url.clone().unwrap_or_default())),
-        ]);
+        ];
+        if show_price {
+            row.push(dim(Cell::new(deck.meta.price.map(|p| format!("${p:.0}")).unwrap_or("–".into()))));
+        }
+        row.push(dim(Cell::new(if deck.meta.tags.is_empty() { "–".into() } else { deck.meta.tags.join(", ") })));
+        row.push(dim(Cell::new(deck.meta.edhrec_url.clone().unwrap_or_default())));
+        t.add_row(row);
     }
-    for i in [0usize, 1, 3, 4, 5, 6] {
+    let numeric: &[usize] = if show_price { &[0, 1, 3, 4, 5, 6] } else { &[0, 1, 3, 4, 5] };
+    for &i in numeric {
         if let Some(col) = t.column_mut(i) {
             col.set_cell_alignment(CellAlignment::Right);
         }

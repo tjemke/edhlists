@@ -115,6 +115,10 @@ struct OutputArgs {
     /// Decklist file format for exports.
     #[arg(long, value_enum, default_value_t = ExportFormat::Plain)]
     format: ExportFormat,
+    /// Show EDHREC's deck prices, and let price help pick which decks to fetch. Off by default:
+    /// a deck's price is usually one or two cards and says little about how it plays.
+    #[arg(long)]
+    price: bool,
 }
 
 #[derive(Args)]
@@ -129,6 +133,9 @@ struct CheckArgs {
     /// Print instead of opening the interactive browser.
     #[arg(long)]
     plain: bool,
+    /// Show EDHREC's deck price.
+    #[arg(long)]
+    price: bool,
 }
 
 #[derive(Args)]
@@ -217,6 +224,7 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, args: ScoutArgs) -> Result<()> {
             brackets: target.brackets,
             declared_only: args.declared_only,
             max_price: args.max_price,
+            price_ceiling: args.output.price,
             max_salt: args.max_salt,
             tags: args.tags.clone(),
             since,
@@ -226,10 +234,10 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, args: ScoutArgs) -> Result<()> {
     let store = DeckStore::new(paths.decks());
     let Prepared { decks, sources, stats, to_fetch } = prepare(http, &store, &opts)?;
     if let Some(c) = stats.ceiling {
+        let price = if args.output.price { format!(" / ${:.0}", c.price) } else { String::new() };
         eprintln!(
-            "  decks capped at salt {:.0} / ${:.0} (90th percentile of {} decks declared {})",
+            "  decks capped at salt {:.0}{price} (90th percentile of {} decks declared {})",
             c.salt,
-            c.price,
             c.from_decks,
             target.describe().split(" · ").next().unwrap_or("")
         );
@@ -261,6 +269,7 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, args: ScoutArgs) -> Result<()> {
             export_dir,
             format: args.output.format,
             report_top: args.output.top,
+            show_price: args.output.price,
         };
         let mut app = tui::App::new(settings, pool, fetcher, Some(http));
         tui::run(&mut app)?;
@@ -282,7 +291,7 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, args: ScoutArgs) -> Result<()> {
         }
         let refs: Vec<_> = pool.decks.iter().map(|(_, a)| a).collect();
         let ranking = rank(&refs, &target, args.rank, &weights);
-        println!("{}", plain::ranked_table(&pool.decks, &ranking, &target, args.output.top));
+        println!("{}", plain::ranked_table(&pool.decks, &ranking, &target, args.output.top, args.output.price));
         println!("{}", plain::legend(&target, args.rank));
         if args.output.export.is_some() {
             let input = ReportInput {
@@ -293,6 +302,7 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, args: ScoutArgs) -> Result<()> {
                 ranking: &ranking,
                 limit: args.output.top,
                 format: args.output.format,
+                show_price: args.output.price,
             };
             let path = export::write_report(&export_dir, &input)?;
             eprintln!("wrote {} and the top {} decklists", path.display(), args.output.top.min(ranking.len()));
@@ -324,12 +334,13 @@ fn run_check(http: &Http, paths: &Paths, args: CheckArgs) -> Result<()> {
             export_dir: PathBuf::from("."),
             format: ExportFormat::Plain,
             report_top: 1,
+            show_price: args.price,
         };
         tui::run(&mut tui::App::new(settings, pool, None, None))?;
     } else {
         let (deck, a) = &pool.decks[0];
         let fits = target.fits(a);
-        println!("{}", view::to_ansi(&view::detail_lines(deck, a, &target, None), color()));
+        println!("{}", view::to_ansi(&view::detail_lines(deck, a, &target, None, args.price), color()));
         println!("{} target {}", if fits { "✓ fits" } else { "✗ outside" }, target.describe());
         println!("EDHPowerLevel: {}", edhpl::edhpowerlevel_url(&deck.sectioned_lines()));
     }

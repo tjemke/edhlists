@@ -91,7 +91,13 @@ fn pct(x: f64) -> String {
 }
 
 /// The detail pane for one deck.
-pub fn detail_lines(deck: &Deck, a: &Analysis, target: &Target, ranked: Option<&Ranked>) -> Vec<Line<'static>> {
+pub fn detail_lines(
+    deck: &Deck,
+    a: &Analysis,
+    target: &Target,
+    ranked: Option<&Ranked>,
+    show_price: bool,
+) -> Vec<Line<'static>> {
     let mut out: Vec<Line<'static>> = Vec::new();
     let themes = if deck.meta.tags.is_empty() { "no themes tagged".to_string() } else { deck.meta.tags.join(" · ") };
     out.push(Line::from(vec![Span::styled(themes, Style::new().bold())]));
@@ -222,8 +228,12 @@ pub fn detail_lines(deck: &Deck, a: &Analysis, target: &Target, ranked: Option<&
         }
     }
     out.push(Line::default());
-    let price = deck.meta.price.map(|p| format!("${p:.0}")).unwrap_or_else(|| "–".into());
-    out.push(Line::from(vec![label("Price"), Span::raw(format!("{price} · {} cards", a.card_count))]));
+    if show_price {
+        let price = deck.meta.price.map(|p| format!("${p:.0}")).unwrap_or_else(|| "–".into());
+        out.push(Line::from(vec![label("Price"), Span::raw(format!("{price} · {} cards", a.card_count))]));
+    } else {
+        out.push(Line::from(vec![label("Cards"), Span::raw(a.card_count.to_string())]));
+    }
     if !a.unknown.is_empty() {
         out.push(Line::from(vec![
             label("Unknown"),

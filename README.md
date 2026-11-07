@@ -8,16 +8,16 @@ browse, compare and export the best fits — e.g. to print proxies.
 
 ```
 $ edh-scout scout "Jodah, the Unifier" --plain
-╭───┬───────┬─────────┬──────┬───────────┬─────────┬───────┬─────────────────────────────────────────────────────────────────────────╮
-│ # ┆ Power ┆ Bracket ┆ Salt ┆ Structure ┆ Synergy ┆ Price ┆ Themes                                                                  │
-╞═══╪═══════╪═════════╪══════╪═══════════╪═════════╪═══════╪═════════════════════════════════════════════════════════════════════════╡
-│ 1 ┆   6.2 ┆ B3      ┆   50 ┆       83% ┆    1.8% ┆  $259 ┆ Enchantress, Unnatural, Lands Matter, Cascade, Legends, Ramp, Artifacts │
-│ 2 ┆   6.1 ┆ B2      ┆   47 ┆      100% ┆    5.5% ┆  $222 ┆ Time Lords, Anthems, Legends                                            │
-│ 3 ┆   6.1 ┆ B3      ┆   52 ┆       91% ┆    2.2% ┆  $171 ┆ Commander Matters, +1/+1 Counters, Modified Creatures, Humans           │
-│ 4 ┆   6.3 ┆ B2      ┆   52 ┆      100% ┆    6.7% ┆  $202 ┆ Legends                                                                 │
-│ 5 ┆   6.0 ┆ B3      ┆   51 ┆       96% ┆    2.3% ┆  $360 ┆ Legends, Historic                                                       │
-│ 6 ┆   6.4 ┆ B2      ┆   51 ┆       94% ┆   16.2% ┆  $121 ┆ –                                                                       │
-╰───┴───────┴─────────┴──────┴───────────┴─────────┴───────┴─────────────────────────────────────────────────────────────────────────╯
+╭───┬───────┬─────────┬──────┬───────────┬─────────┬─────────────────────────────────────────────────────────────────────────╮
+│ # ┆ Power ┆ Bracket ┆ Salt ┆ Structure ┆ Synergy ┆ Themes                                                                  │
+╞═══╪═══════╪═════════╪══════╪═══════════╪═════════╪═════════════════════════════════════════════════════════════════════════╡
+│ 1 ┆   6.2 ┆ B3      ┆   50 ┆       83% ┆    1.8% ┆ Enchantress, Unnatural, Lands Matter, Cascade, Legends, Ramp, Artifacts │
+│ 2 ┆   6.1 ┆ B2      ┆   47 ┆      100% ┆    5.5% ┆ Time Lords, Anthems, Legends                                            │
+│ 3 ┆   6.1 ┆ B3      ┆   52 ┆       91% ┆    2.2% ┆ Commander Matters, +1/+1 Counters, Modified Creatures, Humans           │
+│ 4 ┆   6.3 ┆ B2      ┆   52 ┆      100% ┆    6.7% ┆ Legends                                                                 │
+│ 5 ┆   6.0 ┆ B3      ┆   51 ┆       96% ┆    2.3% ┆ Legends, Historic                                                       │
+│ 6 ┆   6.4 ┆ B2      ┆   51 ┆       94% ┆   16.2% ┆ –                                                                       │
+╰───┴───────┴─────────┴──────┴───────────┴─────────┴─────────────────────────────────────────────────────────────────────────╯
 ```
 
 Without `--plain` the same ranking opens in an interactive browser with a detail pane per deck
@@ -41,6 +41,7 @@ is cached.
 edh-scout scout "Jodah, the Unifier"                 # interactive browser, target brackets 2–3
 edh-scout scout tymna --partner kraum                # partners; partial names work
 edh-scout scout krenko -b 3 --max-price 300          # bracket 3 only, budget cap
+edh-scout scout krenko --price                       # also show EDHREC's deck prices
 edh-scout scout krenko -p 5.5-7                      # explicit EDHPowerLevel band instead
 edh-scout scout krenko --rank combined --weights power=0.4,salt=0.4,structure=0.2
 edh-scout scout krenko -t Tokens -t Goblins          # only decks EDHREC tagged with a theme
@@ -89,8 +90,9 @@ Press `r` in the browser to cycle.
 
 **Which decks get fetched.** EDHREC lists tens of thousands of decks for popular commanders with
 no quality signal, so the deck table (one request) is filtered first: incomplete lists, decks
-declared outside the target, and duplicates are dropped; a salt and price ceiling is calibrated
-from the decks whose owners declared a target bracket (their 90th percentile); the fetch budget
+declared outside the target, and duplicates are dropped; a salt ceiling is calibrated
+from the decks whose owners declared a target bracket (their 90th percentile; with `--price` a
+price ceiling too); the fetch budget
 (`-n`, default 60) is then spread across themes and salt/price tiers. Decks fetched earlier are
 reused for free, so repeated runs grow the pool.
 
