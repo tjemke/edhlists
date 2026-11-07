@@ -178,6 +178,14 @@ fn interactive(plain: bool) -> bool {
     !plain && std::io::stdout().is_terminal()
 }
 
+/// Columns to wrap plain output to: the terminal's, or none when stdout is piped.
+fn terminal_width() -> Option<usize> {
+    if !std::io::stdout().is_terminal() {
+        return None;
+    }
+    ratatui::crossterm::terminal::size().ok().map(|(w, _)| w as usize)
+}
+
 fn color() -> bool {
     std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
 }
@@ -451,7 +459,11 @@ fn run_check(http: &Http, paths: &Paths, args: CheckArgs) -> Result<()> {
     } else {
         let (deck, a) = &pool.decks[0];
         let fits = target.fits(a);
-        println!("{}", view::to_ansi(&view::detail_lines(deck, a, &target, None, args.price), color()));
+        let mut lines = view::detail_lines(deck, a, &target, None, args.price);
+        if let Some(width) = terminal_width() {
+            lines = view::wrap_lines(lines, width);
+        }
+        println!("{}", view::to_ansi(&lines, color()));
         println!("{} target {}", if fits { "✓ fits" } else { "✗ outside" }, target.describe());
         println!("EDHPowerLevel: {}", edhpl::edhpowerlevel_url(&deck.sectioned_lines()));
     }

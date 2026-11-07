@@ -41,8 +41,13 @@ pub fn score_color(x: f64) -> Color {
     }
 }
 
+/// Width of the field-label column; values start right after it.
+const LABEL_WIDTH: usize = 11;
+/// Marks the start of each entry in a multi-entry field, so wrapped entries stay apart.
+const BULLET: &str = "• ";
+
 fn label(s: &str) -> Span<'static> {
-    Span::styled(format!("{s:<11}"), Style::new().fg(DIM))
+    Span::styled(format!("{s:<LABEL_WIDTH$}"), Style::new().fg(DIM))
 }
 
 /// A 0-10 power bar, with the target band highlighted.
@@ -217,7 +222,7 @@ pub fn detail_lines(
     if !a.combos.is_empty() {
         out.push(Line::from(vec![label("Combos"), Span::raw(format!("{} known", a.combos.len()))]));
         for c in a.combos.iter().take(6) {
-            let mut l = vec![label(""), Span::raw(c.cards.join(" + "))];
+            let mut l = vec![label(""), Span::styled(BULLET, Style::new().fg(DIM)), Span::raw(c.cards.join(" + "))];
             l.push(Span::styled(format!(" → {}", c.results.join("; ")), Style::new().fg(DIM)));
             let tag = match &c.vote {
                 Some(v) => format!(" [{} · voted B{v}]", c.tag),
@@ -241,6 +246,108 @@ pub fn detail_lines(
         ]));
     }
     out
+}
+
+/// Word-wrap `lines` to `width` columns. Continuation lines of a labelled field start in the value
+/// column (past a leading bullet, if any) rather than back under the label.
+pub fn wrap_lines(lines: Vec<Line<'static>>, width: usize) -> Vec<Line<'static>> {
+    lines.into_iter().flat_map(|l| wrap_line(l, width)).collect()
+}
+
+fn hanging_indent(line: &Line) -> usize {
+    let mut spans = line.spans.iter();
+    let Some(first) = spans.next() else { return 0 };
+    if first.width() != LABEL_WIDTH || !first.content.ends_with(' ') {
+        return 0;
+    }
+    let bullet = spans.next().filter(|s| s.content.starts_with(BULLET)).map_or(0, |_| Span::raw(BULLET).width());
+    LABEL_WIDTH + bullet
+}
+
+fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
+    if width == 0 || line.width() <= width {
+        return vec![line];
+    }
+    // Keep at least half the width for text; on very narrow panes, fall back to no indent.
+    let indent = Some(hanging_indent(&line)).filter(|i| i * 2 <= width).unwrap_or(0);
+    let mut w = Wrapper { width, indent, style: line.style, out: Vec::new(), cur: Vec::new(), col: 0, start: 0 };
+    for span in &line.spans {
+        // Feed alternating runs of whitespace and non-whitespace.
+        let mut tok = String::new();
+        for ch in span.content.chars() {
+            if !tok.is_empty() && tok.ends_with(char::is_whitespace) != ch.is_whitespace() {
+                w.token(&std::mem::take(&mut tok), span.style);
+            }
+            tok.push(ch);
+        }
+        if !tok.is_empty() {
+            w.token(&tok, span.style);
+        }
+    }
+    w.out.push(Line::from(w.cur).style(w.style));
+    w.out
+}
+
+struct Wrapper {
+    width: usize,
+    indent: usize,
+    style: Style,
+    out: Vec<Line<'static>>,
+    cur: Vec<Span<'static>>,
+    /// Current column, and the column where text on the current line begins.
+    col: usize,
+    start: usize,
+}
+
+impl Wrapper {
+    fn token(&mut self, text: &str, style: Style) {
+        let w = Span::raw(text).width();
+        if text.starts_with(char::is_whitespace) {
+            if self.col + w > self.width {
+                self.newline();
+            } else if self.col > self.start || self.out.is_empty() {
+                self.push(text, style, w); // no leading spaces on continuation lines
+            }
+            return;
+        }
+        if self.col + w > self.width && self.col > self.start {
+            self.newline();
+        }
+        if self.col + w <= self.width {
+            self.push(text, style, w);
+            return;
+        }
+        // A word longer than a whole line: split it wherever it runs out of room.
+        for ch in text.chars() {
+            let mut buf = [0; 4];
+            let ch = &*ch.encode_utf8(&mut buf);
+            let cw = Span::raw(ch).width();
+            if self.col + cw > self.width && self.col > self.start {
+                self.newline();
+            }
+            self.push(ch, style, cw);
+        }
+    }
+
+    fn push(&mut self, text: &str, style: Style, w: usize) {
+        match self.cur.last_mut() {
+            Some(last) if last.style == style => last.content.to_mut().push_str(text),
+            _ => self.cur.push(Span::styled(text.to_string(), style)),
+        }
+        self.col += w;
+    }
+
+    fn newline(&mut self) {
+        if let Some(last) = self.cur.last_mut() {
+            let trimmed = last.content.trim_end().to_string();
+            last.content = trimmed.into();
+        }
+        self.out.push(Line::from(std::mem::take(&mut self.cur)).style(self.style));
+        if self.indent > 0 {
+            self.cur.push(Span::raw(" ".repeat(self.indent)));
+        }
+        (self.col, self.start) = (self.indent, self.indent);
+    }
 }
 
 /// The deck grouped by primary card type, commanders first.
@@ -310,4 +417,51 @@ pub fn to_ansi(lines: &[Line], color: bool) -> String {
         out.push('\n');
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text(lines: &[Line]) -> Vec<String> {
+        lines.iter().map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect()).collect()
+    }
+
+    #[test]
+    fn wrapped_fields_continue_in_the_value_column() {
+        let line =
+            Line::from(vec![label("Synergy"), Span::raw("Brainstorm +51%, Proteus Staff +51%, Serra's Emissary +41%")]);
+        assert_eq!(
+            text(&wrap_lines(vec![line], 40)),
+            ["Synergy    Brainstorm +51%, Proteus", "           Staff +51%, Serra's Emissary", "           +41%"]
+        );
+    }
+
+    #[test]
+    fn wrapped_bullets_continue_past_the_bullet() {
+        let line = Line::from(vec![
+            label(""),
+            Span::styled(BULLET, Style::new().fg(DIM)),
+            Span::raw("Jace, Cunning Castaway + Ichormoon Gauntlet"),
+            Span::styled(" → Infinite creature tokens", Style::new().fg(DIM)),
+        ]);
+        assert_eq!(
+            text(&wrap_lines(vec![line], 40)),
+            [
+                "           • Jace, Cunning Castaway +",
+                "             Ichormoon Gauntlet →",
+                "             Infinite creature tokens",
+            ]
+        );
+    }
+
+    #[test]
+    fn unlabelled_and_short_lines_are_left_alone() {
+        let short = Line::from(vec![label("Cards"), Span::raw("100")]);
+        let header = Line::from("Artifacts · Planeswalkers · Wheels");
+        assert_eq!(
+            text(&wrap_lines(vec![short, header], 20)),
+            ["Cards      100", "Artifacts ·", "Planeswalkers ·", "Wheels"]
+        );
+    }
 }

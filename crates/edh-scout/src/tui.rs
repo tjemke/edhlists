@@ -20,7 +20,7 @@ use crate::analysis::Analysis;
 use crate::export::{self, ExportFormat, ReportInput};
 use crate::rank::{RankMode, Ranked, Target, Weights, rank};
 use crate::scout::{FetchEvent, Fetcher, Pool};
-use crate::view::{ACCENT, BAD, DIM, GOOD, OK, detail_lines, grouped_list, power_color, score_color};
+use crate::view::{ACCENT, BAD, DIM, GOOD, OK, detail_lines, grouped_list, power_color, score_color, wrap_lines};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Pane {
@@ -382,8 +382,8 @@ impl<'a> App<'a> {
         let (_, r) = self.selected().expect("selected");
         let (deck, a) = &self.pool.decks[r.index];
         let lines = detail_lines(deck, a, &self.settings.target, Some(&r), self.settings.show_price);
+        let lines = wrap_lines(lines, area.width.saturating_sub(2) as usize);
         let p = Paragraph::new(lines)
-            .wrap(Wrap { trim: false })
             .scroll((self.scroll, 0))
             .block(Block::bordered().title(title.bold()).title_bottom(Line::from(" ⏎ decklist ").right_aligned()));
         frame.render_widget(p, area);
