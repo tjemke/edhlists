@@ -101,7 +101,17 @@ reused for free, so repeated runs grow the pool.
 Requests are strictly sequential with a per-host minimum gap (2 s for EDHREC deck pages, 1 s for
 EDHREC JSON, 150 ms for Scryfall), `Retry-After` is honoured, and a host that rate-limits twice is
 left alone for the rest of the run. Every run ends with a count of the requests it made. `--offline`
-never touches the network. Everything lives in `$XDG_CACHE_HOME/edh-scout` (`--cache-dir` to move it).
+never touches the network.
+
+Where things live (XDG):
+
+| Path | Contents | If deleted |
+|---|---|---|
+| `$XDG_CACHE_HOME/edh-scout` (`~/.cache/…`) | bulk downloads, the card/combo databases built from them, EDHREC pages that expire anyway | re-downloaded by the next `sync` / run |
+| `$XDG_STATE_HOME/edh-scout/decks` (`~/.local/state/…`) | every fetched decklist, as `<urlhash>.html` | each deck costs a request again |
+
+Override with `--cache-dir` / `--state-dir` (or `EDH_SCOUT_CACHE` / `EDH_SCOUT_STATE`). On macOS and
+Windows the platform's cache and local app-data directories are used instead.
 
 A first `scout` for a commander costs about 64 requests (≈2 minutes at the default pace); running it
 again within a day costs none.

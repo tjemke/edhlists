@@ -42,21 +42,41 @@ pub fn user_agent() -> String {
 }
 
 /// Where everything we download lives. Data on disk is cheap; requests are not.
+///
+/// * `root` (`$XDG_CACHE_HOME/edh-scout`): things that can be re-downloaded cheaply — bulk files,
+///   the databases built from them, and EDHREC pages that expire anyway.
+/// * `state` (`$XDG_STATE_HOME/edh-scout`): fetched decklists. They never change, and losing them
+///   would cost one request per deck to get back, so they shouldn't vanish with a cache cleanup.
 #[derive(Clone, Debug)]
 pub struct Paths {
     pub root: PathBuf,
+    pub state: PathBuf,
 }
 
 impl Paths {
-    pub fn new(override_dir: Option<PathBuf>) -> Result<Self> {
-        let root = match override_dir.or_else(|| std::env::var_os("EDH_SCOUT_CACHE").map(PathBuf::from)) {
+    pub fn new(cache_dir: Option<PathBuf>, state_dir: Option<PathBuf>) -> Result<Self> {
+        let env = |var: &str| std::env::var_os(var).map(PathBuf::from);
+        let dirs = || directories::ProjectDirs::from("", "", "edh-scout");
+        let root = match cache_dir.or_else(|| env("EDH_SCOUT_CACHE")) {
             Some(p) => p,
-            None => directories::ProjectDirs::from("", "", "edh-scout")
-                .context("could not determine a cache directory; pass --cache-dir")?
-                .cache_dir()
-                .to_path_buf(),
+            None => {
+                dirs().context("could not determine a cache directory; pass --cache-dir")?.cache_dir().to_path_buf()
+            }
         };
-        Ok(Self { root })
+        let state = match state_dir.or_else(|| env("EDH_SCOUT_STATE")) {
+            Some(p) => p,
+            None => {
+                let d = dirs().context("could not determine a state directory; pass --state-dir")?;
+                // XDG_STATE_HOME on Linux; platforms without one use their local app-data dir.
+                d.state_dir().unwrap_or_else(|| d.data_local_dir()).to_path_buf()
+            }
+        };
+        Ok(Self { root, state })
+    }
+
+    /// Fetched EDHREC decklists, one `<urlhash>.html` per deck.
+    pub fn decks(&self) -> PathBuf {
+        self.state.join("decks")
     }
 
     pub fn http(&self) -> PathBuf {

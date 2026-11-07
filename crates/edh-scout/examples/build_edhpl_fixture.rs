@@ -19,7 +19,7 @@ use edh_scout::analysis::{edhpl_card, edhpl_combo, included_combos, resolve};
 use serde_json::json;
 
 fn main() -> Result<()> {
-    let paths = Paths::new(None)?;
+    let paths = Paths::new(None, None)?;
     let http = Http::new(paths.http(), false);
     let (cards, combos) = ensure_databases(&http, &paths)?;
     let data = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../edhpl/tests/data");

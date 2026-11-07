@@ -8,6 +8,7 @@
 //!   bracket votes) and the top-salt list.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::LazyLock;
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -18,6 +19,7 @@ use serde_json::Value;
 use crate::config::{EDHREC_JSON, EDHREC_SITE, TTL_COMMANDER_PAGE, TTL_DECK_TABLE, TTL_SALT};
 use crate::deck::{Deck, DeckMeta};
 use crate::http::{Http, Ttl};
+use crate::storage::atomic_write;
 
 // --- deck table -----------------------------------------------------------------------------------
 
@@ -77,18 +79,44 @@ pub fn deck_url(urlhash: &str) -> String {
     format!("{EDHREC_SITE}/deckpreview/{urlhash}")
 }
 
-/// Cache key for a deck page. Decks are snapshots, so they are cached forever.
-pub fn deck_cache_key(urlhash: &str) -> String {
-    format!("edhrec:deckpreview:{urlhash}")
+/// The decklists we have fetched, kept as the raw deck pages (`<urlhash>.html`) so a parser fix
+/// never needs a refetch. Decks are snapshots: once stored, a deck never costs a request again.
+/// Lives in the XDG *state* dir (see [`crate::config::Paths`]) so cache cleanups don't eat it.
+pub struct DeckStore {
+    dir: PathBuf,
 }
 
-pub fn deck_is_cached(http: &Http, urlhash: &str) -> bool {
-    http.is_cached(&deck_cache_key(urlhash))
-}
+impl DeckStore {
+    pub fn new(dir: PathBuf) -> Self {
+        Self { dir }
+    }
 
-pub fn fetch_deck(http: &Http, urlhash: &str) -> Result<Deck> {
-    let html = http.cached_text(&deck_url(urlhash), Some(&deck_cache_key(urlhash)), Ttl::Forever)?;
-    parse_deck_page(&html, urlhash)
+    /// `None` for anything that isn't a plain EDHREC urlhash (so it can't escape the directory).
+    fn path(&self, urlhash: &str) -> Option<PathBuf> {
+        let ok = !urlhash.is_empty() && urlhash.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        ok.then(|| self.dir.join(format!("{urlhash}.html")))
+    }
+
+    pub fn contains(&self, urlhash: &str) -> bool {
+        self.path(urlhash).is_some_and(|p| p.exists())
+    }
+
+    /// The deck from disk, or fetched (one request) and stored.
+    pub fn fetch(&self, http: &Http, urlhash: &str) -> Result<Deck> {
+        let path = self.path(urlhash).ok_or_else(|| anyhow!("'{urlhash}' is not an EDHREC deck id"))?;
+        let html = match std::fs::read_to_string(&path) {
+            Ok(html) => html,
+            Err(_) => {
+                let bytes = http.get_bytes(&deck_url(urlhash))?;
+                let html = String::from_utf8(bytes).with_context(|| format!("non-UTF-8 deck page {urlhash}"))?;
+                // Parse before storing, so a page we can't read is never kept as "fetched".
+                let deck = parse_deck_page(&html, urlhash)?;
+                atomic_write(&path, html.as_bytes())?;
+                return Ok(deck);
+            }
+        };
+        parse_deck_page(&html, urlhash)
+    }
 }
 
 static RSC_PUSH: LazyLock<Regex> =
@@ -317,6 +345,24 @@ mod tests {
         let d = parse_deck_page(&read("deckpreview_partner.html"), "qqdG7wTXY32jPgVRdP-x5g").unwrap();
         assert_eq!(d.commanders, vec!["Kraum, Ludevic's Opus", "Tymna the Weaver"]);
         assert_eq!(d.card_count(), 100);
+    }
+
+    #[test]
+    fn deck_store_reads_from_disk_and_never_fetches_twice() {
+        let state = tempfile::tempdir().unwrap();
+        let store = DeckStore::new(state.path().join("decks"));
+        let offline = Http::new(state.path().join("http"), true);
+        let id = "8K2SZWMbz80NrhCJmt9DsA";
+        assert!(!store.contains(id));
+        let err = store.fetch(&offline, id).unwrap_err();
+        assert!(err.downcast_ref::<crate::http::OfflineMiss>().is_some());
+        atomic_write(&state.path().join("decks").join(format!("{id}.html")), read("deckpreview_jodah.html").as_bytes())
+            .unwrap();
+        assert!(store.contains(id));
+        assert_eq!(store.fetch(&offline, id).unwrap().commanders, vec!["Jodah, the Unifier"]);
+        assert!(offline.request_counts().is_empty());
+        assert!(store.fetch(&offline, "../etc/passwd").is_err());
+        assert!(!store.contains("../x"));
     }
 
     #[test]

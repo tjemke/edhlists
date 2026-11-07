@@ -8,7 +8,7 @@ use anyhow::Result;
 use edh_data::cards::CardDb;
 use edh_data::combos::ComboDb;
 use edh_data::deck::Deck;
-use edh_data::edhrec::{self, CommanderPage, EdhrecCombo};
+use edh_data::edhrec::{self, CommanderPage, DeckStore, EdhrecCombo};
 use edh_data::http::{HostBlocked, Http, OfflineMiss};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
@@ -92,9 +92,9 @@ fn progress_bar(len: usize) -> ProgressBar {
     pb
 }
 
-pub fn scout(http: &Http, cards: &CardDb, combos: &ComboDb, opts: &ScoutOptions) -> Result<Pool> {
+pub fn scout(http: &Http, store: &DeckStore, cards: &CardDb, combos: &ComboDb, opts: &ScoutOptions) -> Result<Pool> {
     let table = edhrec::deck_table(http, &opts.slug)?;
-    let sel = select(&table.table, &opts.select, |h| edhrec::deck_is_cached(http, h));
+    let sel = select(&table.table, &opts.select, |h| store.contains(h));
     let mut stats = PoolStats {
         listed: sel.total,
         eligible: sel.eligible,
@@ -106,7 +106,7 @@ pub fn scout(http: &Http, cards: &CardDb, combos: &ComboDb, opts: &ScoutOptions)
 
     let mut raw: Vec<(Deck, Option<u8>, f64, f64)> = Vec::new();
     for row in &sel.cached {
-        match edhrec::fetch_deck(http, &row.urlhash) {
+        match store.fetch(http, &row.urlhash) {
             Ok(d) => raw.push((d, row.bracket, row.price, row.salt)),
             Err(_) => stats.failed += 1,
         }
@@ -115,7 +115,7 @@ pub fn scout(http: &Http, cards: &CardDb, combos: &ComboDb, opts: &ScoutOptions)
         let pb = progress_bar(sel.to_fetch.len());
         for row in &sel.to_fetch {
             pb.set_message(row.urlhash.clone());
-            match edhrec::fetch_deck(http, &row.urlhash) {
+            match store.fetch(http, &row.urlhash) {
                 Ok(d) => {
                     stats.fetched += 1;
                     raw.push((d, row.bracket, row.price, row.salt));

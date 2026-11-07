@@ -6,6 +6,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use edh_data::config::Paths;
 use edh_data::deck::parse_decklist;
+use edh_data::edhrec::DeckStore;
 use edh_data::http::{Http, OfflineMiss, summarize_counts};
 use edh_data::sync::{SyncWhat, ensure_databases, sync};
 use edh_data::text::{commander_slug, date_days_ago};
@@ -29,6 +30,9 @@ struct Cli {
     /// Where downloads and the cache live [default: $XDG_CACHE_HOME/edh-scout].
     #[arg(long, global = true, value_name = "DIR")]
     cache_dir: Option<PathBuf>,
+    /// Where fetched decklists are kept [default: $XDG_STATE_HOME/edh-scout].
+    #[arg(long, global = true, value_name = "DIR")]
+    state_dir: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
@@ -193,7 +197,8 @@ fn run_scout(http: &Http, paths: &Paths, args: ScoutArgs) -> Result<()> {
             budget: args.fetch,
         },
     };
-    let pool = scout(http, &cards, &combos, &opts)?;
+    let store = DeckStore::new(paths.decks());
+    let pool = scout(http, &store, &cards, &combos, &opts)?;
     let s = &pool.stats;
     let mut summary = format!("{} on EDHREC, {} eligible", s.listed, s.eligible);
     if s.cached > 0 {
@@ -305,7 +310,7 @@ fn run_check(http: &Http, paths: &Paths, args: CheckArgs) -> Result<()> {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = (|| -> Result<()> {
-        let paths = Paths::new(cli.cache_dir.clone())?;
+        let paths = Paths::new(cli.cache_dir.clone(), cli.state_dir.clone())?;
         let http = Http::new(paths.http(), cli.offline);
         match cli.command {
             Command::Scout(args) => run_scout(&http, &paths, args),
@@ -317,7 +322,12 @@ fn main() -> ExitCode {
                     &paths,
                     SyncWhat { cards: both || args.cards, combos: both || args.combos, use_existing_raw: args.rebuild },
                 )?;
-                eprintln!("{} · data in {}", summarize_counts(&http.request_counts()), paths.root.display());
+                eprintln!(
+                    "{} · cache in {} · decks in {}",
+                    summarize_counts(&http.request_counts()),
+                    paths.root.display(),
+                    paths.decks().display()
+                );
                 Ok(())
             }
         }
