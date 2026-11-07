@@ -171,26 +171,36 @@ impl CardDb {
         self.get(name).map(|c| c.name.as_str())
     }
 
-    /// Resolve a user-typed commander: exact name first, then a unique (or prefix-unique) match.
-    pub fn find_commander(&self, query: &str) -> std::result::Result<&Card, Vec<String>> {
-        if let Some(c) = self.get(query) {
+    /// Every card that can lead a deck (legendary creatures, backgrounds, "can be your commander"),
+    /// most popular first.
+    pub fn commanders(&self) -> Vec<&Card> {
+        let mut v: Vec<&Card> = self.cards.iter().filter(|c| c.can_be_commander() && !c.banned).collect();
+        v.sort_by(|a, b| a.rank.unwrap_or(u32::MAX).cmp(&b.rank.unwrap_or(u32::MAX)).then(a.name.cmp(&b.name)));
+        v
+    }
+
+    /// Commanders whose name contains every word of `query` (case, accents and punctuation
+    /// ignored), most popular first.
+    pub fn commander_candidates(&self, query: &str) -> Vec<&Card> {
+        let terms = search_terms(query);
+        self.commanders().into_iter().filter(|c| matches_terms(&search_key(&c.name), &terms)).collect()
+    }
+
+    /// Resolve a user-typed commander: an exact name, else the single candidate (or the single one
+    /// whose name starts with the query). `Err` carries every candidate, possibly none.
+    pub fn find_commander(&self, query: &str) -> std::result::Result<&Card, Vec<&Card>> {
+        if let Some(c) = self.get(query).filter(|c| c.can_be_commander()) {
             return Ok(c);
         }
-        let q = fold(query);
-        let mut hits: Vec<&Card> =
-            self.cards.iter().filter(|c| c.can_be_commander() && fold(&c.name).contains(&q)).collect();
-        if hits.len() > 1 {
-            let prefix: Vec<&Card> = hits.iter().copied().filter(|c| fold(&c.name).starts_with(&q)).collect();
-            if prefix.len() == 1 {
-                hits = prefix;
-            }
+        let hits = self.commander_candidates(query);
+        if hits.len() == 1 {
+            return Ok(hits[0]);
         }
-        match hits.len() {
-            1 => Ok(hits[0]),
-            _ => {
-                hits.sort_by_key(|c| c.rank.unwrap_or(u32::MAX));
-                Err(hits.iter().take(12).map(|c| c.name.clone()).collect())
-            }
+        let q = search_key(query);
+        let prefix: Vec<&Card> = hits.iter().copied().filter(|c| search_key(&c.name).starts_with(q.trim())).collect();
+        match prefix.as_slice() {
+            [one] if !q.trim().is_empty() => Ok(one),
+            _ => Err(hits),
         }
     }
 
@@ -375,6 +385,21 @@ pub fn build_from_bulk(path: &Path, tags: Option<&RoleTags>) -> Result<CardDb> {
     Ok(CardDb::new(cards))
 }
 
+/// A name folded for searching: lowercase ASCII, apostrophes dropped, other punctuation as spaces
+/// ("Kraum, Ludevic's Opus" -> "kraum  ludevics opus").
+pub fn search_key(name: &str) -> String {
+    fold(name).chars().filter(|c| *c != '\'').map(|c| if c.is_ascii_alphanumeric() { c } else { ' ' }).collect()
+}
+
+pub fn search_terms(query: &str) -> Vec<String> {
+    search_key(query).split_whitespace().map(String::from).collect()
+}
+
+/// Does `key` (a [`search_key`]) contain every term?
+pub fn matches_terms(key: &str, terms: &[String]) -> bool {
+    terms.iter().all(|t| key.contains(t.as_str()))
+}
+
 /// Names a decklist line might use for this card.
 pub fn display_name(card: &Card) -> &str {
     front_face(&card.name)
@@ -413,5 +438,24 @@ mod tests {
         assert_eq!(db.find_commander("jodah, the unifier").unwrap().name, "Jodah, the Unifier");
         assert_eq!(db.find_commander("unifier").unwrap().name, "Jodah, the Unifier");
         assert_eq!(db.find_commander("jodah").unwrap_err().len(), 2);
+        assert!(db.find_commander("zzz").unwrap_err().is_empty());
+    }
+
+    #[test]
+    fn candidate_search_ignores_order_punctuation_and_case() {
+        let mut kraum = card("Kraum, Ludevic's Opus", &[]);
+        kraum.rank = Some(900);
+        let mut violent = card("Kraum, Violent Cacophony", &[]);
+        violent.rank = Some(5000);
+        let mut not_cmdr = card("Kraum's Ally", &[]);
+        not_cmdr.type_line = "Creature — Zombie".into();
+        let db = CardDb::new(vec![violent, kraum, not_cmdr]);
+        let names = |q: &str| db.commander_candidates(q).iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+        assert_eq!(names("kraum"), vec!["Kraum, Ludevic's Opus", "Kraum, Violent Cacophony"]); // by popularity
+        assert_eq!(names("opus kraum"), vec!["Kraum, Ludevic's Opus"]);
+        assert_eq!(names("LUDEVICS"), vec!["Kraum, Ludevic's Opus"]);
+        assert_eq!(names("kraum, lud"), vec!["Kraum, Ludevic's Opus"]);
+        assert_eq!(db.find_commander("kraum lud").unwrap().name, "Kraum, Ludevic's Opus");
+        assert_eq!(search_key("Kraum, Ludevic's Opus"), "kraum  ludevics opus");
     }
 }

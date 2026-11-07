@@ -39,7 +39,7 @@ is cached.
 
 ```sh
 edh-scout scout "Jodah, the Unifier"                 # interactive browser, target brackets 2–3
-edh-scout scout tymna --partner "kraum, lud"         # partners; partial names work if unambiguous
+edh-scout scout tymna --partner kraum                # partners; partial names work
 edh-scout scout krenko -b 3 --max-price 300          # bracket 3 only, budget cap
 edh-scout scout krenko -p 5.5-7                      # explicit EDHPowerLevel band instead
 edh-scout scout krenko --rank combined --weights power=0.4,salt=0.4,structure=0.2
@@ -48,6 +48,11 @@ edh-scout scout krenko --plain --top 15 --export out # table on stdout + report.
 edh-scout check mydeck.txt                           # score a local list (any common export format)
 edh-scout sync                                       # refresh prices / Game Changers / combos
 ```
+
+Names are matched loosely (any order, case, accents and punctuation ignored: `kraum lud`, `ludevics`).
+If several commanders match, or none do, a picker opens below the prompt, prefilled with what you
+typed: keep typing to narrow it, `↑↓` and `⏎` to choose (each row shows color identity and EDHREC
+rank to tell look-alikes apart). Without a terminal you get the list of matches instead.
 
 In the browser: `↑↓` move · `⏎` decklist/details · `J/K` scroll · `r` cycle ranking ·
 `f` only decks in the target · `o`/`s`/`p` open on EDHREC / the source site / EDHPowerLevel ·

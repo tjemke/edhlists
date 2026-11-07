@@ -4,6 +4,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
+use edh_data::cards::CardDb;
 use edh_data::config::Paths;
 use edh_data::deck::parse_decklist;
 use edh_data::edhrec::DeckStore;
@@ -15,7 +16,7 @@ use edh_scout::export::{self, ExportFormat, ReportInput};
 use edh_scout::rank::{RankMode, Target, Weights, parse_range, rank};
 use edh_scout::scout::{ScoutOptions, load_sources, scout};
 use edh_scout::select::SelectOptions;
-use edh_scout::{plain, tui, view};
+use edh_scout::{picker, plain, tui, view};
 
 /// Find well-rounded, fun Commander decklists on EDHREC.
 ///
@@ -59,7 +60,7 @@ struct TargetArgs {
 
 #[derive(Args)]
 struct ScoutArgs {
-    /// Commander name (partial names work if unambiguous).
+    /// Commander name. Partial names work; if several commanders match you get to pick.
     commander: String,
     /// Second commander (partner, background, ...).
     #[arg(long)]
@@ -160,6 +161,35 @@ fn color() -> bool {
     std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
 }
 
+/// An exact or unambiguous name resolves directly; otherwise the user picks interactively (or, when
+/// there's no terminal to ask on, gets the candidates in the error).
+fn resolve_commander(cards: &CardDb, query: &str, role: &str) -> Result<String> {
+    let candidates = match cards.find_commander(query) {
+        Ok(c) => return Ok(c.name.clone()),
+        Err(candidates) => candidates,
+    };
+    if picker::can_pick() {
+        return match picker::pick(cards, role, query)? {
+            Some(c) => {
+                eprintln!("{role}: {}", c.name);
+                Ok(c.name.clone())
+            }
+            None => bail!("no {role} picked"),
+        };
+    }
+    if candidates.is_empty() {
+        bail!("no {role} matches '{query}'");
+    }
+    let names: Vec<&str> = candidates.iter().take(15).map(|c| c.name.as_str()).collect();
+    let more = candidates.len().saturating_sub(names.len());
+    bail!(
+        "'{query}' matches {} {role}s; run in a terminal to pick one, or be more specific:\n  {}{}",
+        candidates.len(),
+        names.join("\n  "),
+        if more > 0 { format!("\n  … and {more} more") } else { String::new() }
+    )
+}
+
 fn run_scout(http: &Http, paths: &Paths, args: ScoutArgs) -> Result<()> {
     let target = target_from(&args.target)?;
     let weights: Weights = args.weights.parse().context("--weights")?;
@@ -171,13 +201,9 @@ fn run_scout(http: &Http, paths: &Paths, args: ScoutArgs) -> Result<()> {
     };
     let (cards, combos) = ensure_databases(http, paths)?;
 
-    let mut commanders = Vec::new();
-    for q in std::iter::once(&args.commander).chain(args.partner.as_ref()) {
-        match cards.find_commander(q) {
-            Ok(c) => commanders.push(c.name.clone()),
-            Err(cands) if cands.is_empty() => bail!("no commander matches '{q}'"),
-            Err(cands) => bail!("'{q}' is ambiguous; did you mean one of:\n  {}", cands.join("\n  ")),
-        }
+    let mut commanders = vec![resolve_commander(&cards, &args.commander, "commander")?];
+    if let Some(p) = &args.partner {
+        commanders.push(resolve_commander(&cards, p, "partner")?);
     }
     let slug = args.slug.clone().unwrap_or_else(|| commander_slug(&commanders));
     let title = commanders.iter().map(|c| edh_data::text::front_face(c)).collect::<Vec<_>>().join(" + ");
