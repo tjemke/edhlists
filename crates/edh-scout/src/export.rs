@@ -75,7 +75,7 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
         md,
         "Target **{}**, ranked by **{}**. Generated {} by edh-scout {}.\n",
         input.target.describe(),
-        input.mode.label(),
+        input.mode.describe(),
         edh_data::text::today(),
         env!("CARGO_PKG_VERSION")
     )?;

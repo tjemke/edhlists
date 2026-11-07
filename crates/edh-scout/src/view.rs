@@ -120,6 +120,10 @@ pub fn detail_lines(
     let pc = power_color(target, a.power.level);
     let mut l = vec![label("Power"), Span::styled(format!("{:<5}", a.power.label()), Style::new().fg(pc).bold())];
     l.extend(power_bar(target, a.power.level, 30));
+    if let Some(r) = ranked {
+        l.push(Span::styled("   fit ", Style::new().fg(DIM)));
+        l.push(Span::styled(pct(r.scores.fit), Style::new().fg(score_color(r.scores.fit))));
+    }
     out.push(Line::from(l));
     let mut b = vec![
         label("Bracket"),

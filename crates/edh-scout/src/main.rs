@@ -85,10 +85,10 @@ struct ScoutArgs {
     #[command(flatten)]
     target: TargetArgs,
     /// How to rank decks.
-    #[arg(short, long, value_enum, default_value_t = RankMode::Power)]
+    #[arg(short, long, value_enum, default_value_t = RankMode::Fit)]
     rank: RankMode,
     /// Weights for --rank combined.
-    #[arg(long, default_value = "power=0.5,salt=0.2,structure=0.15,synergy=0.15")]
+    #[arg(long, default_value = "fit=0.5,salt=0.2,structure=0.15,synergy=0.15")]
     weights: String,
     /// New decklists to fetch this run (decks fetched before are reused for free).
     #[arg(short = 'n', long, default_value_t = 60, value_name = "N")]
@@ -447,7 +447,7 @@ fn run_check(http: &Http, paths: &Paths, args: CheckArgs) -> Result<()> {
         let settings = tui::Settings {
             title,
             target,
-            mode: RankMode::Power,
+            mode: RankMode::Fit,
             weights: Weights::default(),
             export_dir: PathBuf::from("."),
             format: ExportFormat::Plain,

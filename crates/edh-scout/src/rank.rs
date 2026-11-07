@@ -10,7 +10,9 @@ use edhpl::level_band;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub enum RankMode {
-    /// How squarely EDHPowerLevel's score sits in the target band (default).
+    /// How close EDHPowerLevel's score is to the middle of the target band (default).
+    Fit,
+    /// Highest EDHPowerLevel score first.
     Power,
     /// Weighted blend of power fit, salt, structure and synergy (see --weights).
     Combined,
@@ -23,17 +25,29 @@ pub enum RankMode {
 }
 
 impl RankMode {
-    pub const ALL: [RankMode; 5] =
-        [RankMode::Power, RankMode::Combined, RankMode::Salt, RankMode::Structure, RankMode::Synergy];
+    pub const ALL: [RankMode; 6] =
+        [RankMode::Fit, RankMode::Power, RankMode::Combined, RankMode::Salt, RankMode::Structure, RankMode::Synergy];
     pub fn next(self) -> Self {
         let i = Self::ALL.iter().position(|m| *m == self).unwrap_or(0);
         Self::ALL[(i + 1) % Self::ALL.len()]
     }
     pub fn label(self) -> &'static str {
         match self {
+            RankMode::Fit => "fit",
             RankMode::Power => "power",
             RankMode::Combined => "combined",
             RankMode::Salt => "salt",
+            RankMode::Structure => "structure",
+            RankMode::Synergy => "synergy",
+        }
+    }
+    /// What the ranking sorts by, for legends and reports.
+    pub fn describe(self) -> &'static str {
+        match self {
+            RankMode::Fit => "power fit (closest to the middle of the target band)",
+            RankMode::Power => "power (highest first)",
+            RankMode::Combined => "combined score",
+            RankMode::Salt => "salt (least salty first)",
             RankMode::Structure => "structure",
             RankMode::Synergy => "synergy",
         }
@@ -43,7 +57,7 @@ impl RankMode {
 /// Weights for `--rank combined`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Weights {
-    pub power: f64,
+    pub fit: f64,
     pub salt: f64,
     pub structure: f64,
     pub synergy: f64,
@@ -51,15 +65,15 @@ pub struct Weights {
 
 impl Default for Weights {
     fn default() -> Self {
-        Self { power: 0.5, salt: 0.2, structure: 0.15, synergy: 0.15 }
+        Self { fit: 0.5, salt: 0.2, structure: 0.15, synergy: 0.15 }
     }
 }
 
 impl FromStr for Weights {
     type Err = anyhow::Error;
-    /// "power=0.6,salt=0.4" — unnamed components become 0.
+    /// "fit=0.6,salt=0.4" — unnamed components become 0. "power" is accepted for "fit".
     fn from_str(s: &str) -> Result<Self> {
-        let mut w = Weights { power: 0.0, salt: 0.0, structure: 0.0, synergy: 0.0 };
+        let mut w = Weights { fit: 0.0, salt: 0.0, structure: 0.0, synergy: 0.0 };
         for part in s.split(',').map(str::trim).filter(|p| !p.is_empty()) {
             let Some((k, v)) = part.split_once('=') else { bail!("expected name=value, got '{part}'") };
             let v: f64 = v.trim().parse().map_err(|_| anyhow::anyhow!("'{v}' is not a number"))?;
@@ -67,14 +81,14 @@ impl FromStr for Weights {
                 bail!("weights must be non-negative");
             }
             match k.trim() {
-                "power" => w.power = v,
+                "fit" | "power" => w.fit = v,
                 "salt" => w.salt = v,
                 "structure" => w.structure = v,
                 "synergy" => w.synergy = v,
-                other => bail!("unknown weight '{other}' (use power, salt, structure, synergy)"),
+                other => bail!("unknown weight '{other}' (use fit, salt, structure, synergy)"),
             }
         }
-        if w.power + w.salt + w.structure + w.synergy <= 0.0 {
+        if w.fit + w.salt + w.structure + w.synergy <= 0.0 {
             bail!("at least one weight must be positive");
         }
         Ok(w)
@@ -83,7 +97,7 @@ impl FromStr for Weights {
 
 impl fmt::Display for Weights {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "power={} salt={} structure={} synergy={}", self.power, self.salt, self.structure, self.synergy)
+        write!(f, "fit={} salt={} structure={} synergy={}", self.fit, self.salt, self.structure, self.synergy)
     }
 }
 
@@ -148,7 +162,8 @@ impl Target {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Scores {
-    pub power: f64,
+    /// How close the power level is to the middle of the target band (see [`Target::power_fit`]).
+    pub fit: f64,
     pub salt: f64,
     pub structure: f64,
     pub synergy: f64,
@@ -183,23 +198,24 @@ pub fn rank(analyses: &[&Analysis], target: &Target, mode: RankMode, weights: &W
         .enumerate()
         .map(|(index, a)| {
             let scores = Scores {
-                power: target.power_fit(a.power.level),
+                fit: target.power_fit(a.power.level),
                 salt: a.salt.map(|s| 1.0 - percentile(&salts, s)).unwrap_or(0.5),
                 structure: a.structure.score,
                 synergy: a.synergy.as_ref().map(|s| percentile(&syns, s.average)).unwrap_or(0.5),
             };
             let key = match mode {
-                RankMode::Power => scores.power,
+                RankMode::Fit => scores.fit,
+                RankMode::Power => a.power.level,
                 RankMode::Salt => scores.salt,
                 RankMode::Structure => scores.structure,
                 RankMode::Synergy => scores.synergy,
                 RankMode::Combined => {
                     let w = weights;
-                    (w.power * scores.power
+                    (w.fit * scores.fit
                         + w.salt * scores.salt
                         + w.structure * scores.structure
                         + w.synergy * scores.synergy)
-                        / (w.power + w.salt + w.structure + w.synergy)
+                        / (w.fit + w.salt + w.structure + w.synergy)
                 }
             };
             Ranked { index, fits: target.fits(a), scores, key }
@@ -231,7 +247,8 @@ mod tests {
     #[test]
     fn weights_parse() {
         let w: Weights = "power=0.6, salt=0.4".parse().unwrap();
-        assert_eq!((w.power, w.salt, w.structure), (0.6, 0.4, 0.0));
+        assert_eq!((w.fit, w.salt, w.structure), (0.6, 0.4, 0.0));
+        assert_eq!("fit=1".parse::<Weights>().unwrap().fit, 1.0);
         assert!("power=x".parse::<Weights>().is_err());
         assert!("bogus=1".parse::<Weights>().is_err());
         assert!("power=0".parse::<Weights>().is_err());
@@ -259,9 +276,20 @@ mod tests {
         let b = analysis(7.5, 3, 50.0);
         let c = analysis(6.2, 3, 70.0);
         let t = Target::new((2, 3), None);
-        let r = rank(&[&a, &b, &c], &t, RankMode::Power, &Weights::default());
+        let r = rank(&[&a, &b, &c], &t, RankMode::Fit, &Weights::default());
         assert_eq!(r.iter().map(|x| x.index).collect::<Vec<_>>(), vec![2, 1, 0]);
         let r = rank(&[&a, &b, &c], &t, RankMode::Salt, &Weights::default());
         assert_eq!(r.iter().map(|x| x.index).collect::<Vec<_>>(), vec![1, 2, 0]);
+    }
+
+    #[test]
+    fn power_ranks_strongest_first_within_each_group() {
+        let a = analysis(5.0, 2, 50.0);
+        let b = analysis(8.5, 4, 50.0);
+        let c = analysis(7.5, 3, 50.0);
+        let d = analysis(9.5, 5, 50.0);
+        let t = Target::new((2, 3), None);
+        let r = rank(&[&a, &b, &c, &d], &t, RankMode::Power, &Weights::default());
+        assert_eq!(r.iter().map(|x| x.index).collect::<Vec<_>>(), vec![2, 0, 3, 1]);
     }
 }

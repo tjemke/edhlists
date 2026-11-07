@@ -47,7 +47,7 @@ edh-scout scout -T spells=30+ -b 3                   # spell-heavy decks at brac
 edh-scout scout -T creatures=..5                     # (nearly) creatureless decks
 edh-scout scout jodah -T planeswalkers=10+           # one commander's decks, narrowed by type
 edh-scout scout krenko -p 5.5-7                      # explicit EDHPowerLevel band instead
-edh-scout scout krenko --rank combined --weights power=0.4,salt=0.4,structure=0.2
+edh-scout scout krenko --rank combined --weights fit=0.4,salt=0.4,structure=0.2
 edh-scout scout krenko -t Tokens -t Goblins          # only decks EDHREC tagged with a theme
 edh-scout scout krenko --plain --top 15 --export out # table on stdout + report.md + decklists
 edh-scout check mydeck.txt                           # score a local list (any common export format)
@@ -102,10 +102,12 @@ its source page and a prefilled EDHPowerLevel check.
 4.7–7.7 using the site's own power→bracket curve, with no rule pushing it higher. `-p` sets an
 explicit power band instead.
 
-**Ranking.** `--rank power` (default) puts decks in the target first, then those whose power sits
-closest to the middle of the band. `combined` blends power fit, salt, structure and synergy with
-`--weights` (default `power=0.5,salt=0.2,structure=0.15,synergy=0.15`); `salt`, `structure` and
-`synergy` sort by one signal. Salt and synergy are scored relative to the decks being compared.
+**Ranking.** Every ranking puts decks in the target first, then the rest. `--rank fit` (default)
+sorts by how close the power level is to the middle of the band: 100% at the middle, 50% at the
+edges, 0% one point outside (shown as "fit" next to the power bar). `power` sorts by power level,
+highest first. `combined` blends fit, salt, structure and synergy with `--weights` (default
+`fit=0.5,salt=0.2,structure=0.15,synergy=0.15`); `salt`, `structure` and `synergy` sort by one
+signal. Salt and synergy are scored relative to the decks being compared.
 Press `r` in the browser to cycle.
 
 **Which decks get fetched.** EDHREC lists tens of thousands of decks for popular commanders with

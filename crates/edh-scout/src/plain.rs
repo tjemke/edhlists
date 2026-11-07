@@ -81,7 +81,7 @@ pub fn legend(target: &Target, mode: RankMode) -> String {
         "Ranked by {} · target {}. Power and bracket follow EDHPowerLevel; grey rows are outside the target. \
          Salt: EDHREC deck salt (lower is friendlier). Structure: closeness to a 36 land / 10 ramp / 10 draw / \
          8 removal / 2 wipe template. Synergy: average EDHREC synergy with the commander.",
-        mode.label(),
+        mode.describe(),
         target.describe()
     )
 }
