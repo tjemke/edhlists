@@ -5,6 +5,7 @@
 //! its commander. Data access lives in `edh-data`.
 
 pub mod analysis;
+pub mod config;
 pub mod export;
 pub mod filters;
 pub mod picker;

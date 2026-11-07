@@ -22,7 +22,7 @@ use edh_data::text::commander_slug;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
 use crate::analysis::{Analysis, Context, analyze};
-use crate::select::{Ceiling, SelectOptions, allocate_weighted, select};
+use crate::select::{Ceiling, SelectOptions, select, weighted_order};
 
 /// Per-commander side data: synergy and combo votes. Each piece is optional — a failure costs
 /// that signal, not the run.
@@ -118,6 +118,8 @@ pub struct Prepared {
     pub stats: PoolStats,
     /// Decks to fetch, in priority order (empty when offline).
     pub to_fetch: Vec<TableRow>,
+    /// The remaining eligible decks past the budget, continuing that order (empty when offline).
+    pub more: Vec<TableRow>,
 }
 
 /// Attach what the deck table knows to a fetched deck.
@@ -145,9 +147,13 @@ pub fn prepare(http: &Http, store: &DeckStore, opts: &ScoutOptions) -> Result<Pr
         }
     }
     stats.cached = decks.len();
-    let to_fetch: Vec<TableRow> = if http.offline() { Vec::new() } else { sel.to_fetch.into_iter().cloned().collect() };
+    let (to_fetch, more): (Vec<TableRow>, Vec<TableRow>) = if http.offline() {
+        Default::default()
+    } else {
+        (sel.to_fetch.into_iter().cloned().collect(), sel.more.into_iter().cloned().collect())
+    };
     stats.queued = to_fetch.len();
-    Ok(Prepared { decks, sources, stats, to_fetch })
+    Ok(Prepared { decks, sources, stats, to_fetch, more })
 }
 
 pub enum FetchEvent {
@@ -234,14 +240,16 @@ impl Fetcher {
     }
 
     /// Search across `candidates`: scan each one's deck table (stored decks show up right away),
-    /// then spend the fetch budget across the commanders with matching decks.
+    /// then spend the fetch budget across the commanders with matching decks. With `keep_going`,
+    /// carry on past the budget until every matching deck is fetched (or the fetcher is dropped).
     pub fn spawn_search(
         http: Arc<Http>,
         store: DeckStore,
         candidates: Vec<ListedCommander>,
         opts: SelectOptions,
+        keep_going: bool,
     ) -> Self {
-        Self::start(move |w| search(w, &http, &store, candidates, &opts))
+        Self::start(move |w| search(w, &http, &store, candidates, &opts, keep_going))
     }
 
     /// The next event if one is waiting.
@@ -261,7 +269,14 @@ impl Drop for Fetcher {
     }
 }
 
-fn search(w: &Worker, http: &Http, store: &DeckStore, candidates: Vec<ListedCommander>, opts: &SelectOptions) {
+fn search(
+    w: &Worker,
+    http: &Http,
+    store: &DeckStore,
+    candidates: Vec<ListedCommander>,
+    opts: &SelectOptions,
+    keep_going: bool,
+) {
     let mut with_sources: HashSet<String> = HashSet::new();
     let ensure_sources = |slug: &str, with_sources: &mut HashSet<String>| -> bool {
         if with_sources.insert(slug.to_string()) {
@@ -272,7 +287,7 @@ fn search(w: &Worker, http: &Http, store: &DeckStore, candidates: Vec<ListedComm
     };
 
     // Phase 1: scan every candidate's deck table; stored matches appear immediately.
-    let mut fresh: Vec<(String, f64, Vec<TableRow>)> = Vec::new();
+    let mut fresh: Vec<(String, f64, VecDeque<TableRow>)> = Vec::new();
     for c in &candidates {
         if w.stop.load(Ordering::Relaxed) {
             return;
@@ -310,30 +325,27 @@ fn search(w: &Worker, http: &Http, store: &DeckStore, candidates: Vec<ListedComm
         }
         let fresh_eligible = sel.eligible.saturating_sub(sel.cached.len());
         if !sel.to_fetch.is_empty() && !http.offline() {
-            fresh.push((c.slug.clone(), (fresh_eligible as f64).sqrt(), sel.to_fetch.into_iter().cloned().collect()));
+            let rows = sel.to_fetch.into_iter().chain(sel.more).cloned().collect();
+            fresh.push((c.slug.clone(), (fresh_eligible as f64).sqrt(), rows));
         }
     }
 
-    // Phase 2: share the budget out by how many matching decks each commander has, and fetch
-    // round-robin so every commander shows up early.
+    // Phase 2: share the budget out by how many matching decks each commander has, interleaving
+    // the commanders so every one shows up early. Past the budget, the same order continues.
     let weights: Vec<f64> = fresh.iter().map(|f| f.1).collect();
     let caps: Vec<usize> = fresh.iter().map(|f| f.2.len()).collect();
-    let quotas = allocate_weighted(&weights, &caps, opts.budget);
-    let mut queues: Vec<(String, VecDeque<TableRow>)> = fresh
-        .into_iter()
-        .zip(quotas)
-        .filter(|(_, q)| *q > 0)
-        .map(|((slug, _, rows), q)| (slug, rows.into_iter().take(q).collect()))
-        .collect();
-    if !w.send(FetchEvent::Queued(queues.iter().map(|q| q.1.len()).sum())) {
+    let mut order = weighted_order(&weights, &caps);
+    if !keep_going {
+        order.truncate(opts.budget);
+    }
+    if !w.send(FetchEvent::Queued(order.len())) {
         return;
     }
-    while queues.iter().any(|q| !q.1.is_empty()) {
-        for (slug, rows) in queues.iter_mut() {
-            let Some(row) = rows.pop_front() else { continue };
-            if !ensure_sources(slug, &mut with_sources) || !w.fetch(http, store, &row, &[]) {
-                return;
-            }
+    for i in order {
+        let (slug, _, rows) = &mut fresh[i];
+        let row = rows.pop_front().expect("weighted_order stays within each queue");
+        if !ensure_sources(slug, &mut with_sources) || !w.fetch(http, store, &row, &[]) {
+            return;
         }
     }
 }

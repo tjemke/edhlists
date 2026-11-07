@@ -81,6 +81,21 @@ In the browser: `↑↓` move · `⏎` decklist/details · `J/K` scroll · `r` c
 
 When stdout isn't a terminal (or with `--plain`) you get a table instead.
 
+Once the `-n` budget is fetched, the browser keeps fetching the remaining eligible decks, in the
+same order and at the same pace, until you quit (the header shows `fetching N/total`). Turn that
+off in the config file; plain output always stops at the budget.
+
+### Config file
+
+Optional, at `$XDG_CONFIG_HOME/edh-scout/config.toml` (`~/.config/…`; override with `--config` or
+`EDH_SCOUT_CONFIG`). Unknown keys are an error, so typos don't go unnoticed.
+
+```toml
+[tui]
+# Keep fetching eligible decks past the -n budget while the browser is open (default: true).
+keep_fetching = true
+```
+
 ### Exports (proxies)
 
 Decklists are written as plain `1 Card Name` lines, commander first, nothing else — the format
@@ -138,6 +153,7 @@ Where things live (XDG):
 |---|---|---|
 | `$XDG_CACHE_HOME/edh-scout` (`~/.cache/…`) | bulk downloads, the card/combo databases built from them, EDHREC pages that expire anyway | re-downloaded by the next `sync` / run |
 | `$XDG_STATE_HOME/edh-scout/decks` (`~/.local/state/…`) | every fetched decklist, as `<urlhash>.html` | each deck costs a request again |
+| `$XDG_CONFIG_HOME/edh-scout/config.toml` (`~/.config/…`) | optional settings, see [Config file](#config-file) | defaults apply |
 
 Override with `--cache-dir` / `--state-dir` (or `EDH_SCOUT_CACHE` / `EDH_SCOUT_STATE`). On macOS and
 Windows the platform's cache and local app-data directories are used instead.
@@ -145,7 +161,7 @@ Windows the platform's cache and local app-data directories are used instead.
 A first `scout` for a commander costs about 64 requests (≈2 minutes at the default pace), but you
 don't wait for them: the browser opens as soon as the deck table is in, with the decks already on
 disk, and new decks slot into the ranking as they arrive (the header shows the progress; quitting
-stops the fetching). Running it again within a day costs no requests at all.
+stops the fetching). Left open, it keeps fetching past the budget at one deck per 2 s. Running it again within a day costs no requests at all.
 
 ## Development
 

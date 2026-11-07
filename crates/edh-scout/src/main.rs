@@ -14,6 +14,7 @@ use edh_data::edhrec::{self, ListedCommander};
 use edh_data::http::{Http, OfflineMiss, summarize_counts};
 use edh_data::sync::{SyncWhat, ensure_databases, sync};
 use edh_data::text::{commander_slug, date_days_ago, front_face, slugify};
+use edh_scout::config::Config;
 use edh_scout::export::{self, ExportFormat, ReportInput};
 use edh_scout::filters::{self, TypeFilter};
 use edh_scout::rank::{RankMode, Target, Weights, parse_range, rank};
@@ -37,6 +38,9 @@ struct Cli {
     /// Where fetched decklists are kept [default: $XDG_STATE_HOME/edh-scout].
     #[arg(long, global = true, value_name = "DIR")]
     state_dir: Option<PathBuf>,
+    /// Config file [default: $XDG_CONFIG_HOME/edh-scout/config.toml, or $EDH_SCOUT_CONFIG].
+    #[arg(long, global = true, value_name = "FILE")]
+    config: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
@@ -229,8 +233,10 @@ struct Session<'a> {
     show_commander: bool,
 }
 
-fn run_scout(http: &Arc<Http>, paths: &Paths, args: ScoutArgs) -> Result<()> {
+fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) -> Result<()> {
     let target = target_from(&args.target)?;
+    // Only the browser keeps fetching past the budget: plain output waits for the fetcher.
+    let keep_fetching = config.tui.keep_fetching && interactive(args.output.plain) && !http.offline();
     let weights: Weights = args.weights.parse().context("--weights")?;
     let since = match &args.since {
         Some(s) if s.chars().all(|c| c.is_ascii_digit()) => Some(date_days_ago(s.parse()?)),
@@ -255,8 +261,8 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, args: ScoutArgs) -> Result<()> {
     let store = DeckStore::new(paths.decks());
     let salt = load_salt(http);
     let session = match &args.commander {
-        Some(name) => start_single(http, &store, &cards, &combos, salt, &args, name, &target, select)?,
-        None => start_search(http, &store, &cards, &combos, salt, &args, &types, &target, select)?,
+        Some(name) => start_single(http, &store, &cards, &combos, salt, &args, name, &target, select, keep_fetching)?,
+        None => start_search(http, &store, &cards, &combos, salt, &args, &types, &target, select, keep_fetching)?,
     };
     finish(http, session, &args, target, weights)
 }
@@ -274,6 +280,7 @@ fn start_single<'a>(
     name: &str,
     target: &Target,
     select: SelectOptions,
+    keep_fetching: bool,
 ) -> Result<Session<'a>> {
     let mut commanders = vec![resolve_commander(cards, name, "commander")?];
     if let Some(p) = &args.partner {
@@ -286,7 +293,7 @@ fn start_single<'a>(
     }
     eprintln!("scouting {title} (edhrec.com/commanders/{slug}) for {} ...", target.describe());
     let opts = ScoutOptions { commanders, slug: slug.clone(), select };
-    let Prepared { decks, sources, stats, to_fetch } = prepare(http, store, &opts)?;
+    let Prepared { decks, sources, mut stats, mut to_fetch, more } = prepare(http, store, &opts)?;
     if let Some(c) = stats.ceiling {
         let price = if args.output.price { format!(" / ${:.0}", c.price) } else { String::new() };
         eprintln!(
@@ -303,12 +310,21 @@ fn start_single<'a>(
             "no decks matched; loosen the filters"
         });
     }
+    let later = if keep_fetching && !more.is_empty() {
+        format!(", then {} more while the browser is open", more.len())
+    } else {
+        String::new()
+    };
     eprintln!(
-        "  {} stored deck(s) ready, {} to fetch in the background · {}",
+        "  {} stored deck(s) ready, {} to fetch in the background{later} · {}",
         decks.len(),
         to_fetch.len(),
         summarize_counts(&http.request_counts())
     );
+    if keep_fetching {
+        to_fetch.extend(more);
+        stats.queued = to_fetch.len();
+    }
     let fetcher = (!to_fetch.is_empty())
         .then(|| Fetcher::spawn(Arc::clone(http), store.clone(), to_fetch, opts.commanders.clone()));
     let mut pool = Pool::new(cards, combos, salt, stats);
@@ -332,6 +348,7 @@ fn start_search<'a>(
     types: &[TypeFilter],
     target: &Target,
     select: SelectOptions,
+    keep_fetching: bool,
 ) -> Result<Session<'a>> {
     let themes = filters::themes(types);
     let mut candidates: Vec<ListedCommander> = Vec::new();
@@ -359,7 +376,7 @@ fn start_search<'a>(
     );
     let stats = PoolStats { commanders_total: candidates.len(), ..Default::default() };
     let pool = Pool::new(cards, combos, salt, stats);
-    let fetcher = Fetcher::spawn_search(Arc::clone(http), store.clone(), candidates, select);
+    let fetcher = Fetcher::spawn_search(Arc::clone(http), store.clone(), candidates, select, keep_fetching);
     Ok(Session {
         title: format!("decks with {wanted}"),
         name: format!("search-{}", slugify(&wanted)),
@@ -476,7 +493,7 @@ fn main() -> ExitCode {
         let paths = Paths::new(cli.cache_dir.clone(), cli.state_dir.clone())?;
         let http = Arc::new(Http::new(paths.http(), cli.offline));
         match cli.command {
-            Command::Scout(args) => run_scout(&http, &paths, args),
+            Command::Scout(args) => run_scout(&http, &paths, &Config::load(cli.config.clone())?, args),
             Command::Check(args) => run_check(&http, &paths, args),
             Command::Sync(args) => {
                 let both = !args.cards && !args.combos;

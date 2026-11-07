@@ -9,6 +9,9 @@
 //! 3. drop exact duplicates (re-uploads of the same list);
 //! 4. include every already-cached deck for free, then spread the remaining budget across themes
 //!    and salt/price tiers so the pool isn't fifty copies of the same idea.
+//!
+//! The decks past the budget come out in the same order (any prefix of `to_fetch` + `more` is
+//! spread the same way), so a browser left open can keep fetching where the budget stopped.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -47,6 +50,8 @@ pub struct Ceiling {
 pub struct Selection<'a> {
     pub cached: Vec<&'a TableRow>,
     pub to_fetch: Vec<&'a TableRow>,
+    /// The other eligible decks that aren't stored yet, continuing `to_fetch`'s order.
+    pub more: Vec<&'a TableRow>,
     /// Decks that passed the filters (cached or not).
     pub eligible: usize,
     pub total: usize,
@@ -141,31 +146,33 @@ pub fn select<'a>(rows: &'a [TableRow], opts: &SelectOptions, is_cached: impl Fn
         themes.entry(theme).or_default().entry(tier).or_default().push(r);
     }
     let sizes: Vec<usize> = themes.values().map(|t| t.values().map(Vec::len).sum()).collect();
-    let quotas = allocate(&sizes, opts.budget);
+    let weights: Vec<f64> = sizes.iter().map(|&s| (s as f64).sqrt()).collect();
 
-    let mut to_fetch = Vec::with_capacity(opts.budget);
-    for (tiers, quota) in themes.into_values().zip(quotas) {
-        let mut queues: Vec<Vec<&TableRow>> = tiers
-            .into_values()
-            .map(|mut v| {
-                // Declared-in-target first, then most recent; we pop from the back.
-                v.sort_by(|a, b| a.bracket.is_some().cmp(&b.bracket.is_some()).then(a.savedate.cmp(&b.savedate)));
-                v
-            })
-            .collect();
-        let mut taken = 0;
-        while taken < quota && queues.iter().any(|q| !q.is_empty()) {
-            for q in queues.iter_mut() {
-                if taken < quota
-                    && let Some(r) = q.pop()
-                {
-                    to_fetch.push(r);
-                    taken += 1;
-                }
-            }
-        }
+    // Per theme: one queue per tier, taken round-robin.
+    let mut queues: Vec<(usize, Vec<Vec<&TableRow>>)> = themes
+        .into_values()
+        .map(|tiers| {
+            let tiers = tiers
+                .into_values()
+                .map(|mut v| {
+                    // Declared-in-target first, then most recent; we pop from the back.
+                    v.sort_by(|a, b| a.bracket.is_some().cmp(&b.bracket.is_some()).then(a.savedate.cmp(&b.savedate)));
+                    v
+                })
+                .collect();
+            (0, tiers)
+        })
+        .collect();
+    let mut to_fetch = Vec::with_capacity(sizes.iter().sum());
+    for theme in weighted_order(&weights, &sizes) {
+        let (next, tiers) = &mut queues[theme];
+        let n = tiers.len();
+        let tier = (0..n).map(|k| (*next + k) % n).find(|&t| !tiers[t].is_empty()).expect("theme has decks left");
+        to_fetch.extend(tiers[tier].pop());
+        *next = (tier + 1) % n;
     }
-    Selection { cached, to_fetch, eligible: eligible.len(), total: rows.len(), ceiling }
+    let more = to_fetch.split_off(opts.budget.min(to_fetch.len()));
+    Selection { cached, to_fetch, more, eligible: eligible.len(), total: rows.len(), ceiling }
 }
 
 /// Split `budget` across groups proportionally to the square root of their size (Sainte-Laguë
@@ -179,17 +186,27 @@ pub fn allocate(sizes: &[usize], budget: usize) -> Vec<usize> {
 /// [`allocate`] with explicit weights and capacities.
 pub fn allocate_weighted(weights: &[f64], caps: &[usize], budget: usize) -> Vec<usize> {
     let mut quotas = vec![0usize; caps.len()];
-    let priority = |i: usize, q: usize| weights[i] / (q as f64 + 0.5);
-    for _ in 0..budget {
-        let best = (0..caps.len())
-            .filter(|&i| quotas[i] < caps[i])
-            .max_by(|&a, &b| priority(a, quotas[a]).total_cmp(&priority(b, quotas[b])).then(b.cmp(&a)));
-        match best {
-            Some(i) => quotas[i] += 1,
-            None => break,
-        }
+    for i in weighted_order(weights, caps).into_iter().take(budget) {
+        quotas[i] += 1;
     }
     quotas
+}
+
+/// The groups to take from, one pick at a time, until every group is used up. Each pick goes to the
+/// group with the highest `weight / (taken + 0.5)`, so the first `n` picks are exactly
+/// [`allocate_weighted`] with budget `n`.
+pub fn weighted_order(weights: &[f64], caps: &[usize]) -> Vec<usize> {
+    let mut taken = vec![0usize; caps.len()];
+    let priority = |i: usize, q: usize| weights[i] / (q as f64 + 0.5);
+    let mut order = Vec::with_capacity(caps.iter().sum());
+    while let Some(i) = (0..caps.len())
+        .filter(|&i| taken[i] < caps[i])
+        .max_by(|&a, &b| priority(a, taken[a]).total_cmp(&priority(b, taken[b])).then(b.cmp(&a)))
+    {
+        taken[i] += 1;
+        order.push(i);
+    }
+    order
 }
 
 #[cfg(test)]
@@ -273,6 +290,26 @@ mod tests {
         assert_eq!(s.cached.len(), 1);
         assert_eq!(s.to_fetch.len(), 3);
         assert!(s.to_fetch.iter().any(|r| r.urlhash == "eld"));
+        assert_eq!(s.more.len(), 18);
+    }
+
+    #[test]
+    fn decks_past_the_budget_continue_the_same_order() {
+        let mut rows = Vec::new();
+        for (theme, n) in [("Tokens", 12), ("Eldrazi", 4), ("Voltron", 1)] {
+            for i in 0..n {
+                let price = 100.0 + rows.len() as f64; // distinct, so none count as duplicates
+                rows.push(row(&format!("{theme}{i}"), None, 40.0 + i as f64, price, &[theme], "2026-01-01"));
+            }
+        }
+        let hashes = |v: &[&TableRow]| v.iter().map(|r| r.urlhash.clone()).collect::<Vec<_>>();
+        let all = select(&rows, &opts(100), |_| false);
+        assert_eq!(all.to_fetch.len(), 17);
+        for budget in [0, 1, 5, 9, 17] {
+            let s = select(&rows, &opts(budget), |_| false);
+            assert_eq!([hashes(&s.to_fetch), hashes(&s.more)].concat(), hashes(&all.to_fetch), "budget {budget}");
+            assert_eq!(s.to_fetch.len(), budget);
+        }
     }
 
     #[test]
@@ -298,6 +335,7 @@ mod tests {
     #[test]
     fn weighted_allocation_respects_caps() {
         assert_eq!(allocate_weighted(&[100.0, 1.0], &[3, 50], 10), vec![3, 7]);
+        assert_eq!(weighted_order(&[2.0, 1.0], &[2, 2]), vec![0, 1, 0, 1]);
     }
 
     #[test]
