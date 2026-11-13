@@ -40,6 +40,11 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   decks keep passing more of the budget. Needs the background fetcher (`search` in `scout.rs`) to
   check matches itself. Measure first: the per-deck estimate (`filters::Prior`) already gave ~7×
   on Wyleth `aura=12+`, and the equipment search hit 8 of 8. *Medium.*
+- [ ] **Tell portrait from landscape by pixels.** `PaneLayout::side_by_side` (`config.rs`) takes a
+  cell as twice as tall as wide; a font far from 1:2 (or a non-square cell setting) can misjudge a
+  near-square terminal. Crossterm's `terminal::window_size()` gives the pixel size where the
+  terminal reports it (many report 0); use that when it's there. *Small; only if the guess is
+  wrong in practice.*
 - [ ] **More search keys** in `edh-data/src/query.rs`: `pow`/`tou` and mana cost (`m:`). Needs
   those fields on `Card` and a `CARDS_SCHEMA` bump (rebuilds from the raw file, no download).
   *Small; only if wanted.*

@@ -18,6 +18,7 @@ use ratatui::widgets::{Block, Cell, Paragraph, Row, Table, TableState, Wrap};
 use ratatui::{DefaultTerminal, Frame};
 
 use crate::analysis::Analysis;
+use crate::config::PaneLayout;
 use crate::export::{self, ExportFormat, ReportInput};
 use crate::filters::CountColumn;
 use crate::rank::{RankMode, Ranked, Target, Weights, mix, rank};
@@ -50,6 +51,8 @@ pub struct Settings {
     pub mix: bool,
     /// Columns for the `-T` card filters' counts.
     pub count_columns: Vec<CountColumn>,
+    /// Deck list beside the details, or above them.
+    pub layout: PaneLayout,
 }
 
 pub struct App<'a> {
@@ -275,8 +278,8 @@ impl<'a> App<'a> {
         let [header, body, footer] =
             Layout::vertical([Constraint::Length(1), Constraint::Fill(1), Constraint::Length(1)]).areas(frame.area());
         self.draw_header(frame, header);
-        let wide = body.width >= 110;
-        let [left, right] = if wide {
+        let size = frame.area();
+        let [left, right] = if self.settings.layout.side_by_side(size.width, size.height) {
             Layout::horizontal([Constraint::Percentage(47), Constraint::Fill(1)]).areas(body)
         } else {
             Layout::vertical([Constraint::Percentage(40), Constraint::Fill(1)]).areas(body)

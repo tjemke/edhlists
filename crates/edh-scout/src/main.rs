@@ -16,7 +16,7 @@ use edh_data::progress::{Lines, Progress};
 use edh_data::sync::{SyncWhat, ensure_databases, sync};
 use edh_data::tags::TagIndex;
 use edh_data::text::{commander_slug, date_days_ago, front_face, slugify};
-use edh_scout::config::Config;
+use edh_scout::config::{Config, PaneLayout};
 use edh_scout::export::{self, ExportFormat, ReportInput};
 use edh_scout::filters::{self, CardFilter, CompiledFilter, CountColumn, Filter};
 use edh_scout::rank::{RankMode, Target, Weights, mix, parse_range, rank};
@@ -314,7 +314,7 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
         )?,
     };
     drop(status);
-    finish(http, session, &args, target, weights)
+    finish(http, session, &args, target, weights, config.tui.layout)
 }
 
 /// Check the `-T` card filters against the card database (and, for `otag:`, Scryfall Tagger's
@@ -513,7 +513,14 @@ fn start_search<'a>(
 }
 
 /// Browse (or print) the session, then report what it cost.
-fn finish(http: &Arc<Http>, session: Session, args: &ScoutArgs, target: Target, weights: Weights) -> Result<()> {
+fn finish(
+    http: &Arc<Http>,
+    session: Session,
+    args: &ScoutArgs,
+    target: Target,
+    weights: Weights,
+    layout: PaneLayout,
+) -> Result<()> {
     let Session { title, name, mut pool, fetcher, show_commander, count_columns } = session;
     let export_dir = args.output.export.clone().unwrap_or_else(|| PathBuf::from(format!("edh-scout-{name}")));
     if interactive(args.output.plain) {
@@ -529,6 +536,7 @@ fn finish(http: &Arc<Http>, session: Session, args: &ScoutArgs, target: Target, 
             show_commander,
             mix: !args.no_mix,
             count_columns,
+            layout,
         };
         let mut app = tui::App::new(settings, pool, fetcher, Some(http));
         tui::run(&mut app)?;
@@ -584,7 +592,7 @@ fn finish(http: &Arc<Http>, session: Session, args: &ScoutArgs, target: Target, 
     Ok(())
 }
 
-fn run_check(http: &Http, paths: &Paths, args: CheckArgs) -> Result<()> {
+fn run_check(http: &Http, paths: &Paths, config: &Config, args: CheckArgs) -> Result<()> {
     let target = target_from(&args.target)?;
     let text = std::fs::read_to_string(&args.file).with_context(|| format!("reading {}", args.file.display()))?;
     let parsed: Vec<Filter> = args.types.iter().map(|t| t.parse()).collect::<Result<_>>().context("-T")?;
@@ -634,6 +642,7 @@ fn run_check(http: &Http, paths: &Paths, args: CheckArgs) -> Result<()> {
             show_commander: false,
             mix: false,
             count_columns: filters::count_columns(&card_filters),
+            layout: config.tui.layout,
         };
         tui::run(&mut tui::App::new(settings, pool, None, None))?;
     } else {
@@ -657,7 +666,7 @@ fn main() -> ExitCode {
         let http = Arc::new(Http::new(paths.http(), cli.offline));
         match cli.command {
             Command::Scout(args) => run_scout(&http, &paths, &Config::load(cli.config.clone())?, args),
-            Command::Check(args) => run_check(&http, &paths, args),
+            Command::Check(args) => run_check(&http, &paths, &Config::load(cli.config.clone())?, args),
             Command::Sync(args) => {
                 let both = !args.cards && !args.combos;
                 sync(

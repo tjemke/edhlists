@@ -5,6 +5,8 @@
 //! [tui]
 //! # Keep fetching eligible decks past the -n budget for as long as the browser is open.
 //! keep_fetching = true
+//! # Deck list beside the details ("side-by-side"), above them ("stacked"), or "auto".
+//! layout = "auto"
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -24,11 +26,46 @@ pub struct TuiConfig {
     /// Once the run's fetch budget is spent, keep fetching the remaining eligible decks (in the
     /// same order, at the same pace) until the browser is closed.
     pub keep_fetching: bool,
+    /// Where the browser puts the deck list and the details pane.
+    pub layout: PaneLayout,
 }
 
 impl Default for TuiConfig {
     fn default() -> Self {
-        Self { keep_fetching: true }
+        Self { keep_fetching: true, layout: PaneLayout::Auto }
+    }
+}
+
+/// The browser's deck list and details pane: side by side, or one above the other.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum PaneLayout {
+    /// Side by side in a landscape terminal at least [`SIDE_BY_SIDE_MIN_WIDTH`] columns wide,
+    /// stacked otherwise (so a portrait terminal stacks them however wide it is).
+    #[default]
+    Auto,
+    /// Side by side whenever the terminal is wide enough, whatever its shape.
+    SideBySide,
+    /// Always stacked.
+    Stacked,
+}
+
+/// Narrower than this, the deck list and the details don't fit side by side.
+pub const SIDE_BY_SIDE_MIN_WIDTH: u16 = 110;
+
+/// A character cell is about twice as tall as it is wide, so a terminal is portrait (taller than
+/// wide on screen) when it has more than half as many rows as columns.
+const CELL_ASPECT: u32 = 2;
+
+impl PaneLayout {
+    /// Put the panes side by side in a `width` × `height` terminal (in cells)?
+    pub fn side_by_side(self, width: u16, height: u16) -> bool {
+        let wide_enough = width >= SIDE_BY_SIDE_MIN_WIDTH;
+        match self {
+            PaneLayout::Auto => wide_enough && u32::from(height) * CELL_ASPECT <= u32::from(width),
+            PaneLayout::SideBySide => wide_enough,
+            PaneLayout::Stacked => false,
+        }
     }
 }
 
@@ -68,6 +105,25 @@ mod tests {
     fn defaults_and_overrides() {
         assert!(Config::parse("").unwrap().tui.keep_fetching);
         assert!(!Config::parse("[tui]\nkeep_fetching = false\n").unwrap().tui.keep_fetching);
+        assert_eq!(Config::parse("").unwrap().tui.layout, PaneLayout::Auto);
+        assert_eq!(Config::parse("[tui]\nlayout = \"stacked\"\n").unwrap().tui.layout, PaneLayout::Stacked);
+        assert_eq!(Config::parse("[tui]\nlayout = \"side-by-side\"\n").unwrap().tui.layout, PaneLayout::SideBySide);
+        assert!(Config::parse("[tui]\nlayout = \"sideways\"\n").is_err());
+    }
+
+    #[test]
+    fn layouts() {
+        use PaneLayout::*;
+        // Landscape: 240×67 (a 1080p screen at 8×16 cells).
+        assert!(Auto.side_by_side(240, 67));
+        assert!(SideBySide.side_by_side(240, 67));
+        assert!(!Stacked.side_by_side(240, 67));
+        // Portrait but wide enough: 135×120 (a 1080×1920 screen).
+        assert!(!Auto.side_by_side(135, 120));
+        assert!(SideBySide.side_by_side(135, 120));
+        // Too narrow either way.
+        assert!(!Auto.side_by_side(100, 30));
+        assert!(!SideBySide.side_by_side(100, 30));
     }
 
     #[test]

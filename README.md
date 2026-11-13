@@ -168,6 +168,11 @@ Optional, at `$XDG_CONFIG_HOME/edh-scout/config.toml` (`~/.config/…`; override
 [tui]
 # Keep fetching eligible decks past the -n budget while the browser is open (default: true).
 keep_fetching = true
+# Deck list beside the details or above them: "auto" (default) puts them side by side in a
+# terminal at least 110 columns wide that is wider than tall on screen (cells count as twice as
+# tall as wide), and stacks them in a portrait one; "side-by-side" whenever 110 columns fit;
+# "stacked" always.
+layout = "auto"
 ```
 
 ### Exports (proxies)
