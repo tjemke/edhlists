@@ -23,7 +23,7 @@ use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
 use crate::analysis::{Analysis, Context, analyze};
 use crate::filters::{CompiledFilter, Matched};
-use crate::select::{Ceiling, SelectOptions, select, weighted_order};
+use crate::select::{Ceiling, SelectOptions, select, weighted_order_from};
 
 /// Per-commander side data: synergy and combo votes. Each piece is optional — a failure costs
 /// that signal, not the run.
@@ -173,6 +173,8 @@ pub enum FetchEvent {
     },
     /// A deck table was scanned (searching across commanders).
     Table {
+        /// The commander's slug; empty when its table couldn't be loaded.
+        slug: String,
         listed: usize,
         eligible: usize,
     },
@@ -293,7 +295,8 @@ fn search(
     };
 
     // Phase 1: scan every candidate's deck table; stored matches appear immediately.
-    let mut fresh: Vec<(String, f64, VecDeque<TableRow>)> = Vec::new();
+    // (slug, weight, decks already stored, decks to fetch)
+    let mut fresh: Vec<(String, f64, usize, VecDeque<TableRow>)> = Vec::new();
     for c in &candidates {
         if w.stop.load(Ordering::Relaxed) {
             return;
@@ -306,7 +309,7 @@ fn search(
             }
             Err(e) => {
                 if !w.send(FetchEvent::Failed { what: c.name.clone(), error: format!("{e:#}") })
-                    || !w.send(FetchEvent::Table { listed: 0, eligible: 0 })
+                    || !w.send(FetchEvent::Table { slug: String::new(), listed: 0, eligible: 0 })
                 {
                     return;
                 }
@@ -314,7 +317,7 @@ fn search(
             }
         };
         let sel = select(&table.table, opts, |h| store.contains(h));
-        if !w.send(FetchEvent::Table { listed: sel.total, eligible: sel.eligible }) {
+        if !w.send(FetchEvent::Table { slug: c.slug.clone(), listed: sel.total, eligible: sel.eligible }) {
             return;
         }
         if !sel.cached.is_empty() {
@@ -329,18 +332,21 @@ fn search(
                 }
             }
         }
-        let fresh_eligible = sel.eligible.saturating_sub(sel.cached.len());
         if !sel.to_fetch.is_empty() && !http.offline() {
+            let stored = sel.cached.len();
             let rows = sel.to_fetch.into_iter().chain(sel.more).cloned().collect();
-            fresh.push((c.slug.clone(), (fresh_eligible as f64).sqrt(), rows));
+            fresh.push((c.slug.clone(), (sel.eligible as f64).sqrt(), stored, rows));
         }
     }
 
     // Phase 2: share the budget out by how many matching decks each commander has, interleaving
-    // the commanders so every one shows up early. Past the budget, the same order continues.
+    // the commanders so every one shows up early. Decks already stored count towards a
+    // commander's share, so commanders with few or none stored are fetched first instead of being
+    // drowned out by one with many. Past the budget, the same order continues.
     let weights: Vec<f64> = fresh.iter().map(|f| f.1).collect();
-    let caps: Vec<usize> = fresh.iter().map(|f| f.2.len()).collect();
-    let mut order = weighted_order(&weights, &caps);
+    let caps: Vec<usize> = fresh.iter().map(|f| f.3.len()).collect();
+    let had: Vec<usize> = fresh.iter().map(|f| f.2).collect();
+    let mut order = weighted_order_from(&weights, &caps, &had);
     if !keep_going {
         order.truncate(opts.budget);
     }
@@ -348,7 +354,7 @@ fn search(
         return;
     }
     for i in order {
-        let (slug, _, rows) = &mut fresh[i];
+        let (slug, _, _, rows) = &mut fresh[i];
         let row = rows.pop_front().expect("weighted_order stays within each queue");
         if !ensure_sources(slug, &mut with_sources) || !w.fetch(http, store, &row, &[]) {
             return;
@@ -367,6 +373,9 @@ pub struct Pool<'a> {
     /// `-T` card filters: decks failing one are left out.
     filters: Vec<CompiledFilter>,
     pub decks: Vec<(Deck, Analysis)>,
+    /// Searching across commanders: how many eligible decks EDHREC lists for each one (by slug),
+    /// a measure of how popular the commander is for this kind of deck.
+    eligible: HashMap<String, usize>,
     pub stats: PoolStats,
 }
 
@@ -380,6 +389,7 @@ impl<'a> Pool<'a> {
             fallback: None,
             filters: Vec::new(),
             decks: Vec::new(),
+            eligible: HashMap::new(),
             stats,
         }
     }
@@ -400,6 +410,25 @@ impl<'a> Pool<'a> {
             self.fallback = Some(slug.to_string());
         }
         self.commanders.insert(slug.to_string(), sources);
+    }
+
+    /// For mixing commanders in the ranking: each deck's commander, and how much room that
+    /// commander gets (the square root of its eligible decks on EDHREC, as when fetching).
+    pub fn commander_groups(&self) -> (Vec<usize>, Vec<f64>) {
+        let mut slugs: HashMap<String, usize> = HashMap::new();
+        let mut weights = Vec::new();
+        let groups = self
+            .decks
+            .iter()
+            .map(|(d, _)| {
+                let slug = commander_slug(&d.commanders);
+                *slugs.entry(slug.clone()).or_insert_with(|| {
+                    weights.push((self.eligible.get(&slug).copied().unwrap_or(1).max(1) as f64).sqrt());
+                    weights.len() - 1
+                })
+            })
+            .collect();
+        (groups, weights)
     }
 
     /// Analyse a deck and add it, unless a card filter rejects it.
@@ -440,8 +469,11 @@ impl<'a> Pool<'a> {
                 self.add_commander(&slug, *sources);
                 None
             }
-            FetchEvent::Table { listed, eligible } => {
+            FetchEvent::Table { slug, listed, eligible } => {
                 self.stats.commanders_scanned += 1;
+                if !slug.is_empty() {
+                    self.eligible.insert(slug, eligible);
+                }
                 self.stats.listed += listed;
                 self.stats.eligible += eligible;
                 None
@@ -575,8 +607,8 @@ mod tests {
         let mut pool =
             Pool::new(&cards, &combos, HashMap::new(), PoolStats { commanders_total: 2, ..Default::default() });
         assert!(pool.stats.scanning());
-        pool.apply(FetchEvent::Table { listed: 100, eligible: 10 });
-        pool.apply(FetchEvent::Table { listed: 50, eligible: 5 });
+        pool.apply(FetchEvent::Table { slug: "a".into(), listed: 100, eligible: 10 });
+        pool.apply(FetchEvent::Table { slug: "b".into(), listed: 50, eligible: 5 });
         pool.apply(FetchEvent::Queued(7));
         assert!(!pool.stats.scanning());
         assert_eq!((pool.stats.listed, pool.stats.eligible, pool.stats.queued), (150, 15, 7));

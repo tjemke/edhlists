@@ -135,13 +135,21 @@ the card database for free. When neither fits (e.g. `creatures=40+`), EDHREC's m
 commanders are scanned instead.
 `--commanders N` (default 30) caps how many deck tables are scanned. The browser opens right away
 and fills as each commander's table and decks come in; commander and colour (WUBRG) columns show
-whose deck is whose. Cost: one request for the theme list (when a decklist filter asks for a
+whose deck is whose.
+
+**Variety.** Commanders get room in proportion to the square root of how many eligible decks EDHREC
+lists for them, so the most popular commander for a kind of deck shows up most, but not to the
+exclusion of the rest. Decks you already have count towards that share: a commander with 40 stored
+decks waits while the others are fetched up to their share. The ranking interleaves commanders the
+same way, each giving its best remaining deck in turn (decks in the target still come first). `m`
+in the browser, or `--no-mix`, ranks by score alone instead. Cost: one request for the theme list (when a decklist filter asks for a
 minimum) and one per theme (both cached for a week), one per deck table scanned (cached for a day),
 two per commander that ends up with decks (synergy and combo votes, cached for a week), plus the
 usual deck budget.
 
 In the browser: `↑↓` move · `⏎` decklist/details · `J/K` scroll · `r` cycle ranking ·
-`f` only decks in the target · `o`/`s`/`p` open on EDHREC / the source site / EDHPowerLevel ·
+`f` only decks in the target · `m` mix commanders or rank by score alone (across commanders) ·
+`o`/`s`/`p` open on EDHREC / the source site / EDHPowerLevel ·
 `e` export the selected list · `E` export `report.md` plus the top lists · `q` quit.
 
 When stdout isn't a terminal (or with `--plain`) you get a table instead.

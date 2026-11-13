@@ -214,14 +214,21 @@ pub fn allocate_weighted(weights: &[f64], caps: &[usize], budget: usize) -> Vec<
 /// group with the highest `weight / (taken + 0.5)`, so the first `n` picks are exactly
 /// [`allocate_weighted`] with budget `n`.
 pub fn weighted_order(weights: &[f64], caps: &[usize]) -> Vec<usize> {
-    let mut taken = vec![0usize; caps.len()];
-    let priority = |i: usize, q: usize| weights[i] / (q as f64 + 0.5);
+    weighted_order_from(weights, caps, &vec![0; caps.len()])
+}
+
+/// [`weighted_order`] for groups that already hold `had[i]` items: those count as taken, so a
+/// group that already has more than its share waits until the others catch up. `caps` counts only
+/// the items still to hand out.
+pub fn weighted_order_from(weights: &[f64], caps: &[usize], had: &[usize]) -> Vec<usize> {
+    let mut given = vec![0usize; caps.len()];
+    let priority = |i: usize, q: usize| weights[i] / ((had[i] + q) as f64 + 0.5);
     let mut order = Vec::with_capacity(caps.iter().sum());
     while let Some(i) = (0..caps.len())
-        .filter(|&i| taken[i] < caps[i])
-        .max_by(|&a, &b| priority(a, taken[a]).total_cmp(&priority(b, taken[b])).then(b.cmp(&a)))
+        .filter(|&i| given[i] < caps[i])
+        .max_by(|&a, &b| priority(a, given[a]).total_cmp(&priority(b, given[b])).then(b.cmp(&a)))
     {
-        taken[i] += 1;
+        given[i] += 1;
         order.push(i);
     }
     order
@@ -399,6 +406,14 @@ mod tests {
     fn weighted_allocation_respects_caps() {
         assert_eq!(allocate_weighted(&[100.0, 1.0], &[3, 50], 10), vec![3, 7]);
         assert_eq!(weighted_order(&[2.0, 1.0], &[2, 2]), vec![0, 1, 0, 1]);
+    }
+
+    #[test]
+    fn groups_that_already_have_items_wait_their_turn() {
+        // Group 0 is four times as popular but already holds 8: group 1 catches up first.
+        let order = weighted_order_from(&[4.0, 1.0], &[10, 10], &[8, 0]);
+        // After that the popular group gets most of the picks again.
+        assert_eq!(&order[..10], &[1, 1, 0, 0, 1, 0, 0, 0, 0, 1]);
     }
 
     #[test]

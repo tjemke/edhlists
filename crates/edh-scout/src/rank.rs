@@ -6,6 +6,7 @@ use std::str::FromStr;
 use anyhow::{Result, bail};
 
 use crate::analysis::Analysis;
+use crate::select::weighted_order;
 use edhpl::level_band;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
@@ -231,6 +232,25 @@ pub fn rank(analyses: &[&Analysis], target: &Target, mode: RankMode, weights: &W
     out
 }
 
+/// Interleave groups (commanders) in a ranking so one with many decks doesn't fill the top of the
+/// list. `group[i]` is the group of the caller's deck `i`; groups take turns in proportion to
+/// `weights` (Sainte-Laguë, as when fetching), each giving its best remaining deck. Decks in the
+/// target still come first, and each group's decks keep their order.
+pub fn mix(ranking: Vec<Ranked>, group: &[usize], weights: &[f64]) -> Vec<Ranked> {
+    let (fits, rest): (Vec<Ranked>, Vec<Ranked>) = ranking.into_iter().partition(|r| r.fits);
+    let interleave = |block: Vec<Ranked>| -> Vec<Ranked> {
+        let mut queues: Vec<std::collections::VecDeque<Ranked>> = vec![Default::default(); weights.len()];
+        for r in block {
+            queues[group[r.index]].push_back(r);
+        }
+        let caps: Vec<usize> = queues.iter().map(|q| q.len()).collect();
+        weighted_order(weights, &caps).into_iter().map(|g| queues[g].pop_front().expect("within caps")).collect()
+    };
+    let mut out = interleave(fits);
+    out.extend(interleave(rest));
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,6 +300,24 @@ mod tests {
         assert_eq!(r.iter().map(|x| x.index).collect::<Vec<_>>(), vec![2, 1, 0]);
         let r = rank(&[&a, &b, &c], &t, RankMode::Salt, &Weights::default());
         assert_eq!(r.iter().map(|x| x.index).collect::<Vec<_>>(), vec![1, 2, 0]);
+    }
+
+    #[test]
+    fn mixing_interleaves_commanders_by_weight_and_keeps_fits_first() {
+        // Decks 0-5 belong to commander 0, 6-7 to commander 1; deck 7 misses the target.
+        let t = Target::new((2, 3), None);
+        let decks: Vec<Analysis> = [6.2, 6.1, 6.0, 5.9, 5.8, 5.7, 5.5, 9.5]
+            .iter()
+            .map(|&l| analysis(l, if l > 8.0 { 5 } else { 3 }, 50.0))
+            .collect();
+        let refs: Vec<&Analysis> = decks.iter().collect();
+        let ranked = rank(&refs, &t, RankMode::Power, &Weights::default());
+        let group = [0, 0, 0, 0, 0, 0, 1, 1];
+        let order = |w: &[f64]| mix(ranked.clone(), &group, w).iter().map(|r| r.index).collect::<Vec<_>>();
+        // Equal weights: commander 1's only fitting deck comes second, its misfit stays last.
+        assert_eq!(order(&[1.0, 1.0]), vec![0, 6, 1, 2, 3, 4, 5, 7]);
+        // Commander 0 four times as popular: it gets more of the top, commander 1 still shows up.
+        assert_eq!(order(&[4.0, 1.0]), vec![0, 1, 6, 2, 3, 4, 5, 7]);
     }
 
     #[test]

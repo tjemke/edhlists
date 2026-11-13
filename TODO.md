@@ -17,6 +17,17 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
 
 ## Maybe
 
+- [ ] **Count only stored decks that pass the card filters** towards a commander's share when
+  fetching across commanders. Today `search` in `scout.rs` counts every stored eligible deck
+  (`sel.cached.len()`), because the `-T` decklist filters live in `Pool`, not the background
+  thread; a commander whose 40 stored decks mostly fail `equipment=10+` is held back as if it had
+  40 matches. Needs the compiled filters (and the card database) on the fetch thread. *Small–medium.*
+- [ ] **Softer mixing in the ranking.** `rank::mix` interleaves commanders strictly by weight, so a
+  commander's best deck takes its turn even when it scores well below the next deck of a popular
+  one (within the in-target block, so all are fits). A score-aware variant (e.g. only interleave
+  among decks within some margin of the best remaining) may read better; see how it feels first.
+  *Small.*
+
 - [ ] **Learn each commander's match rate** in cross-commander searches, giving commanders whose
   decks keep passing more of the budget. Needs the background fetcher (`search` in `scout.rs`) to
   check matches itself. Measure first: the per-deck estimate (`filters::Prior`) already gave ~7×

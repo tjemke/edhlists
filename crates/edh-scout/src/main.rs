@@ -18,7 +18,7 @@ use edh_data::text::{commander_slug, date_days_ago, front_face, slugify};
 use edh_scout::config::Config;
 use edh_scout::export::{self, ExportFormat, ReportInput};
 use edh_scout::filters::{self, CardFilter, CompiledFilter, Filter};
-use edh_scout::rank::{RankMode, Target, Weights, parse_range, rank};
+use edh_scout::rank::{RankMode, Target, Weights, mix, parse_range, rank};
 use edh_scout::scout::{Fetcher, Pool, PoolStats, Prepared, ScoutOptions, load_commander_sources, load_salt, prepare};
 use edh_scout::select::SelectOptions;
 use edh_scout::{picker, plain, tui, view};
@@ -97,6 +97,10 @@ struct ScoutArgs {
     /// How to rank decks.
     #[arg(short, long, value_enum, default_value_t = RankMode::Fit)]
     rank: RankMode,
+    /// Searching across commanders: rank by score alone, instead of interleaving commanders so
+    /// one with many decks doesn't fill the list (`m` toggles this in the browser).
+    #[arg(long)]
+    no_mix: bool,
     /// Weights for --rank combined.
     #[arg(long, default_value = "fit=0.5,salt=0.2,structure=0.15,synergy=0.15")]
     weights: String,
@@ -494,6 +498,7 @@ fn finish(http: &Arc<Http>, session: Session, args: &ScoutArgs, target: Target, 
             report_top: args.output.top,
             show_price: args.output.price,
             show_commander,
+            mix: !args.no_mix,
             count_labels,
         };
         let mut app = tui::App::new(settings, pool, fetcher, Some(http));
@@ -524,7 +529,11 @@ fn finish(http: &Arc<Http>, session: Session, args: &ScoutArgs, target: Target, 
         eprintln!("  {checked_after}");
     }
     let refs: Vec<_> = pool.decks.iter().map(|(_, a)| a).collect();
-    let ranking = rank(&refs, &target, args.rank, &weights);
+    let mut ranking = rank(&refs, &target, args.rank, &weights);
+    if show_commander && !args.no_mix {
+        let (group, weights) = pool.commander_groups();
+        ranking = mix(ranking, &group, &weights);
+    }
     let columns = plain::Columns { price: args.output.price, commander: show_commander, counts: count_labels.clone() };
     println!("{}", plain::ranked_table(&pool.decks, pool.cards(), &ranking, &target, args.output.top, &columns));
     println!("{}", plain::legend(&target, args.rank));
@@ -589,6 +598,7 @@ fn run_check(http: &Http, paths: &Paths, args: CheckArgs) -> Result<()> {
             report_top: 1,
             show_price: args.price,
             show_commander: false,
+            mix: false,
             count_labels: count_labels(&card_filters),
         };
         tui::run(&mut tui::App::new(settings, pool, None, None))?;

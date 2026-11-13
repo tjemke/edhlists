@@ -19,7 +19,7 @@ use ratatui::{DefaultTerminal, Frame};
 
 use crate::analysis::Analysis;
 use crate::export::{self, ExportFormat, ReportInput};
-use crate::rank::{RankMode, Ranked, Target, Weights, rank};
+use crate::rank::{RankMode, Ranked, Target, Weights, mix, rank};
 use crate::scout::{FetchEvent, Fetcher, Pool};
 use crate::view::{
     ACCENT, BAD, DIM, GOOD, OK, deck_identity, detail_lines, grouped_list, identity_line, power_color, score_color,
@@ -45,6 +45,8 @@ pub struct Settings {
     pub show_price: bool,
     /// Searching across commanders: show which commander each deck is for.
     pub show_commander: bool,
+    /// Searching across commanders: interleave commanders in the ranking (`m` toggles).
+    pub mix: bool,
     /// Column headers for the `-T` card filters' counts (one per filter, in order).
     pub count_labels: Vec<String>,
 }
@@ -92,6 +94,10 @@ impl<'a> App<'a> {
         let keep_deck = if keep { self.selected().map(|(_, r)| r.index) } else { None };
         let refs: Vec<&Analysis> = self.pool.decks.iter().map(|(_, a)| a).collect();
         self.ranking = rank(&refs, &self.settings.target, self.settings.mode, &self.settings.weights);
+        if self.mixing() {
+            let (group, weights) = self.pool.commander_groups();
+            self.ranking = mix(std::mem::take(&mut self.ranking), &group, &weights);
+        }
         let visible = self.visible();
         let pos = keep_deck.and_then(|d| visible.iter().position(|(_, r)| r.index == d)).or(if visible.is_empty() {
             None
@@ -102,6 +108,10 @@ impl<'a> App<'a> {
         if !keep {
             self.scroll = 0;
         }
+    }
+
+    fn mixing(&self) -> bool {
+        self.settings.show_commander && self.settings.mix
     }
 
     /// Counts for the end-of-run summary.
@@ -190,6 +200,12 @@ impl<'a> App<'a> {
                 self.settings.mode = self.settings.mode.next();
                 self.rerank(true);
                 self.status = Some((format!("ranked by {}", self.settings.mode.label()), false));
+            }
+            KeyCode::Char('m') if self.settings.show_commander => {
+                self.settings.mix = !self.settings.mix;
+                self.rerank(true);
+                let msg = if self.settings.mix { "mixing commanders" } else { "ranking by score alone" };
+                self.status = Some((msg.into(), false));
             }
             KeyCode::Char('f') => {
                 let keep = self.selected().map(|(_, r)| r.index);
@@ -280,7 +296,10 @@ impl<'a> App<'a> {
             Span::styled(" edh-scout ", Style::new().reversed().bold().fg(ACCENT)),
             Span::styled(format!(" {} ", self.settings.title), Style::new().bold()),
             Span::styled(format!(" target {} ", self.settings.target.describe()), Style::new().fg(GOOD)),
-            Span::styled(format!(" rank: {} ", self.settings.mode.label()), Style::new().fg(ACCENT)),
+            Span::styled(
+                format!(" rank: {}{} ", self.settings.mode.label(), if self.mixing() { ", mixed" } else { "" }),
+                Style::new().fg(ACCENT),
+            ),
         ];
         if self.fetcher.is_some() {
             let spin = SPINNER[self.tick % SPINNER.len()];
@@ -450,7 +469,7 @@ impl<'a> App<'a> {
                 Line::from(Span::styled(format!(" {msg}"), Style::new().fg(if *err { BAD } else { GOOD })))
             }
             None => {
-                let keys = [
+                let mut keys = vec![
                     ("↑↓", "move"),
                     ("⏎", "list/details"),
                     ("J/K", "scroll"),
@@ -463,6 +482,9 @@ impl<'a> App<'a> {
                     ("E", "export report"),
                     ("q", "quit"),
                 ];
+                if self.settings.show_commander {
+                    keys.insert(5, ("m", "mix commanders"));
+                }
                 let mut spans = vec![Span::raw(" ")];
                 for (k, what) in keys {
                     spans.push(Span::styled(k, Style::new().bold().fg(ACCENT)));
