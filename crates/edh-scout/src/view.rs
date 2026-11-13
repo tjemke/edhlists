@@ -289,10 +289,19 @@ pub fn detail_lines(
 }
 
 /// One `-T` card filter's count and the cards that make it up; a long filter is shown under its
-/// short label (`Q1`) and spelled out before the cards.
+/// short label (`Q1`) and spelled out before the cards. The count is green within the filter's
+/// range, red (with the range) outside it, uncoloured without one.
 pub fn matched_line(m: &Matched, i: usize) -> Line<'static> {
     let short = short_label(&m.label, i);
-    let mut l = vec![label(&short), Span::styled(format!("{:<4}", m.count), Style::new().bold().fg(GOOD))];
+    let color = match (&m.wanted, m.passes) {
+        (None, _) => Color::Reset,
+        (Some(_), true) => GOOD,
+        (Some(_), false) => BAD,
+    };
+    let mut l = vec![label(&short), Span::styled(format!("{:<4}", m.count), Style::new().bold().fg(color))];
+    if let (Some(wanted), false) = (&m.wanted, m.passes) {
+        l.push(Span::styled(format!("wants {wanted}  "), Style::new().fg(BAD)));
+    }
     if short != m.label {
         l.push(Span::styled(format!("{}  ", m.label), Style::new().fg(DIM)));
     }
@@ -534,13 +543,23 @@ mod tests {
             label: "equipment".into(),
             count: 3,
             cards: vec![("Bonesplitter".into(), 1), ("Sword of Fire and Ice".into(), 1), ("Lizard Blades".into(), 1)],
+            wanted: Some("2+".into()),
+            passes: true,
         };
         assert_eq!(
             text(&wrap_lines(vec![matched_line(&m, 0)], 40)),
             ["equipment  3   Bonesplitter · Sword of", "           Fire and Ice · Lizard Blades"]
         );
-        let q = Matched { label: r#"o:"create a treasure""#.into(), count: 12, cards: vec![("Mountain".into(), 12)] };
+        let q = Matched {
+            label: r#"o:"create a treasure""#.into(),
+            count: 12,
+            cards: vec![("Mountain".into(), 12)],
+            wanted: None,
+            passes: true,
+        };
         assert_eq!(text(&[matched_line(&q, 1)]), [r#"Q2         12  o:"create a treasure"  12 Mountain"#]);
+        let short = Matched { label: "ramp".into(), count: 7, wanted: Some("10+".into()), ..Default::default() };
+        assert_eq!(text(&[matched_line(&short, 0)]), ["ramp       7   wants 10+  "]);
     }
 
     #[test]

@@ -84,9 +84,10 @@ struct ScoutArgs {
     /// planeswalkers, battles, lands (planeswalkers=10+, creatures=..5). Anything else is counted
     /// in the 99 once a deck is fetched: a type-line word (equipment=10+, legendary=25+), a role
     /// (ramp=15+, draw, removal, wipes) or a Scryfall search ('o:"create a treasure"=6+',
-    /// 'otag:sweeper=4+'). Ranges: 10+, ..5, 25-40, 36. With a commander it narrows that
-    /// commander's decks; without one it searches across commanders.
-    #[arg(short = 'T', long = "type", value_name = "WHAT=RANGE")]
+    /// 'otag:sweeper=4+'). Ranges: 10+, ..5, 25-40, 36; without one (-T equipment) a decklist
+    /// count only adds a column. With a commander it narrows that commander's decks; without one
+    /// it searches across commanders.
+    #[arg(short = 'T', long = "type", value_name = "WHAT[=RANGE]")]
     types: Vec<String>,
     /// Searching across commanders: how many commanders' deck tables to scan (1 request each).
     #[arg(long, default_value_t = 30, value_name = "N")]
@@ -151,6 +152,11 @@ struct CheckArgs {
     /// Commander, if the file doesn't mark one (repeat for partners).
     #[arg(short, long = "commander")]
     commanders: Vec<String>,
+    /// Count cards of a kind in the list, repeatable: equipment, ramp, 'otag:sweeper',
+    /// 'o:"create a treasure"' (as for scout -T). With a range (equipment=10+) the count is
+    /// checked against it.
+    #[arg(short = 'T', long = "type", value_name = "WHAT[=RANGE]")]
+    types: Vec<String>,
     #[command(flatten)]
     target: TargetArgs,
     /// Print instead of opening the interactive browser.
@@ -406,6 +412,9 @@ fn start_search<'a>(
     card_filters: Vec<CompiledFilter>,
     keep_fetching: bool,
 ) -> Result<Session<'a>> {
+    if select.types.is_empty() && !card_filters.iter().any(|f| f.filter.has_range()) {
+        bail!("searching across commanders needs a -T with a range, like equipment=10+ (or name a commander)");
+    }
     let mut themes: Vec<String> = filters::themes(&select.types).into_iter().map(String::from).collect();
     if card_filters.iter().any(|f| f.filter.wants_many()) {
         // Card filters name themes by their words (equipment, sagas, legends, ramp): one request
@@ -540,7 +549,19 @@ fn finish(http: &Arc<Http>, session: Session, args: &ScoutArgs, target: Target, 
 fn run_check(http: &Http, paths: &Paths, args: CheckArgs) -> Result<()> {
     let target = target_from(&args.target)?;
     let text = std::fs::read_to_string(&args.file).with_context(|| format!("reading {}", args.file.display()))?;
+    let parsed: Vec<Filter> = args.types.iter().map(|t| t.parse()).collect::<Result<_>>().context("-T")?;
+    let (table, card_filters) = filters::split(parsed);
+    if let Some(t) = table.first() {
+        bail!(
+            "-T {}: that's EDHREC's own count, which a local list doesn't have; count the type line instead, \
+             like -T '{}={}'",
+            t.field.name(),
+            t.field.type_query(),
+            t.range_arg()
+        );
+    }
     let (cards, combos) = ensure_databases(http, paths)?;
+    let card_filters = compile_filters(card_filters, &cards, paths)?;
     let mut deck = parse_decklist(&text, &args.commanders);
     deck.id = args.file.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "deck".into());
     if deck.commanders.is_empty() {
@@ -554,6 +575,9 @@ fn run_check(http: &Http, paths: &Paths, args: CheckArgs) -> Result<()> {
         pool.add_commander(slug, load_commander_sources(http, slug));
     }
     pool.add(deck);
+    if let Some((deck, a)) = pool.decks.first_mut() {
+        a.matches = card_filters.iter().map(|f| f.count(deck, &cards)).collect();
+    }
     if interactive(args.plain) {
         let settings = tui::Settings {
             title,
@@ -565,7 +589,7 @@ fn run_check(http: &Http, paths: &Paths, args: CheckArgs) -> Result<()> {
             report_top: 1,
             show_price: args.price,
             show_commander: false,
-            count_labels: Vec::new(),
+            count_labels: count_labels(&card_filters),
         };
         tui::run(&mut tui::App::new(settings, pool, None, None))?;
     } else {

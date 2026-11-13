@@ -405,7 +405,7 @@ impl<'a> Pool<'a> {
     /// Analyse a deck and add it, unless a card filter rejects it.
     pub fn add(&mut self, deck: Deck) {
         let matches: Vec<Matched> = self.filters.iter().map(|f| f.count(&deck, self.cards)).collect();
-        if self.filters.iter().zip(&matches).any(|(f, m)| !f.filter.passes(m.count)) {
+        if matches.iter().any(|m| !m.passes) {
             self.stats.unmatched += 1;
             return;
         }

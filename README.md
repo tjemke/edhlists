@@ -54,6 +54,7 @@ edh-scout scout krenko --rank combined --weights fit=0.4,salt=0.4,structure=0.2
 edh-scout scout krenko -t Tokens -t Goblins          # only decks EDHREC tagged with a theme
 edh-scout scout krenko --plain --top 15 --export out # table on stdout + report.md + decklists
 edh-scout check mydeck.txt                           # score a local list (any common export format)
+edh-scout check mydeck.txt -T equipment -T ramp=10+  # ... and count what it runs
 edh-scout sync                                       # refresh prices / Game Changers / combos
 ```
 
@@ -66,6 +67,8 @@ rank to tell look-alikes apart). Without a terminal you get the list of matches 
 
 `-T WHAT=RANGE` filters on how many cards of a kind a deck runs. Ranges: `10+`, `..5`, `25-40` or an
 exact number. Repeat `-T` to combine filters; all must match, and a card can count towards several.
+Without a range (`-T equipment`, `-T 'otag:sweeper'`) a decklist count only adds a column, it
+doesn't filter. `check` takes the same `-T` to count a local list, marking counts outside a range.
 
 | `WHAT` | Counts | Checked |
 |---|---|---|
@@ -104,7 +107,8 @@ this part of [Scryfall's syntax](https://scryfall.com/docs/syntax):
 | `or`, `-`, `( )` | terms side by side must all match; `or`, negation, grouping |
 
 Other keys (set, rarity, artist, …) are an error, never silently ignored. So is a filter that
-matches no card at all: usually a typo, or a forgotten range (the count goes after the *last* `=`).
+matches no card at all: usually a typo. The range is whatever follows the *last* `=`, unless that
+`=` belongs to the search: `mv=3` alone counts mana value 3 cards, `mv=3=10+` filters on them.
 
 **Fetching.** The deck table doesn't say what's in a deck, so decklist filters are checked as each
 deck arrives: decks that fail are left out and counted (`12 didn't match` in the header). They stay

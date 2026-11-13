@@ -8,7 +8,8 @@
 //!   way the Structure section counts it) or a Scryfall-style search (`'o:"create a treasure"=6+'`,
 //!   see [`edh_data::query`]).
 //!
-//! Like EDHREC's counts, card counts cover the 99: commanders don't count, quantities do.
+//! Like EDHREC's counts, card counts cover the 99: commanders don't count, quantities do. A card
+//! filter without a range (`-T equipment`) only counts, it doesn't filter.
 //!
 //! Before a deck is fetched, a card filter can still use the deck table ([`Prior`]): its cards can
 //! only sit in some of EDHREC's type columns, which bounds the count and says which decks are
@@ -54,6 +55,21 @@ impl TypeField {
             TypeField::Planeswalkers => r.planeswalker,
             TypeField::Battles => r.battle,
             TypeField::Lands => r.land,
+        }
+    }
+
+    /// The search that counts the same type from a decklist's type lines.
+    pub fn type_query(self) -> &'static str {
+        match self {
+            TypeField::Creatures => "t:creature",
+            TypeField::Instants => "t:instant",
+            TypeField::Sorceries => "t:sorcery",
+            TypeField::Spells => "(t:instant or t:sorcery)",
+            TypeField::Artifacts => "t:artifact",
+            TypeField::Enchantments => "t:enchantment",
+            TypeField::Planeswalkers => "t:planeswalker",
+            TypeField::Battles => "t:battle",
+            TypeField::Lands => "t:land",
         }
     }
 
@@ -118,6 +134,17 @@ fn in_range(n: u32, min: Option<u32>, max: Option<u32>) -> bool {
     min.is_none_or(|m| n >= m) && max.is_none_or(|m| n <= m)
 }
 
+/// `15+`, `≤2`, `3–5`, `36`; `None` for no range.
+fn range_text(min: Option<u32>, max: Option<u32>) -> Option<String> {
+    match (min, max) {
+        (Some(lo), None) => Some(format!("{lo}+")),
+        (None, Some(hi)) => Some(format!("≤{hi}")),
+        (Some(lo), Some(hi)) if lo == hi => Some(lo.to_string()),
+        (Some(lo), Some(hi)) => Some(format!("{lo}–{hi}")),
+        (None, None) => None,
+    }
+}
+
 fn fmt_range(f: &mut fmt::Formatter<'_>, min: Option<u32>, max: Option<u32>, name: &str) -> fmt::Result {
     match (min, max) {
         (Some(lo), None) => write!(f, "{lo}+ {name}"),
@@ -139,6 +166,17 @@ pub struct TypeFilter {
 impl TypeFilter {
     pub fn matches(&self, r: &TableRow) -> bool {
         in_range(self.field.count(r), self.min, self.max)
+    }
+
+    /// The range as `-T` takes it: `10+`, `..5`, `25-40`, `36`.
+    pub fn range_arg(&self) -> String {
+        match (self.min, self.max) {
+            (Some(lo), None) => format!("{lo}+"),
+            (None, Some(hi)) => format!("..{hi}"),
+            (Some(lo), Some(hi)) if lo == hi => lo.to_string(),
+            (Some(lo), Some(hi)) => format!("{lo}-{hi}"),
+            (None, None) => "0+".to_string(),
+        }
     }
 }
 
@@ -226,8 +264,13 @@ impl CardFilter {
         self.min.is_some_and(|m| m > 0)
     }
 
+    /// Does it filter at all, or only count?
+    pub fn has_range(&self) -> bool {
+        self.min.is_some() || self.max.is_some()
+    }
+
     /// Check every card in the database once. An `otag:` needs Scryfall Tagger's tag tree; a
-    /// filter that matches no card at all is an error (a typo, or a forgotten range).
+    /// filter that matches no card at all is an error (usually a typo).
     pub fn compile(mut self, cards: &CardDb, tags: Option<&TagIndex>) -> Result<CompiledFilter> {
         let scan = |q: &Query| cards.cards.iter().map(|c| q.matches(c)).collect::<Vec<bool>>();
         let matching = match &mut self.counted {
@@ -251,13 +294,7 @@ impl CardFilter {
                     }
                 }
                 if !matching.contains(&true) {
-                    let numeric_key = ["mv", "cmc", "usd", "c", "color", "id", "identity"];
-                    let hint = if numeric_key.contains(&self.label.to_lowercase().as_str()) {
-                        format!(
-                            " (a search with its count left off? the count goes after the last '=', like {}<=2=10+)",
-                            self.label
-                        )
-                    } else if is_word(&self.label) {
+                    let hint = if is_word(&self.label) {
                         format!(
                             " (as a type: no card has '{0}' on its type line; for card names use name:{0})",
                             self.label
@@ -291,6 +328,9 @@ impl fmt::Display for CardFilter {
     }
 }
 
+/// Search keys that compare (`mv=3`, `c=rg`): an `=` after one is part of the search, not a range.
+const COMPARING_KEYS: [&str; 10] = ["mv", "cmc", "manavalue", "usd", "c", "color", "colour", "id", "identity", "ci"];
+
 /// One `-T` argument.
 #[derive(Clone, Debug)]
 pub enum Filter {
@@ -300,21 +340,42 @@ pub enum Filter {
 
 impl FromStr for Filter {
     type Err = anyhow::Error;
-    /// Split at the last `=` (a range never contains one, a search may). Left of it: one of
-    /// EDHREC's nine counts, a role (`ramp`, `draw`, `removal`, `wipes`), a type-line word, or a
-    /// Scryfall-style search.
+    /// `WHAT=RANGE`, or just `WHAT` to count without filtering. The range is whatever follows the
+    /// last `=` (a range never contains one, a search may), unless that `=` belongs to the search
+    /// (`mv<=2`, `mv=3`, `c=rg`). `WHAT` is one of EDHREC's nine counts, a role (`ramp`, `draw`,
+    /// `removal`, `wipes`), a type-line word, or a Scryfall-style search.
     fn from_str(s: &str) -> Result<Self> {
-        let (what, range) = s
-            .rsplit_once('=')
-            .ok_or_else(|| anyhow!("expected WHAT=RANGE like equipment=10+ or planeswalkers=..2, got '{s}'"))?;
-        let what = what.trim();
+        let split = s.rsplit_once('=').filter(|(what, _)| {
+            let what = what.trim_end();
+            !what.ends_with(['<', '>', '!']) && !COMPARING_KEYS.contains(&what.to_lowercase().as_str())
+        });
+        let (what, range) = match split {
+            Some((what, range)) => (what.trim(), Some(range)),
+            None => (s.trim(), None),
+        };
         if what.is_empty() {
             bail!("nothing to count in '{s}' (expected WHAT=RANGE like equipment=10+)");
         }
-        let (min, max) = parse_range(range, s)?;
+        let (min, max) = match range {
+            Some(r) => match parse_range(r, s) {
+                Ok(range) => range,
+                // Not a range after all: maybe an `=` inside a search (`o:"x=y"`).
+                Err(e) => return Self::cards(s.trim(), None, None).map_err(|q| q.context(e)),
+            },
+            None => (None, None),
+        };
         if let Ok(field) = what.parse::<TypeField>() {
+            if range.is_none() {
+                bail!("EDHREC's {} count needs a range, like {}=10+", field.name(), field.name());
+            }
             return Ok(Filter::Table(TypeFilter { field, min, max }));
         }
+        Self::cards(what, min, max)
+    }
+}
+
+impl Filter {
+    fn cards(what: &str, min: Option<u32>, max: Option<u32>) -> Result<Self> {
         let (counted, alternatives) = if let Some(role) = role_named(what) {
             (Counted::Role(role), vec![])
         } else if is_word(what) {
@@ -347,6 +408,10 @@ pub struct Matched {
     pub count: u32,
     /// (name as the decklist has it, quantity), in decklist order.
     pub cards: Vec<(String, u32)>,
+    /// The filter's range (`15+`, `≤2`), if it has one.
+    pub wanted: Option<String>,
+    /// Is the count within that range? (Always, without one.)
+    pub passes: bool,
 }
 
 /// A [`CardFilter`] checked against every card in the database.
@@ -360,15 +425,18 @@ pub struct CompiledFilter {
 impl CompiledFilter {
     /// The deck's matching cards among the 99. Cards the database doesn't know never count.
     pub fn count(&self, deck: &Deck, cards: &CardDb) -> Matched {
-        let mut m = Matched { label: self.filter.label.clone(), ..Default::default() };
+        let f = &self.filter;
+        let mut m = Matched { label: f.label.clone(), wanted: range_text(f.min, f.max), ..Default::default() };
         for (name, &qty) in &deck.cards {
             if cards.position(name).is_some_and(|i| self.matching.get(i) == Some(&true)) {
                 m.count += qty;
                 m.cards.push((name.clone(), qty));
             }
         }
+        m.passes = f.passes(m.count);
         m
     }
+
     /// What the deck table can say about this filter before fetching; `None` without a minimum.
     pub fn prior(&self, cards: &CardDb) -> Option<Prior> {
         let min = self.filter.min.filter(|m| *m > 0)?;
@@ -641,9 +709,30 @@ mod tests {
         let q = cards_filter(r#"o:"x=y"=..3"#);
         assert!(matches!(&q.counted, Counted::Query(q) if q.source() == r#"o:"x=y""#));
         assert_eq!(q.to_string(), r#"≤3 o:"x=y""#);
-        for bad in ["equipment", "=5", "equipment=lots", "set:neo=5+", "t:saga or=2"] {
+        for bad in ["=5", "equipment=lots", "set:neo=5+", "t:saga or=2", "artifacts", "creatures=..x"] {
             assert!(bad.parse::<Filter>().is_err(), "should reject {bad:?}");
         }
+        assert!("equipment=lots".parse::<Filter>().unwrap_err().to_string().contains("isn't a count"));
+    }
+
+    #[test]
+    fn without_a_range_a_filter_only_counts() {
+        let only = |s: &str, query: &str| {
+            let f = cards_filter(s);
+            assert!(matches!(&f.counted, Counted::Query(q) if q.source() == query), "{s}");
+            assert!(!f.has_range() && f.passes(0) && f.passes(99), "{s}");
+        };
+        only("equipment", "t:equipment");
+        only("mv=3", "mv=3"); // the '=' belongs to the search: a bare key never takes a range
+        only("c=rg", "c=rg");
+        only("t:equipment mv<=2", "t:equipment mv<=2");
+        only(r#"o:"x=y""#, r#"o:"x=y""#);
+        assert!(!cards_filter("ramp").has_range());
+        let ranged = cards_filter("mv=3=10+");
+        assert!(matches!(&ranged.counted, Counted::Query(q) if q.source() == "mv=3"));
+        assert_eq!((ranged.min, ranged.max), (Some(10), None));
+        let t: TypeFilter = "spells=25-40".parse().unwrap();
+        assert_eq!((t.range_arg(), t.field.type_query()), ("25-40".to_string(), "(t:instant or t:sorcery)"));
     }
 
     fn deck(cards: &[(&str, u32)]) -> Deck {
@@ -683,7 +772,7 @@ mod tests {
         let db = db();
         let err = |s: &str| cards_filter(s).compile(&db, None).unwrap_err().to_string();
         assert!(err("equipmnet=10+").contains("name:equipmnet"));
-        assert!(err("mv=3").contains("the count goes after the last '='"), "a forgotten range reads as t:mv");
+        assert!(err("mv=3").contains("matches no card"));
         assert!(err("o:dragon=2+").contains("after the last '='"));
         assert!(err("otag:ramp=10+").contains("sync"));
     }
@@ -714,7 +803,7 @@ mod tests {
         assert!(eq.score(&deck(10, 10, 25)) > eq.score(&deck(10, 30, 10)));
         let counters = prior("t:instant=12+").unwrap();
         assert!(!counters.possible(&deck(30, 11, 20)) && counters.possible(&deck(0, 12, 0)));
-        assert!(prior("equipment=..2").is_none(), "no minimum, no prior");
+        assert!(prior("equipment=..2").is_none() && prior("equipment").is_none(), "no minimum, no prior");
     }
 
     #[test]
