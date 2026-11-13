@@ -7,6 +7,7 @@ pub mod config;
 pub mod deck;
 pub mod edhrec;
 pub mod http;
+pub mod query;
 pub mod storage;
 pub mod sync;
 pub mod tags;

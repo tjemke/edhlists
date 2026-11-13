@@ -13,7 +13,7 @@ use crate::tags::RoleTags;
 use crate::text::{fold, front_face};
 
 /// Bump when [`Card`] changes shape; `sync` rebuilds from the kept raw bulk file without downloading.
-pub const CARDS_SCHEMA: u32 = 2;
+pub const CARDS_SCHEMA: u32 = 3;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Card {
@@ -52,6 +52,9 @@ pub struct Card {
     /// Whether Scryfall Tagger knows this card at all (if not, roles come from heuristics).
     #[serde(default)]
     pub tagged: bool,
+    /// Keyword abilities, as Scryfall lists them ("Flying", "Equip", ...), all faces.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keywords: Vec<String>,
 }
 
 impl Card {
@@ -275,6 +278,8 @@ struct RawCard {
     produced_mana: Option<Vec<String>>,
     #[serde(default)]
     flavor_name: Option<String>,
+    #[serde(default)]
+    keywords: Vec<String>,
 }
 
 const SKIP_LAYOUTS: &[&str] =
@@ -318,6 +323,7 @@ fn convert(c: RawCard) -> Option<Card> {
         produces_mana: c.produced_mana.is_some_and(|m| !m.is_empty()),
         roles: 0,
         tagged: false,
+        keywords: c.keywords,
         name: c.name,
     })
 }
