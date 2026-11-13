@@ -10,6 +10,9 @@
 //! 4. include every already-cached deck for free, then spread the remaining budget across themes
 //!    and salt/price tiers so the pool isn't fifty copies of the same idea.
 //!
+//! `-T` card filters can't be checked before a deck is fetched, but their [`Prior`]s drop decks
+//! that can't reach the minimum and, within each theme and tier, fetch the likeliest decks first.
+//!
 //! The decks past the budget come out in the same order (any prefix of `to_fetch` + `more` is
 //! spread the same way), so a browser left open can keep fetching where the budget stopped.
 
@@ -17,7 +20,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use edh_data::edhrec::TableRow;
 
-use crate::filters::TypeFilter;
+use crate::filters::{Prior, TypeFilter};
 
 #[derive(Clone, Debug)]
 pub struct SelectOptions {
@@ -35,6 +38,8 @@ pub struct SelectOptions {
     pub since: Option<String>,
     /// Card-type count filters (`-T planeswalkers=10+`); all must match.
     pub types: Vec<TypeFilter>,
+    /// What the deck table says about the `-T` card filters' minimums.
+    pub priors: Vec<Prior>,
     /// How many not-yet-cached decks we may fetch.
     pub budget: usize,
 }
@@ -109,6 +114,7 @@ pub fn select<'a>(rows: &'a [TableRow], opts: &SelectOptions, is_cached: impl Fn
         .filter(|r| opts.since.as_ref().is_none_or(|s| r.savedate.as_str() >= s.as_str()))
         .filter(|r| tags.is_empty() || r.tags.iter().any(|t| tags.contains(&t.to_lowercase())))
         .filter(|r| opts.types.iter().all(|f| f.matches(r)))
+        .filter(|r| opts.priors.iter().all(|p| p.possible(r)))
         // Owners' labels are a weak signal (a $11k, salt-93 list declared "B3" exists), so the
         // ceiling applies to declared decks too.
         .filter(|r| {
@@ -148,6 +154,12 @@ pub fn select<'a>(rows: &'a [TableRow], opts: &SelectOptions, is_cached: impl Fn
     let sizes: Vec<usize> = themes.values().map(|t| t.values().map(Vec::len).sum()).collect();
     let weights: Vec<f64> = sizes.iter().map(|&s| (s as f64).sqrt()).collect();
 
+    // How likely a deck is to pass the card filters, in tenths of the tightest minimum: a coarse
+    // estimate, so close calls still go to the declared, recent deck.
+    let likelihood = |r: &TableRow| -> i64 {
+        let s = opts.priors.iter().map(|p| p.score(r)).fold(f64::INFINITY, f64::min);
+        if s.is_finite() { (s * 10.0).floor() as i64 } else { 0 }
+    };
     // Per theme: one queue per tier, taken round-robin.
     let mut queues: Vec<(usize, Vec<Vec<&TableRow>>)> = themes
         .into_values()
@@ -155,8 +167,14 @@ pub fn select<'a>(rows: &'a [TableRow], opts: &SelectOptions, is_cached: impl Fn
             let tiers = tiers
                 .into_values()
                 .map(|mut v| {
-                    // Declared-in-target first, then most recent; we pop from the back.
-                    v.sort_by(|a, b| a.bracket.is_some().cmp(&b.bracket.is_some()).then(a.savedate.cmp(&b.savedate)));
+                    // Likeliest to pass the card filters first, then declared-in-target, then most
+                    // recent; we pop from the back.
+                    v.sort_by(|a, b| {
+                        likelihood(a)
+                            .cmp(&likelihood(b))
+                            .then(a.bracket.is_some().cmp(&b.bracket.is_some()))
+                            .then(a.savedate.cmp(&b.savedate))
+                    });
                     v
                 })
                 .collect();
@@ -241,6 +259,7 @@ mod tests {
             tags: vec![],
             since: None,
             types: vec![],
+            priors: vec![],
             budget,
         }
     }
@@ -330,6 +349,50 @@ mod tests {
         let o = SelectOptions { types: vec!["planeswalkers=10+".parse().unwrap()], ..opts(10) };
         let s = select(&rows, &o, |_| false);
         assert_eq!(s.to_fetch.iter().map(|r| r.urlhash.as_str()).collect::<Vec<_>>(), vec!["walkers"]);
+    }
+
+    #[test]
+    fn card_filters_skip_hopeless_decks_and_fetch_likely_ones_first() {
+        use edh_data::cards::{Card, CardDb};
+        let card = |name: &str, type_line: &str, rank: u32| Card {
+            name: name.into(),
+            type_line: type_line.into(),
+            oracle: vec![String::new()],
+            layout: "normal".into(),
+            rank: Some(rank),
+            ..Default::default()
+        };
+        let db = CardDb::new(vec![
+            card("Bonesplitter", "Artifact — Equipment", 10),
+            card("Sol Ring", "Artifact", 1),
+            card("Llanowar Elves", "Creature — Elf Druid", 2),
+        ]);
+        let prior = match "equipment=10+".parse::<crate::filters::Filter>().unwrap() {
+            crate::filters::Filter::Cards(c) => c.compile(&db, None).unwrap().prior(&db).unwrap(),
+            _ => unreachable!(),
+        };
+        // 99 cards each: artifacts vs instants, creatures fixed.
+        let deck = |hash: &str, creature: u32, artifact: u32| TableRow {
+            creature,
+            artifact,
+            instant: 63 - creature - artifact,
+            sorcery: 0,
+            enchantment: 0,
+            ..row(hash, None, 50.0, 100.0, &[], "2026-01-01")
+        };
+        let rows = vec![
+            deck("few", 4, 5), // equipment can only be artifacts or creatures: 9 < 10
+            deck("some", 20, 10),
+            deck("many", 20, 30),
+            deck("most", 20, 40),
+            deck("mid", 20, 20),
+        ];
+        let with = SelectOptions { priors: vec![prior], ..opts(10) };
+        let s = select(&rows, &with, |_| false);
+        assert_eq!(s.eligible, 4);
+        assert_eq!(s.to_fetch.iter().map(|r| r.urlhash.as_str()).collect::<Vec<_>>(), ["most", "many", "mid", "some"]);
+        // Without card filters, nothing changes.
+        assert_eq!(select(&rows, &opts(10), |_| false).eligible, 5);
     }
 
     #[test]

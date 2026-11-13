@@ -113,6 +113,13 @@ matches; the browser keeps fetching past it, and a plain run tells you when runn
 help. In the browser, each decklist filter gets a count column, the detail pane lists the cards it
 counted, and the decklist marks them with `▸`.
 
+The deck table still helps pick which decks to fetch for a minimum. Matching cards only sit in some
+of its type columns (equipment are counted as artifacts, or creatures for the few that are both),
+so a deck whose columns can't add up to the minimum is skipped, and within each theme and tier the
+decks with the most cards where matches usually sit come first (each column weighted by how much of
+what decks play there matches, by EDHREC popularity). That works best for kinds that live in one
+column (equipment, auras, sagas, instants); ramp, which spreads over every type, gains less.
+
 **With a commander**, `-T` narrows that commander's decks. **Without one**, it searches across
 commanders: the filters pick EDHREC themes and their top commanders are scanned. Table counts map to
 `planeswalkers`, `spellslinger`, `creatureless`, `artifacts`, `enchantress` and `lands-matter`;

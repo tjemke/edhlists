@@ -265,6 +265,7 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
         tags: args.tags.clone(),
         since,
         types,
+        priors: card_filters.iter().filter_map(|f| f.prior(&cards)).collect(),
         budget: args.fetch,
     };
     let store = DeckStore::new(paths.decks());

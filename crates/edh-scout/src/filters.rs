@@ -9,12 +9,16 @@
 //!   see [`edh_data::query`]).
 //!
 //! Like EDHREC's counts, card counts cover the 99: commanders don't count, quantities do.
+//!
+//! Before a deck is fetched, a card filter can still use the deck table ([`Prior`]): its cards can
+//! only sit in some of EDHREC's type columns, which bounds the count and says which decks are
+//! likeliest to match.
 
 use std::fmt;
 use std::str::FromStr;
 
 use anyhow::{Result, anyhow, bail};
-use edh_data::cards::CardDb;
+use edh_data::cards::{Card, CardDb};
 use edh_data::deck::Deck;
 use edh_data::edhrec::{TableRow, Theme};
 use edh_data::query::Query;
@@ -359,6 +363,73 @@ impl CompiledFilter {
         }
         m
     }
+    /// What the deck table can say about this filter before fetching; `None` without a minimum.
+    pub fn prior(&self, cards: &CardDb) -> Option<Prior> {
+        let min = self.filter.min.filter(|m| *m > 0)?;
+        let mut possible = [false; 8];
+        let (mut hits, mut all) = ([0.0f64; 8], [0.0f64; 8]);
+        for (card, &matches) in cards.cards.iter().zip(&self.matching) {
+            let col = edhrec_column(card);
+            // Zipf: a card's share of deck slots falls off roughly as 1/rank.
+            let weight = card.rank.map_or(0.0, |r| 1.0 / f64::from(r.max(1)));
+            if let Some(c) = col {
+                all[c] += weight;
+            }
+            if !matches {
+                continue;
+            }
+            let types: Vec<usize> = (0..8).filter(|&c| card.type_line.contains(COLUMNS[c])).collect();
+            if types.is_empty() {
+                possible = [true; 8]; // no main type we know of: it could be counted anywhere
+            }
+            types.into_iter().for_each(|c| possible[c] = true);
+            if let Some(c) = col {
+                hits[c] += weight;
+            }
+        }
+        let rate = std::array::from_fn(|c| if all[c] > 0.0 { hits[c] / all[c] } else { 0.0 });
+        Some(Prior { min, possible, rate })
+    }
+}
+
+/// EDHREC's per-deck type columns, in [`columns`] order (also [`Card::primary_type`]'s labels).
+const COLUMNS: [&str; 8] =
+    ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Battle", "Planeswalker", "Land"];
+
+fn columns(r: &TableRow) -> [u32; 8] {
+    [r.creature, r.instant, r.sorcery, r.artifact, r.enchantment, r.battle, r.planeswalker, r.land]
+}
+
+/// The column EDHREC counts a card in: its front face's main type, land before creature before
+/// the rest ("Artifact Creature" is a creature, "Artifact Land" a land), as its deck pages file them.
+fn edhrec_column(card: &Card) -> Option<usize> {
+    let t = card.primary_type();
+    COLUMNS.iter().position(|c| *c == t)
+}
+
+/// What the deck table says about a card filter's minimum before a deck is fetched.
+#[derive(Clone, Debug)]
+pub struct Prior {
+    min: u32,
+    /// Columns a matching card could be counted in: any main type on any of its faces.
+    possible: [bool; 8],
+    /// Per column: the share of the cards decks play there that match, by EDHREC popularity.
+    rate: [f64; 8],
+}
+
+impl Prior {
+    /// Could the deck reach the minimum at all? False only when the columns its matching cards
+    /// could sit in hold fewer cards than that, so skipping it never loses a match.
+    pub fn possible(&self, r: &TableRow) -> bool {
+        let cols = columns(r);
+        (0..8).filter(|&c| self.possible[c]).map(|c| cols[c]).sum::<u32>() >= self.min
+    }
+
+    /// Expected matching cards as a share of the minimum: higher means likelier to pass.
+    pub fn score(&self, r: &TableRow) -> f64 {
+        let cols = columns(r);
+        (0..8).map(|c| self.rate[c] * f64::from(cols[c])).sum::<f64>() / f64::from(self.min)
+    }
 }
 
 pub fn describe(table: &[TypeFilter], cards: &[CompiledFilter]) -> String {
@@ -569,6 +640,35 @@ mod tests {
         assert!(err("mv=3").contains("the count goes after the last '='"), "a forgotten range reads as t:mv");
         assert!(err("o:dragon=2+").contains("after the last '='"));
         assert!(err("otag:ramp=10+").contains("sync"));
+    }
+
+    fn ranked(mut c: Card, rank: u32) -> Card {
+        c.rank = Some(rank);
+        c
+    }
+
+    #[test]
+    fn priors_bound_and_rank_decks_by_where_matching_cards_sit() {
+        let db = CardDb::new(vec![
+            ranked(card("Bonesplitter", "Artifact — Equipment", ""), 10),
+            ranked(card("Lizard Blades", "Artifact Creature — Equipment Lizard", ""), 50),
+            ranked(card("Sol Ring", "Artifact", ""), 1),
+            ranked(card("Llanowar Elves", "Creature — Elf Druid", ""), 2),
+            ranked(card("Counterspell", "Instant", ""), 3),
+            ranked(card("Brainstorm", "Instant", ""), 4),
+        ]);
+        let prior = |s: &str| cards_filter(s).compile(&db, None).unwrap().prior(&db);
+        let eq = prior("equipment=10+").unwrap();
+        // Equipment can only be counted as artifacts or creatures.
+        assert_eq!(eq.possible, [true, false, false, true, false, false, false, false]);
+        let deck =
+            |creature, instant, artifact| TableRow { creature, instant, artifact, land: 36, ..Default::default() };
+        assert!(eq.possible(&deck(4, 40, 6)) && !eq.possible(&deck(4, 40, 5)), "4 + 5 < 10 can't reach 10");
+        assert!(eq.score(&deck(10, 10, 25)) > eq.score(&deck(25, 10, 10)), "artifact-heavy first");
+        assert!(eq.score(&deck(10, 10, 25)) > eq.score(&deck(10, 30, 10)));
+        let counters = prior("t:instant=12+").unwrap();
+        assert!(!counters.possible(&deck(30, 11, 20)) && counters.possible(&deck(0, 12, 0)));
+        assert!(prior("equipment=..2").is_none(), "no minimum, no prior");
     }
 
     #[test]
