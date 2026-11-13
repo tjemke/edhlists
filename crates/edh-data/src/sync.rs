@@ -89,23 +89,28 @@ pub fn sync(http: &Http, paths: &Paths, what: SyncWhat) -> Result<()> {
     Ok(())
 }
 
-/// Load both databases, syncing whatever is missing or from an older schema first.
+/// Load both databases, syncing whatever is missing or from an older schema first. Each file is
+/// read once: a current one is kept as loaded, not loaded again after the schema check.
 pub fn ensure_databases(http: &Http, paths: &Paths) -> Result<(CardDb, ComboDb)> {
-    let cards_ok =
-        paths.cards_db().exists() && CardDb::load(&paths.cards_db()).map(|d| d.schema == CARDS_SCHEMA).unwrap_or(false);
-    let combos_ok = paths.combos_db().exists()
-        && ComboDb::load(&paths.combos_db()).map(|d| d.schema == COMBOS_SCHEMA).unwrap_or(false);
-    if !cards_ok || !combos_ok {
-        let missing_raw = (!cards_ok && !(paths.scryfall_raw().exists() && paths.scryfall_tags_raw().exists()))
-            || (!combos_ok && !paths.spellbook_raw().exists());
+    let cards = current(&paths.cards_db(), CardDb::load, |d| d.schema == CARDS_SCHEMA);
+    let combos = current(&paths.combos_db(), ComboDb::load, |d| d.schema == COMBOS_SCHEMA);
+    if cards.is_none() || combos.is_none() {
+        let missing_raw = (cards.is_none() && !(paths.scryfall_raw().exists() && paths.scryfall_tags_raw().exists()))
+            || (combos.is_none() && !paths.spellbook_raw().exists());
         if http.offline() && missing_raw {
             bail!("no local card/combo database yet; run `edh-scout sync` once while online");
         }
         eprintln!("local databases missing or outdated — building them first");
-        sync(http, paths, SyncWhat { cards: !cards_ok, combos: !combos_ok, use_existing_raw: true })?;
+        sync(http, paths, SyncWhat { cards: cards.is_none(), combos: combos.is_none(), use_existing_raw: true })?;
     }
-    let cards = CardDb::load(&paths.cards_db())?;
-    let combos = ComboDb::load(&paths.combos_db())?;
+    let cards = match cards {
+        Some(db) => db,
+        None => CardDb::load(&paths.cards_db())?,
+    };
+    let combos = match combos {
+        Some(db) => db,
+        None => ComboDb::load(&paths.combos_db())?,
+    };
     if cards.age_days() > DB_STALE_DAYS {
         eprintln!(
             "note: card data is {} days old — `edh-scout sync` refreshes prices and Game Changers",
@@ -113,4 +118,12 @@ pub fn ensure_databases(http: &Http, paths: &Paths) -> Result<(CardDb, ComboDb)>
         );
     }
     Ok((cards, combos))
+}
+
+/// The database at `path`, if it exists, loads, and passes `ok` (the schema check).
+fn current<T>(path: &Path, load: fn(&Path) -> Result<T>, ok: fn(&T) -> bool) -> Option<T> {
+    if !path.exists() {
+        return None;
+    }
+    load(path).ok().filter(ok)
 }

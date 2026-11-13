@@ -5,6 +5,14 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
 
 ## Worth doing
 
+- [ ] **Load the databases faster.** Startup (`check` on a local list) is ~0.57 s, down from ~1.1 s
+  since `ensure_databases` stopped loading each file twice; nearly all of what's left is
+  `ComboDb::load` (~0.37 s, 120k combos) and `CardDb::load` (~0.13 s). Options:
+  `read_json_gz` (`edh-data/src/storage.rs`) parses through `from_reader`, and reading into a
+  buffer first is usually faster; the two files could load on two threads (`sync.rs`
+  `ensure_databases`), ~0.13 s off; or the combos could load in the background, since only
+  scoring needs them. *Small each; measure first.*
+
 - [ ] **Change filters live in the browser.** Keep every fetched deck in the pool (today
   `Pool::add` in `scout.rs` drops decks that fail a card filter) and let a key add, edit or remove
   a `-T` filter without new requests; a toggle shows failing decks dimmed. The commander picker
