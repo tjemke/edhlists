@@ -12,6 +12,7 @@ use edh_data::deck::parse_decklist;
 use edh_data::edhrec::DeckStore;
 use edh_data::edhrec::{self, ListedCommander};
 use edh_data::http::{Http, OfflineMiss, summarize_counts};
+use edh_data::progress::{Lines, Progress};
 use edh_data::sync::{SyncWhat, ensure_databases, sync};
 use edh_data::tags::TagIndex;
 use edh_data::text::{commander_slug, date_days_ago, front_face, slugify};
@@ -21,6 +22,7 @@ use edh_scout::filters::{self, CardFilter, CompiledFilter, Filter};
 use edh_scout::rank::{RankMode, Target, Weights, mix, parse_range, rank};
 use edh_scout::scout::{Fetcher, Pool, PoolStats, Prepared, ScoutOptions, load_commander_sources, load_salt, prepare};
 use edh_scout::select::SelectOptions;
+use edh_scout::status::Status;
 use edh_scout::{picker, plain, tui, view};
 
 /// Find well-rounded, fun Commander decklists on EDHREC.
@@ -211,15 +213,15 @@ fn color() -> bool {
 
 /// An exact or unambiguous name resolves directly; otherwise the user picks interactively (or, when
 /// there's no terminal to ask on, gets the candidates in the error).
-fn resolve_commander(cards: &CardDb, query: &str, role: &str) -> Result<String> {
+fn resolve_commander(cards: &CardDb, query: &str, role: &str, status: &Status) -> Result<String> {
     let candidates = match cards.find_commander(query) {
         Ok(c) => return Ok(c.name.clone()),
         Err(candidates) => candidates,
     };
     if picker::can_pick() {
-        return match picker::pick(cards, role, query)? {
+        return match status.suspend(|| picker::pick(cards, role, query))? {
             Some(c) => {
-                eprintln!("{role}: {}", c.name);
+                status.note(&format!("{role}: {}", c.name));
                 Ok(c.name.clone())
             }
             None => bail!("no {role} picked"),
@@ -263,8 +265,9 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
     };
     let parsed: Vec<Filter> = args.types.iter().map(|t| t.parse()).collect::<Result<_>>().context("-T")?;
     let (types, card_filters) = filters::split(parsed);
-    let (cards, combos) = ensure_databases(http, paths)?;
-    let card_filters = compile_filters(card_filters, &cards, paths)?;
+    let status = Status::new(Some(http));
+    let (cards, combos) = ensure_databases(http, paths, &status)?;
+    let card_filters = compile_filters(card_filters, &cards, paths, &status)?;
     http.set_min_gap("edhrec.com", std::time::Duration::from_secs_f64(args.deck_delay.max(2.0)));
     let select = SelectOptions {
         brackets: target.brackets,
@@ -279,6 +282,7 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
         budget: args.fetch,
     };
     let store = DeckStore::new(paths.decks());
+    status.step("loading EDHREC's salt scores");
     let salt = load_salt(http);
     let session = match &args.commander {
         Some(name) => start_single(
@@ -293,20 +297,40 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
             select,
             card_filters,
             keep_fetching,
+            &status,
         )?,
-        None => start_search(http, &store, &cards, &combos, salt, &args, &target, select, card_filters, keep_fetching)?,
+        None => start_search(
+            http,
+            &store,
+            &cards,
+            &combos,
+            salt,
+            &args,
+            &target,
+            select,
+            card_filters,
+            keep_fetching,
+            &status,
+        )?,
     };
+    drop(status);
     finish(http, session, &args, target, weights)
 }
 
 /// Check the `-T` card filters against the card database (and, for `otag:`, Scryfall Tagger's
 /// tag tree, read from the raw file `sync` keeps).
-fn compile_filters(filters: Vec<CardFilter>, cards: &CardDb, paths: &Paths) -> Result<Vec<CompiledFilter>> {
+fn compile_filters(
+    filters: Vec<CardFilter>,
+    cards: &CardDb,
+    paths: &Paths,
+    progress: &dyn Progress,
+) -> Result<Vec<CompiledFilter>> {
     let tags = if filters.iter().any(CardFilter::needs_tags) {
         let path = paths.scryfall_tags_raw();
         if !path.exists() {
             bail!("otag: needs Scryfall Tagger's tag file; run `edh-scout sync --cards` once (~6 MB)");
         }
+        progress.step("reading Scryfall Tagger's tags");
         Some(TagIndex::load(&path).context("reading Scryfall Tagger's tags")?)
     } else {
         None
@@ -334,27 +358,28 @@ fn start_single<'a>(
     select: SelectOptions,
     card_filters: Vec<CompiledFilter>,
     keep_fetching: bool,
+    status: &Status,
 ) -> Result<Session<'a>> {
-    let mut commanders = vec![resolve_commander(cards, name, "commander")?];
+    let mut commanders = vec![resolve_commander(cards, name, "commander", status)?];
     if let Some(p) = &args.partner {
-        commanders.push(resolve_commander(cards, p, "partner")?);
+        commanders.push(resolve_commander(cards, p, "partner", status)?);
     }
     let slug = args.slug.clone().unwrap_or_else(|| commander_slug(&commanders));
     let mut title = commanders.iter().map(|c| front_face(c)).collect::<Vec<_>>().join(" + ");
     if !select.types.is_empty() || !card_filters.is_empty() {
         title += &format!(" · {}", filters::describe(&select.types, &card_filters));
     }
-    eprintln!("scouting {title} (edhrec.com/commanders/{slug}) for {} ...", target.describe());
+    status.note(&format!("scouting {title} (edhrec.com/commanders/{slug}) for {} ...", target.describe()));
     let opts = ScoutOptions { commanders, slug: slug.clone(), select };
-    let Prepared { decks, sources, mut stats, mut to_fetch, more } = prepare(http, store, &opts)?;
+    let Prepared { decks, sources, mut stats, mut to_fetch, more } = prepare(http, store, &opts, status)?;
     if let Some(c) = stats.ceiling {
         let price = if args.output.price { format!(" / ${:.0}", c.price) } else { String::new() };
-        eprintln!(
+        status.note(&format!(
             "  decks capped at salt {:.0}{price} (90th percentile of {} decks declared {})",
             c.salt,
             c.from_decks,
             target.describe().split(" · ").next().unwrap_or("")
-        );
+        ));
     }
     let count_labels = count_labels(&card_filters);
     if keep_fetching {
@@ -362,6 +387,7 @@ fn start_single<'a>(
     }
     let mut pool = Pool::new(cards, combos, salt, stats).with_filters(card_filters);
     pool.add_commander(&slug, sources);
+    status.step(&format!("scoring {} stored decks", decks.len()));
     for d in decks {
         pool.add(d);
     }
@@ -387,12 +413,12 @@ fn start_single<'a>(
     } else {
         String::new()
     };
-    eprintln!(
+    status.note(&format!(
         "  {} stored deck(s) ready{skipped}, {} to fetch in the background{later} · {}",
         pool.decks.len(),
         to_fetch.len(),
         summarize_counts(&http.request_counts())
-    );
+    ));
     if keep_fetching {
         to_fetch.extend(more);
     }
@@ -415,6 +441,7 @@ fn start_search<'a>(
     select: SelectOptions,
     card_filters: Vec<CompiledFilter>,
     keep_fetching: bool,
+    status: &Status,
 ) -> Result<Session<'a>> {
     if select.types.is_empty() && !card_filters.iter().any(|f| f.filter.has_range()) {
         bail!("searching across commanders needs a -T with a range, like equipment=10+ (or name a commander)");
@@ -423,6 +450,7 @@ fn start_search<'a>(
     if card_filters.iter().any(|f| f.filter.wants_many()) {
         // Card filters name themes by their words (equipment, sagas, legends, ramp): one request
         // for EDHREC's theme list, cached for a week.
+        status.step("loading EDHREC's theme list");
         match edhrec::themes(http) {
             Ok(known) => {
                 for t in filters::card_themes(&card_filters, &known) {
@@ -431,14 +459,15 @@ fn start_search<'a>(
                     }
                 }
             }
-            Err(e) => eprintln!("  note: couldn't load EDHREC's theme list ({e:#})"),
+            Err(e) => status.note(&format!("  note: couldn't load EDHREC's theme list ({e:#})")),
         }
     }
     let mut candidates: Vec<ListedCommander> = Vec::new();
     for theme in &themes {
+        status.step(&format!("loading EDHREC's '{theme}' theme"));
         match edhrec::theme_commanders(http, theme) {
             Ok(list) => candidates.extend(list),
-            Err(e) => eprintln!("  note: couldn't load EDHREC's '{theme}' theme ({e:#})"),
+            Err(e) => status.note(&format!("  note: couldn't load EDHREC's '{theme}' theme ({e:#})")),
         }
     }
     let limit = args.commanders.max(1);
@@ -457,6 +486,7 @@ fn start_search<'a>(
     let themed = format!("from EDHREC theme{} {}", if themes.len() > 1 { "s" } else { "" }, themes.join(", "));
     let source = match (from_themes, from_text) {
         (0, 0) => {
+            status.step("loading EDHREC's most-built commanders");
             candidates = edhrec::top_commanders(http).context("EDHREC's top commanders")?;
             candidates.retain(|c| seen.insert(c.slug.clone()));
             candidates.sort_by_key(|c| std::cmp::Reverse(c.num_decks));
@@ -469,7 +499,11 @@ fn start_search<'a>(
     };
     let wanted = filters::describe(&select.types, &card_filters);
     let count_labels = count_labels(&card_filters);
-    eprintln!("searching {} commanders {source} for decks with {wanted}, {} ...", candidates.len(), target.describe());
+    status.note(&format!(
+        "searching {} commanders {source} for decks with {wanted}, {} ...",
+        candidates.len(),
+        target.describe()
+    ));
     let stats = PoolStats { commanders_total: candidates.len(), ..Default::default() };
     let pool = Pool::new(cards, combos, salt, stats).with_filters(card_filters);
     let fetcher = Fetcher::spawn_search(Arc::clone(http), store.clone(), candidates, select, keep_fetching);
@@ -569,24 +603,29 @@ fn run_check(http: &Http, paths: &Paths, args: CheckArgs) -> Result<()> {
             t.range_arg()
         );
     }
-    let (cards, combos) = ensure_databases(http, paths)?;
-    let card_filters = compile_filters(card_filters, &cards, paths)?;
+    let status = Status::new(Some(http));
+    let (cards, combos) = ensure_databases(http, paths, &status)?;
+    let card_filters = compile_filters(card_filters, &cards, paths, &status)?;
     let mut deck = parse_decklist(&text, &args.commanders);
     deck.id = args.file.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "deck".into());
     if deck.commanders.is_empty() {
-        eprintln!("warning: no commander found (use --commander, a 'Commander' section or *CMDR*)");
+        status.note("warning: no commander found (use --commander, a 'Commander' section or *CMDR*)");
     }
     let canonical: Vec<String> = deck.commanders.iter().map(|c| cards.canonical(c).unwrap_or(c).to_string()).collect();
     let slug = (!canonical.is_empty()).then(|| commander_slug(&canonical));
     let title = format!("{} ({})", deck.id, deck.commanders.join(" + "));
+    status.step("loading EDHREC's salt scores");
     let mut pool = Pool::new(&cards, &combos, load_salt(http), PoolStats::default());
     if let Some(slug) = &slug {
+        status.step("loading EDHREC's synergy and combo votes");
         pool.add_commander(slug, load_commander_sources(http, slug));
     }
+    status.step("scoring the deck");
     pool.add(deck);
     if let Some((deck, a)) = pool.decks.first_mut() {
         a.matches = card_filters.iter().map(|f| f.count(deck, &cards)).collect();
     }
+    drop(status);
     if interactive(args.plain) {
         let settings = tui::Settings {
             title,
@@ -630,6 +669,7 @@ fn main() -> ExitCode {
                     &http,
                     &paths,
                     SyncWhat { cards: both || args.cards, combos: both || args.combos, use_existing_raw: args.rebuild },
+                    &Lines,
                 )?;
                 eprintln!(
                     "{} · cache in {} · decks in {}",

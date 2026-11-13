@@ -18,6 +18,7 @@ use edh_data::combos::ComboDb;
 use edh_data::deck::Deck;
 use edh_data::edhrec::{self, CommanderPage, DeckStore, EdhrecCombo, ListedCommander, TableRow};
 use edh_data::http::{HostBlocked, Http, OfflineMiss};
+use edh_data::progress::Progress;
 use edh_data::text::commander_slug;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
@@ -140,11 +141,14 @@ fn finish_deck(mut deck: Deck, row: &TableRow, commanders: &[String]) -> Deck {
 }
 
 /// Deck table, candidate selection, side pages and stored decks: a handful of (cached) requests.
-pub fn prepare(http: &Http, store: &DeckStore, opts: &ScoutOptions) -> Result<Prepared> {
+pub fn prepare(http: &Http, store: &DeckStore, opts: &ScoutOptions, progress: &dyn Progress) -> Result<Prepared> {
+    progress.step(&format!("loading EDHREC's deck table for {}", opts.slug));
     let table = edhrec::deck_table(http, &opts.slug)?;
     let sel = select(&table.table, &opts.select, |h| store.contains(h));
     let mut stats = PoolStats { listed: sel.total, eligible: sel.eligible, ceiling: sel.ceiling, ..Default::default() };
+    progress.step("loading EDHREC's synergy and combo votes");
     let sources = load_commander_sources(http, &opts.slug);
+    progress.step(&format!("reading {} stored decks", sel.cached.len()));
     let mut decks = Vec::with_capacity(sel.cached.len());
     for row in &sel.cached {
         match store.fetch(http, &row.urlhash) {

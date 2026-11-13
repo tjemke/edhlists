@@ -11,6 +11,7 @@ use crate::cards::{self, CARDS_SCHEMA, CardDb};
 use crate::combos::{self, COMBOS_SCHEMA, ComboDb};
 use crate::config::{DB_STALE_DAYS, Paths, SCRYFALL_BULK_CARDS, SCRYFALL_BULK_TAGS, SPELLBOOK_DUMP};
 use crate::http::{Http, ensure_online};
+use crate::progress::Progress;
 use crate::tags::load_role_tags;
 use std::path::Path;
 
@@ -35,7 +36,7 @@ struct BulkMeta {
 }
 
 /// Resolve a Scryfall bulk-data entry to its current file and download it (2 requests).
-fn download_bulk(http: &Http, meta_url: &str, what: &str, dest: &Path) -> Result<()> {
+fn download_bulk(http: &Http, meta_url: &str, what: &str, dest: &Path, progress: &dyn Progress) -> Result<()> {
     ensure_online(http, &format!("downloading {what}"))?;
     let meta: BulkMeta = serde_json::from_slice(&http.get_bytes(meta_url)?).context("Scryfall bulk-data metadata")?;
     let url = meta
@@ -43,32 +44,32 @@ fn download_bulk(http: &Http, meta_url: &str, what: &str, dest: &Path) -> Result
         .or(meta.download_uri)
         .context("Scryfall's bulk-data entry has no download URI — did their API change?")?;
     let mb = meta.compressed_size.or(meta.size).unwrap_or(0) as f64 / 1e6;
-    eprintln!("downloading {what} (~{mb:.0} MB) ...");
+    progress.step(&format!("downloading {what} (~{mb:.0} MB)"));
     http.download(&url, dest)?;
     Ok(())
 }
 
-pub fn sync(http: &Http, paths: &Paths, what: SyncWhat) -> Result<()> {
+pub fn sync(http: &Http, paths: &Paths, what: SyncWhat, progress: &dyn Progress) -> Result<()> {
     let mut card_db = None;
     if what.cards {
         let raw = paths.scryfall_raw();
         let tags_raw = paths.scryfall_tags_raw();
         if !(what.use_existing_raw && raw.exists()) {
-            download_bulk(http, SCRYFALL_BULK_CARDS, "Scryfall card printings", &raw)?;
+            download_bulk(http, SCRYFALL_BULK_CARDS, "Scryfall card printings", &raw, progress)?;
         }
         if !(what.use_existing_raw && tags_raw.exists()) {
-            download_bulk(http, SCRYFALL_BULK_TAGS, "Scryfall Tagger oracle tags", &tags_raw)?;
+            download_bulk(http, SCRYFALL_BULK_TAGS, "Scryfall Tagger oracle tags", &tags_raw, progress)?;
         }
-        eprintln!("building card database ...");
+        progress.step("building card database");
         let tags = load_role_tags(&tags_raw)?;
         let db = cards::build_from_bulk(&raw, Some(&tags))?;
         let gcs = db.cards.iter().filter(|c| c.game_changer).count();
         db.save(&paths.cards_db())?;
-        eprintln!(
+        progress.note(&format!(
             "  {} cards, {gcs} Game Changers, {} with Tagger roles",
             db.cards.len(),
             db.cards.iter().filter(|c| c.tagged).count()
-        );
+        ));
         card_db = Some(db);
     }
     if what.combos {
@@ -78,21 +79,23 @@ pub fn sync(http: &Http, paths: &Paths, what: SyncWhat) -> Result<()> {
         let raw = paths.spellbook_raw();
         if !(what.use_existing_raw && raw.exists()) {
             ensure_online(http, "downloading Commander Spellbook combos")?;
-            eprintln!("downloading Commander Spellbook combo dump (~32 MB) ...");
+            progress.step("downloading Commander Spellbook combo dump (~32 MB)");
             http.download(SPELLBOOK_DUMP, &raw)?;
         }
-        eprintln!("building combo database ...");
+        progress.step("building combo database");
         let db = combos::build_from_dump(&raw, card_db.as_ref())?;
         db.save(&paths.combos_db())?;
-        eprintln!("  {} commander-legal combos", db.combos.len());
+        progress.note(&format!("  {} commander-legal combos", db.combos.len()));
     }
     Ok(())
 }
 
 /// Load both databases, syncing whatever is missing or from an older schema first. Each file is
 /// read once: a current one is kept as loaded, not loaded again after the schema check.
-pub fn ensure_databases(http: &Http, paths: &Paths) -> Result<(CardDb, ComboDb)> {
+pub fn ensure_databases(http: &Http, paths: &Paths, progress: &dyn Progress) -> Result<(CardDb, ComboDb)> {
+    progress.step("loading card database");
     let cards = current(&paths.cards_db(), CardDb::load, |d| d.schema == CARDS_SCHEMA);
+    progress.step("loading combo database");
     let combos = current(&paths.combos_db(), ComboDb::load, |d| d.schema == COMBOS_SCHEMA);
     if cards.is_none() || combos.is_none() {
         let missing_raw = (cards.is_none() && !(paths.scryfall_raw().exists() && paths.scryfall_tags_raw().exists()))
@@ -100,8 +103,9 @@ pub fn ensure_databases(http: &Http, paths: &Paths) -> Result<(CardDb, ComboDb)>
         if http.offline() && missing_raw {
             bail!("no local card/combo database yet; run `edh-scout sync` once while online");
         }
-        eprintln!("local databases missing or outdated — building them first");
-        sync(http, paths, SyncWhat { cards: cards.is_none(), combos: combos.is_none(), use_existing_raw: true })?;
+        progress.note("local databases missing or outdated — building them first");
+        let what = SyncWhat { cards: cards.is_none(), combos: combos.is_none(), use_existing_raw: true };
+        sync(http, paths, what, progress)?;
     }
     let cards = match cards {
         Some(db) => db,
@@ -112,10 +116,10 @@ pub fn ensure_databases(http: &Http, paths: &Paths) -> Result<(CardDb, ComboDb)>
         None => ComboDb::load(&paths.combos_db())?,
     };
     if cards.age_days() > DB_STALE_DAYS {
-        eprintln!(
+        progress.note(&format!(
             "note: card data is {} days old — `edh-scout sync` refreshes prices and Game Changers",
             cards.age_days()
-        );
+        ));
     }
     Ok((cards, combos))
 }

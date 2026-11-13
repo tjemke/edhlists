@@ -14,6 +14,7 @@ use anyhow::{Context, Result};
 use edh_data::config::Paths;
 use edh_data::deck::parse_decklist;
 use edh_data::http::Http;
+use edh_data::progress::Lines;
 use edh_data::sync::ensure_databases;
 use edh_scout::analysis::{edhpl_card, edhpl_combo, included_combos, resolve};
 use serde_json::json;
@@ -21,7 +22,7 @@ use serde_json::json;
 fn main() -> Result<()> {
     let paths = Paths::new(None, None)?;
     let http = Http::new(paths.http(), false);
-    let (cards, combos) = ensure_databases(&http, &paths)?;
+    let (cards, combos) = ensure_databases(&http, &paths, &Lines)?;
     let data = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../edhpl/tests/data");
     let mut files: Vec<PathBuf> = fs::read_dir(data.join("decks"))?
         .filter_map(|e| e.ok().map(|e| e.path()))

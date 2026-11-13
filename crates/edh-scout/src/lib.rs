@@ -14,5 +14,6 @@ pub mod rank;
 pub mod roles;
 pub mod scout;
 pub mod select;
+pub mod status;
 pub mod tui;
 pub mod view;
