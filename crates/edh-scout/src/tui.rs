@@ -19,6 +19,7 @@ use ratatui::{DefaultTerminal, Frame};
 
 use crate::analysis::Analysis;
 use crate::export::{self, ExportFormat, ReportInput};
+use crate::filters::CountColumn;
 use crate::rank::{RankMode, Ranked, Target, Weights, mix, rank};
 use crate::scout::{FetchEvent, Fetcher, Pool};
 use crate::view::{
@@ -47,8 +48,8 @@ pub struct Settings {
     pub show_commander: bool,
     /// Searching across commanders: interleave commanders in the ranking (`m` toggles).
     pub mix: bool,
-    /// Column headers for the `-T` card filters' counts (one per filter, in order).
-    pub count_labels: Vec<String>,
+    /// Columns for the `-T` card filters' counts.
+    pub count_columns: Vec<CountColumn>,
 }
 
 pub struct App<'a> {
@@ -255,7 +256,7 @@ impl<'a> App<'a> {
                     limit: self.settings.report_top,
                     format: self.settings.format,
                     show_price: self.settings.show_price,
-                    count_labels: &self.settings.count_labels,
+                    count_columns: &self.settings.count_columns,
                 };
                 self.status = Some(match export::write_report(&self.settings.export_dir, &input) {
                     Ok(p) => (
@@ -320,7 +321,7 @@ impl<'a> App<'a> {
     fn draw_table(&mut self, frame: &mut Frame, area: Rect) {
         let show_price = self.settings.show_price;
         let show_commander = self.settings.show_commander;
-        let counts = &self.settings.count_labels;
+        let counts = &self.settings.count_columns;
         let mut headers: Vec<String> = ["#", "Power", "B", "Salt", "Struct", "Syn"].map(String::from).to_vec();
         if show_price {
             headers.push("Price".into());
@@ -328,7 +329,7 @@ impl<'a> App<'a> {
         if show_commander {
             headers.extend(["Color".into(), "Commander".into()]);
         }
-        headers.extend(counts.iter().cloned());
+        headers.extend(counts.iter().map(|c| c.label.clone()));
         headers.push("Themes".into());
         let header = Row::new(headers).style(Style::new().bold().fg(DIM));
         let rows: Vec<Row> = self
@@ -366,9 +367,9 @@ impl<'a> App<'a> {
                     let names: Vec<&str> = deck.commanders.iter().map(|c| front_face(c)).collect();
                     cells.push(Cell::from(names.join(" + ")).style(Style::new().fg(ACCENT)));
                 }
-                for (i, label) in counts.iter().enumerate() {
-                    let n = a.matches.get(i).map_or("–".to_string(), |m| m.count.to_string());
-                    cells.push(Cell::from(format!("{n:>w$}", w = label.chars().count().max(3))));
+                for c in counts {
+                    let n = c.cell(&a.matches);
+                    cells.push(Cell::from(format!("{n:>w$}", w = c.label.chars().count().max(3))));
                 }
                 cells.push(Cell::from(themes));
                 Row::new(cells).style(base)
@@ -389,7 +390,7 @@ impl<'a> App<'a> {
             widths.push(Constraint::Length(5));
             widths.push(Constraint::Fill(1));
         }
-        widths.extend(counts.iter().map(|l| Constraint::Length(l.chars().count().max(3) as u16)));
+        widths.extend(counts.iter().map(|c| Constraint::Length(c.label.chars().count().max(3) as u16)));
         widths.push(Constraint::Fill(1));
         let title = if self.fits_only { " Decks in target " } else { " Decks " };
         let table = Table::new(rows, widths)

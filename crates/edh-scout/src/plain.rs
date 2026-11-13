@@ -4,6 +4,7 @@ use comfy_table::presets::UTF8_FULL_CONDENSED;
 use comfy_table::{Attribute, Cell, CellAlignment, Color, ContentArrangement, Table};
 
 use crate::analysis::Analysis;
+use crate::filters::CountColumn;
 use crate::rank::{RankMode, Ranked, Target};
 use crate::view;
 use edh_data::cards::CardDb;
@@ -25,8 +26,8 @@ fn tc(c: ratatui::style::Color) -> Color {
 pub struct Columns {
     pub price: bool,
     pub commander: bool,
-    /// Headers for the `-T` card filters' counts, one per filter.
-    pub counts: Vec<String>,
+    /// The `-T` card filters' count columns.
+    pub counts: Vec<CountColumn>,
 }
 
 pub fn ranked_table(
@@ -46,7 +47,7 @@ pub fn ranked_table(
         headers.extend(["Colors".into(), "Commander".into()]);
     }
     let first_count = headers.len();
-    headers.extend(columns.counts.iter().cloned());
+    headers.extend(columns.counts.iter().map(|c| c.label.clone()));
     headers.extend(["Themes".into(), "EDHREC".into()]);
     let mut t = Table::new();
     t.load_style(UTF8_FULL_CONDENSED.with_rounded_corners())
@@ -74,8 +75,8 @@ pub fn ranked_table(
             let names: Vec<&str> = deck.commanders.iter().map(|c| front_face(c)).collect();
             row.push(Cell::new(names.join(" + ")).fg(Color::Cyan));
         }
-        for i in 0..columns.counts.len() {
-            row.push(dim(Cell::new(a.matches.get(i).map_or("–".to_string(), |m| m.count.to_string()))));
+        for c in &columns.counts {
+            row.push(dim(Cell::new(c.cell(&a.matches))));
         }
         row.push(dim(Cell::new(if deck.meta.tags.is_empty() { "–".into() } else { deck.meta.tags.join(", ") })));
         row.push(dim(Cell::new(deck.meta.edhrec_url.clone().unwrap_or_default())));

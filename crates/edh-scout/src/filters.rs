@@ -269,6 +269,12 @@ impl CardFilter {
         self.min.is_some() || self.max.is_some()
     }
 
+    /// The one count it lets through, if its range has only one (`=0`, `=4`, `=..0`).
+    pub fn exact(&self) -> Option<u32> {
+        let lo = self.min.unwrap_or(0);
+        (self.max == Some(lo)).then_some(lo)
+    }
+
     /// Check every card in the database once. An `otag:` needs Scryfall Tagger's tag tree; a
     /// filter that matches no card at all is an error (usually a typo).
     pub fn compile(mut self, cards: &CardDb, tags: Option<&TagIndex>) -> Result<CompiledFilter> {
@@ -555,6 +561,32 @@ pub fn describe(table: &[TypeFilter], cards: &[CompiledFilter]) -> String {
         .join(", ")
 }
 
+/// A count column in the deck tables: the card filter it shows (its index in
+/// [`Analysis::matches`](crate::analysis::Analysis)) and its header.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CountColumn {
+    pub filter: usize,
+    pub label: String,
+}
+
+impl CountColumn {
+    /// The cell for a deck's matches: its count, or `–` if the deck wasn't counted.
+    pub fn cell(&self, matches: &[Matched]) -> String {
+        matches.get(self.filter).map_or("–".to_string(), |m| m.count.to_string())
+    }
+}
+
+/// The deck tables' count columns: one per card filter, except those that let only one count
+/// through (`sagas=0`), since every deck shown has that count. The detail view still lists them.
+pub fn count_columns(filters: &[CompiledFilter]) -> Vec<CountColumn> {
+    filters
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| f.filter.exact().is_none())
+        .map(|(i, f)| CountColumn { filter: i, label: short_label(&f.filter.label, i) })
+        .collect()
+}
+
 /// A column header / detail label for the `i`th card filter: the label itself if it is short, else
 /// the value of a single `key:value` term, else `Q1`, `Q2`, ...
 pub fn short_label(label: &str, i: usize) -> String {
@@ -832,6 +864,30 @@ mod tests {
         assert_eq!(names(&compile(&["aura=5+"]), 5), vec!["sram-senior-edificer", "wyleth-soul-of-steel"]);
         assert!(names(&compile(&["equipment=..2", "ramp=10+"]), 5).is_empty(), "only minimums of searches");
         assert_eq!(names(&compile(&["legendary=20+"]), 5), vec!["lord-of-legends"]);
+    }
+
+    #[test]
+    fn single_count_filters_get_no_column() {
+        let exact = |s: &str| cards_filter(s).exact();
+        assert_eq!(exact("equipment=0"), Some(0));
+        assert_eq!(exact("equipment=4"), Some(4));
+        assert_eq!(exact("equipment=..0"), Some(0));
+        assert_eq!(exact("equipment=3-3"), Some(3));
+        assert_eq!(exact("equipment=3-4"), None);
+        assert_eq!(exact("equipment=0+"), None);
+        assert_eq!(exact("equipment=..1"), None);
+        assert_eq!(exact("equipment"), None);
+
+        let db = db();
+        let compiled: Vec<CompiledFilter> = ["sagas=0", "equipment=2+", "goblin=..0", "o:\"treasure\""]
+            .iter()
+            .map(|x| cards_filter(x).compile(&db, None).unwrap())
+            .collect();
+        let cols = count_columns(&compiled);
+        assert_eq!(
+            cols.iter().map(|c| (c.filter, c.label.as_str())).collect::<Vec<_>>(),
+            vec![(1, "equipment"), (3, "treasure")]
+        );
     }
 
     #[test]

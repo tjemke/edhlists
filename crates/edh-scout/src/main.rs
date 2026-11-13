@@ -18,7 +18,7 @@ use edh_data::tags::TagIndex;
 use edh_data::text::{commander_slug, date_days_ago, front_face, slugify};
 use edh_scout::config::Config;
 use edh_scout::export::{self, ExportFormat, ReportInput};
-use edh_scout::filters::{self, CardFilter, CompiledFilter, Filter};
+use edh_scout::filters::{self, CardFilter, CompiledFilter, CountColumn, Filter};
 use edh_scout::rank::{RankMode, Target, Weights, mix, parse_range, rank};
 use edh_scout::scout::{Fetcher, Pool, PoolStats, Prepared, ScoutOptions, load_commander_sources, load_salt, prepare};
 use edh_scout::select::SelectOptions;
@@ -248,8 +248,8 @@ struct Session<'a> {
     pool: Pool<'a>,
     fetcher: Option<Fetcher>,
     show_commander: bool,
-    /// Column headers for the `-T` card filters' counts.
-    count_labels: Vec<String>,
+    /// Columns for the `-T` card filters' counts.
+    count_columns: Vec<CountColumn>,
 }
 
 fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) -> Result<()> {
@@ -338,11 +338,6 @@ fn compile_filters(
     filters.into_iter().map(|f| f.compile(cards, tags.as_ref())).collect::<Result<_>>().context("-T")
 }
 
-/// Column headers for the card filters' counts.
-fn count_labels(filters: &[CompiledFilter]) -> Vec<String> {
-    filters.iter().enumerate().map(|(i, f)| filters::short_label(&f.filter.label, i)).collect()
-}
-
 /// One commander (optionally narrowed by `-T` filters): its table and stored decks now, the
 /// rest in the background.
 #[allow(clippy::too_many_arguments)]
@@ -381,7 +376,7 @@ fn start_single<'a>(
             target.describe().split(" · ").next().unwrap_or("")
         ));
     }
-    let count_labels = count_labels(&card_filters);
+    let count_columns = filters::count_columns(&card_filters);
     if keep_fetching {
         stats.queued = to_fetch.len() + more.len();
     }
@@ -424,7 +419,7 @@ fn start_single<'a>(
     }
     let fetcher = (!to_fetch.is_empty())
         .then(|| Fetcher::spawn(Arc::clone(http), store.clone(), to_fetch, opts.commanders.clone()));
-    Ok(Session { title, name: slug, pool, fetcher, show_commander: false, count_labels })
+    Ok(Session { title, name: slug, pool, fetcher, show_commander: false, count_columns })
 }
 
 /// No commander: find decks matching the `-T` filters across the commanders EDHREC lists for the
@@ -498,7 +493,7 @@ fn start_search<'a>(
         (_, n) => format!("{themed}, plus {n} whose text mentions {mentioned},"),
     };
     let wanted = filters::describe(&select.types, &card_filters);
-    let count_labels = count_labels(&card_filters);
+    let count_columns = filters::count_columns(&card_filters);
     status.note(&format!(
         "searching {} commanders {source} for decks with {wanted}, {} ...",
         candidates.len(),
@@ -513,13 +508,13 @@ fn start_search<'a>(
         pool,
         fetcher: Some(fetcher),
         show_commander: true,
-        count_labels,
+        count_columns,
     })
 }
 
 /// Browse (or print) the session, then report what it cost.
 fn finish(http: &Arc<Http>, session: Session, args: &ScoutArgs, target: Target, weights: Weights) -> Result<()> {
-    let Session { title, name, mut pool, fetcher, show_commander, count_labels } = session;
+    let Session { title, name, mut pool, fetcher, show_commander, count_columns } = session;
     let export_dir = args.output.export.clone().unwrap_or_else(|| PathBuf::from(format!("edh-scout-{name}")));
     if interactive(args.output.plain) {
         let settings = tui::Settings {
@@ -533,7 +528,7 @@ fn finish(http: &Arc<Http>, session: Session, args: &ScoutArgs, target: Target, 
             show_price: args.output.price,
             show_commander,
             mix: !args.no_mix,
-            count_labels,
+            count_columns,
         };
         let mut app = tui::App::new(settings, pool, fetcher, Some(http));
         tui::run(&mut app)?;
@@ -568,7 +563,7 @@ fn finish(http: &Arc<Http>, session: Session, args: &ScoutArgs, target: Target, 
         let (group, weights) = pool.commander_groups();
         ranking = mix(ranking, &group, &weights);
     }
-    let columns = plain::Columns { price: args.output.price, commander: show_commander, counts: count_labels.clone() };
+    let columns = plain::Columns { price: args.output.price, commander: show_commander, counts: count_columns.clone() };
     println!("{}", plain::ranked_table(&pool.decks, pool.cards(), &ranking, &target, args.output.top, &columns));
     println!("{}", plain::legend(&target, args.rank));
     if args.output.export.is_some() {
@@ -581,7 +576,7 @@ fn finish(http: &Arc<Http>, session: Session, args: &ScoutArgs, target: Target, 
             limit: args.output.top,
             format: args.output.format,
             show_price: args.output.price,
-            count_labels: &count_labels,
+            count_columns: &count_columns,
         };
         let path = export::write_report(&export_dir, &input)?;
         eprintln!("wrote {} and the top {} decklists", path.display(), args.output.top.min(ranking.len()));
@@ -638,7 +633,7 @@ fn run_check(http: &Http, paths: &Paths, args: CheckArgs) -> Result<()> {
             show_price: args.price,
             show_commander: false,
             mix: false,
-            count_labels: count_labels(&card_filters),
+            count_columns: filters::count_columns(&card_filters),
         };
         tui::run(&mut tui::App::new(settings, pool, None, None))?;
     } else {

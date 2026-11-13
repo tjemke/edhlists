@@ -114,7 +114,8 @@ matches no card at all: usually a typo. The range is whatever follows the *last*
 deck arrives: decks that fail are left out and counted (`12 didn't match` in the header). They stay
 in the deck store, so any later search reads them for free. `-n` still counts decks fetched, not
 matches; the browser keeps fetching past it, and a plain run tells you when running again would
-help. In the browser, each decklist filter gets a count column, the detail pane lists the cards it
+help. In the browser, each decklist filter gets a count column (except one that lets a single count
+through, like `sagas=0`, since every deck shown has it), the detail pane lists the cards it
 counted, and the decklist marks them with `▸`.
 
 The deck table still helps pick which decks to fetch for a minimum. Matching cards only sit in some
