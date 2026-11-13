@@ -160,13 +160,17 @@ impl CardDb {
     }
 
     pub fn get(&self, name: &str) -> Option<&Card> {
+        self.cards.get(self.position(name)?)
+    }
+
+    /// Where [`CardDb::get`]'s card sits in `cards`.
+    pub fn position(&self, name: &str) -> Option<usize> {
         let key = name.trim().to_lowercase();
-        let i = self
-            .index
+        self.index
             .get(&key)
             .or_else(|| self.index.get(key.split(" // ").next().unwrap_or("")))
-            .or_else(|| self.index.get(&fold(&key)))?;
-        self.cards.get(*i)
+            .or_else(|| self.index.get(&fold(&key)))
+            .copied()
     }
 
     /// Canonical (Scryfall) name for whatever a decklist called the card.

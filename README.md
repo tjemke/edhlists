@@ -46,6 +46,9 @@ edh-scout scout -T planeswalkers=10+                 # superfriends decks, acros
 edh-scout scout -T spells=30+ -b 3                   # spell-heavy decks at bracket 3
 edh-scout scout -T creatures=..5                     # (nearly) creatureless decks
 edh-scout scout jodah -T planeswalkers=10+           # one commander's decks, narrowed by type
+edh-scout scout -T equipment=10+                     # equipment decks: any type-line word works
+edh-scout scout jodah -T legendary=30+ -T ramp=12+   # legends-heavy Jodah lists with real ramp
+edh-scout scout -T 'otag:sweeper=4+' -b 3            # Scryfall searches count too (Tagger tags here)
 edh-scout scout krenko -p 5.5-7                      # explicit EDHPowerLevel band instead
 edh-scout scout krenko --rank combined --weights fit=0.4,salt=0.4,structure=0.2
 edh-scout scout krenko -t Tokens -t Goblins          # only decks EDHREC tagged with a theme
@@ -59,21 +62,69 @@ If several commanders match, or none do, a picker opens below the prompt, prefil
 typed: keep typing to narrow it, `↑↓` and `⏎` to choose (each row shows color identity and EDHREC
 rank to tell look-alikes apart). Without a terminal you get the list of matches instead.
 
-### Searching by card types
+### Searching by what decks run
 
-`-T TYPE=RANGE` filters on how many cards of a type a deck runs, using the counts EDHREC lists for
-every deck (no extra requests). Types: `creatures`, `instants`, `sorceries`, `spells` (instants +
-sorceries), `artifacts`, `enchantments`, `planeswalkers`, `battles`, `lands`. Ranges: `10+`, `..5`,
-`25-40` or an exact number. Repeat `-T` to combine filters; all must match.
+`-T WHAT=RANGE` filters on how many cards of a kind a deck runs. Ranges: `10+`, `..5`, `25-40` or an
+exact number. Repeat `-T` to combine filters; all must match, and a card can count towards several.
 
-With a commander, `-T` narrows that commander's decks. Without one, it searches across commanders:
-the filters pick matching EDHREC themes (`planeswalkers`, `spellslinger`, `creatureless`,
-`artifacts`, `enchantress`, `lands-matter`) and their top commanders are scanned, or EDHREC's
-most-built commanders when no theme fits (e.g. `creatures=40+`). `--commanders N` (default 30)
-caps how many deck tables are scanned. The browser opens right away and fills as each commander's
-table and decks come in; commander and colour (WUBRG) columns show whose deck is whose. Cost: one
-request per theme, one per deck table scanned (cached for a day), two per commander that ends up
-with decks (synergy and combo votes, cached for a week), plus the usual deck budget.
+| `WHAT` | Counts | Checked |
+|---|---|---|
+| `creatures`, `instants`, `sorceries`, `spells` (instants + sorceries), `artifacts`, `enchantments`, `planeswalkers`, `battles`, `lands` | EDHREC's per-deck counts | from the deck table: free, before any deck is fetched |
+| `ramp`, `draw`, `removal`, `wipes` | cards in that role, exactly as the Structure line counts them | in the decklist |
+| any other word: `equipment`, `legendary`, `saga`, `aura`, `vehicle`, `goblin`, `snow`, … | cards with that word on their type line (`t:WORD`; plurals work too) | in the decklist |
+| a Scryfall search: `'o:"create a treasure"'`, `'otag:sweeper'`, `'t:equipment mv<=2'` | cards it matches | in the decklist |
+
+```sh
+edh-scout scout -T equipment=10+ -T 'otag:removal=..6'   # equipment decks that don't lean on removal
+edh-scout scout "tom bombadil" -T saga=12+                # the most saga-heavy Tom lists
+edh-scout scout -T 'o:"create a treasure"=8+' -b 2        # treasure decks at bracket 2
+edh-scout scout krenko -T '(t:goblin -t:creature)=3+'     # Krenko lists with goblin support spells
+```
+
+Decklist counts cover the 99, like EDHREC's: commanders don't count, quantities do (`t:basic=30+`
+sees 30 Mountains). EDHREC files each card under one main type, so `artifacts=10+` and
+`t:artifact=10+` (everything with Artifact on its type line, artifact creatures included) can
+differ. Cards missing from the card database don't count.
+
+Searches run locally against the card database (no requests, `--offline` works) and understand
+this part of [Scryfall's syntax](https://scryfall.com/docs/syntax):
+
+| Syntax | Matches |
+|---|---|
+| `t:` `type:` | type line contains the text (either face; partial words fine) |
+| `o:` `oracle:` | rules text without reminder text; `~` is the card itself (its name, "this creature", …) |
+| `fo:` | rules text including reminder text |
+| `t:/…/`, `o:/…/`, `name:/…/` | a case-insensitive regular expression |
+| `kw:` `keyword:` | keyword abilities (`kw:flying`) |
+| `mv`, `cmc`, `usd` | numbers with `: = != < <= > >=` (`mv<=2`; `usd` is the cheapest printing) |
+| `c`, `id` | colour and colour identity: `c:rg` (at least red and green), `id:esper` (fits Esper), `c:m`, `c:c` |
+| `is:` / `not:` | `gamechanger`, `commander`, `reserved`, `historic`, `permanent`, `mdfc`, `dfc` |
+| `otag:` `function:` | a [Scryfall Tagger](https://tagger.scryfall.com) tag and its sub-tags (`otag:ramp`, `otag:mana-rock`, `otag:sweeper`, `otag:tutor`) |
+| `name:`, bare words, `"…"`, `!"…"` | card names; `!` for one exact card |
+| `or`, `-`, `( )` | terms side by side must all match; `or`, negation, grouping |
+
+Other keys (set, rarity, artist, …) are an error, never silently ignored. So is a filter that
+matches no card at all: usually a typo, or a forgotten range (the count goes after the *last* `=`).
+
+**Fetching.** The deck table doesn't say what's in a deck, so decklist filters are checked as each
+deck arrives: decks that fail are left out and counted (`12 didn't match` in the header). They stay
+in the deck store, so any later search reads them for free. `-n` still counts decks fetched, not
+matches; the browser keeps fetching past it, and a plain run tells you when running again would
+help. In the browser, each decklist filter gets a count column, the detail pane lists the cards it
+counted, and the decklist marks them with `▸`.
+
+**With a commander**, `-T` narrows that commander's decks. **Without one**, it searches across
+commanders: the filters pick EDHREC themes and their top commanders are scanned. Table counts map to
+`planeswalkers`, `spellslinger`, `creatureless`, `artifacts`, `enchantress` and `lands-matter`;
+decklist filters to the theme named after what they count (`equipment` → Equipment, `saga` → Sagas,
+`legendary` → Legends, `ramp` → Ramp, `o:treasure` → Treasure), looked up in EDHREC's theme list.
+When no theme fits (e.g. `creatures=40+`), EDHREC's most-built commanders are scanned instead.
+`--commanders N` (default 30) caps how many deck tables are scanned. The browser opens right away
+and fills as each commander's table and decks come in; commander and colour (WUBRG) columns show
+whose deck is whose. Cost: one request for the theme list (when a decklist filter asks for a
+minimum) and one per theme (both cached for a week), one per deck table scanned (cached for a day),
+two per commander that ends up with decks (synergy and combo votes, cached for a week), plus the
+usual deck budget.
 
 In the browser: `↑↓` move · `⏎` decklist/details · `J/K` scroll · `r` cycle ranking ·
 `f` only decks in the target · `o`/`s`/`p` open on EDHREC / the source site / EDHPowerLevel ·
@@ -137,8 +188,8 @@ reused for free, so repeated runs grow the pool.
 
 | Source | Used for | Requests |
 |---|---|---|
-| EDHREC | deck tables, deck pages, commander synergy, combo votes, top-salt list, theme pages | 1 table + 2 side pages per commander and 1 salt list (cached 1–14 days); 1 per new deck (kept for good); 1 per theme when searching by type |
-| Scryfall | `default_cards` bulk (cheapest printing prices, Game Changers, oracle text) and `oracle_tags` bulk (card roles) | 4 per `sync` |
+| EDHREC | deck tables, deck pages, commander synergy, combo votes, top-salt list, theme list and pages | 1 table + 2 side pages per commander and 1 salt list (cached 1–14 days); 1 per new deck (kept for good); 1 per theme (+1 for the theme list) when searching across commanders |
+| Scryfall | `default_cards` bulk (cheapest printing prices, Game Changers, oracle text) and `oracle_tags` bulk (card roles, `otag:` searches) | 4 per `sync` |
 | Commander Spellbook | full combo dump | 1 per `sync` |
 | EDHPowerLevel | nothing — scored locally; links go to the site | 0 |
 

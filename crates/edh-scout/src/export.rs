@@ -64,6 +64,8 @@ pub struct ReportInput<'a> {
     pub limit: usize,
     pub format: ExportFormat,
     pub show_price: bool,
+    /// Headers for the `-T` card filters' counts, one per filter.
+    pub count_labels: &'a [String],
 }
 
 /// Write `report.md` plus the decklists of the top `limit` decks. Returns the report path.
@@ -93,12 +95,17 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
             > 1;
     let price_col = if input.show_price { " price |" } else { "" };
     let cmdr_col = if many_commanders { " commander |" } else { "" };
-    writeln!(md, "| # | fits | power | bracket | salt | structure | synergy |{price_col}{cmdr_col} themes | list |")?;
+    let count_cols: String = input.count_labels.iter().map(|l| format!(" {} |", l.replace('|', "\\|"))).collect();
     writeln!(
         md,
-        "|---|---|---|---|---|---|---|{}{}---|---|",
+        "| # | fits | power | bracket | salt | structure | synergy |{price_col}{cmdr_col}{count_cols} themes | list |"
+    )?;
+    writeln!(
+        md,
+        "|---|---|---|---|---|---|---|{}{}{}---|---|",
         if input.show_price { "---|" } else { "" },
-        if many_commanders { "---|" } else { "" }
+        if many_commanders { "---|" } else { "" },
+        "---|".repeat(input.count_labels.len())
     )?;
     for (pos, r) in input.ranking.iter().take(input.limit).enumerate() {
         let (deck, a) = &input.decks[r.index];
@@ -106,7 +113,7 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
         let rel = file.strip_prefix(dir).unwrap_or(&file).display().to_string();
         writeln!(
             md,
-            "| [{n}](#deck-{n}) | {fit} | {pl} | B{b} | {salt} | {st:.0}% | {syn} |{price}{cmdr} {tags} | [{rel}]({rel}) |",
+            "| [{n}](#deck-{n}) | {fit} | {pl} | B{b} | {salt} | {st:.0}% | {syn} |{price}{cmdr}{counts} {tags} | [{rel}]({rel}) |",
             n = pos + 1,
             fit = if r.fits { "✓" } else { "✗" },
             pl = a.power.label(),
@@ -116,6 +123,9 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
             syn = fmt_opt(a.synergy.as_ref().map(|s| s.average * 100.0), 1),
             price = if input.show_price { format!(" ${} |", fmt_opt(deck.meta.price, 0)) } else { String::new() },
             cmdr = if many_commanders { format!(" {} |", commanders_of(deck)) } else { String::new() },
+            counts = (0..input.count_labels.len())
+                .map(|i| format!(" {} |", a.matches.get(i).map_or("–".to_string(), |m| m.count.to_string())))
+                .collect::<String>(),
             tags = if deck.meta.tags.is_empty() { "–".into() } else { deck.meta.tags.join(", ") },
         )?;
     }
@@ -162,6 +172,15 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
                 )
             }
         )?;
+        for m in &a.matches {
+            let names: Vec<String> = m
+                .cards
+                .iter()
+                .map(|(n, q)| if *q > 1 { format!("{q} {}", front_face(n)) } else { front_face(n).to_string() })
+                .collect();
+            let list = if names.is_empty() { String::new() } else { format!(" — {}", names.join(" · ")) };
+            writeln!(md, "- `{}`: {}{list}", m.label, m.count)?;
+        }
         let s = &a.structure;
         writeln!(
             md,

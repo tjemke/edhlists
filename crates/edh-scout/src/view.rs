@@ -5,10 +5,12 @@ use std::collections::BTreeMap;
 use edh_data::cards::CardDb;
 use edh_data::deck::Deck;
 use edh_data::http::host_of;
+use edh_data::text::front_face;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::analysis::Analysis;
+use crate::filters::{Matched, short_label};
 use crate::rank::{Ranked, Target};
 use crate::roles::{LAND_RANGE, Role, target as role_target};
 
@@ -144,6 +146,12 @@ pub fn detail_lines(
     out.push(Line::from(sub));
     out.push(Line::default());
 
+    // What the -T card filters counted
+    if !a.matches.is_empty() {
+        out.extend(a.matches.iter().enumerate().map(|(i, m)| matched_line(m, i)));
+        out.push(Line::default());
+    }
+
     // Power and bracket
     let pc = power_color(target, a.power.level);
     let mut l = vec![label("Power"), Span::styled(format!("{:<5}", a.power.label()), Style::new().fg(pc).bold())];
@@ -278,6 +286,24 @@ pub fn detail_lines(
         ]));
     }
     out
+}
+
+/// One `-T` card filter's count and the cards that make it up; a long filter is shown under its
+/// short label (`Q1`) and spelled out before the cards.
+pub fn matched_line(m: &Matched, i: usize) -> Line<'static> {
+    let short = short_label(&m.label, i);
+    let mut l = vec![label(&short), Span::styled(format!("{:<4}", m.count), Style::new().bold().fg(GOOD))];
+    if short != m.label {
+        l.push(Span::styled(format!("{}  ", m.label), Style::new().fg(DIM)));
+    }
+    let names: Vec<String> = m
+        .cards
+        .iter()
+        .map(|(n, q)| if *q > 1 { format!("{q} {}", front_face(n)) } else { front_face(n).to_string() })
+        .collect();
+    // Legendary names have commas of their own, so entries are set apart with dots.
+    l.push(Span::raw(names.join(" · ")));
+    Line::from(l)
 }
 
 /// Word-wrap `lines` to `width` columns. Continuation lines of a labelled field start in the value
@@ -500,6 +526,21 @@ mod tests {
         assert_eq!(deck_identity(&deck(&["Green One", "Esper One"]), &cards), ["W", "U", "B", "G"]);
         assert!(deck_identity(&deck(&["Rock", "Unknown"]), &cards).is_empty());
         assert_eq!(text(&[identity_line(&deck_identity(&deck(&["Rock"]), &cards))]), ["C"]);
+    }
+
+    #[test]
+    fn matched_cards_wrap_under_their_count() {
+        let m = Matched {
+            label: "equipment".into(),
+            count: 3,
+            cards: vec![("Bonesplitter".into(), 1), ("Sword of Fire and Ice".into(), 1), ("Lizard Blades".into(), 1)],
+        };
+        assert_eq!(
+            text(&wrap_lines(vec![matched_line(&m, 0)], 40)),
+            ["equipment  3   Bonesplitter · Sword of", "           Fire and Ice · Lizard Blades"]
+        );
+        let q = Matched { label: r#"o:"create a treasure""#.into(), count: 12, cards: vec![("Mountain".into(), 12)] };
+        assert_eq!(text(&[matched_line(&q, 1)]), [r#"Q2         12  o:"create a treasure"  12 Mountain"#]);
     }
 
     #[test]

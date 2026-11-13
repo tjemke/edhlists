@@ -1,6 +1,7 @@
 //! The interactive deck browser. Opens at once with the decks already on disk; decks fetched in
 //! the background slot into the ranking as they arrive.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -44,6 +45,8 @@ pub struct Settings {
     pub show_price: bool,
     /// Searching across commanders: show which commander each deck is for.
     pub show_commander: bool,
+    /// Column headers for the `-T` card filters' counts (one per filter, in order).
+    pub count_labels: Vec<String>,
 }
 
 pub struct App<'a> {
@@ -236,6 +239,7 @@ impl<'a> App<'a> {
                     limit: self.settings.report_top,
                     format: self.settings.format,
                     show_price: self.settings.show_price,
+                    count_labels: &self.settings.count_labels,
                 };
                 self.status = Some(match export::write_report(&self.settings.export_dir, &input) {
                     Ok(p) => (
@@ -297,12 +301,17 @@ impl<'a> App<'a> {
     fn draw_table(&mut self, frame: &mut Frame, area: Rect) {
         let show_price = self.settings.show_price;
         let show_commander = self.settings.show_commander;
-        let header = Row::new(
-            ["#", "Power", "B", "Salt", "Struct", "Syn", "Price", "Color", "Commander", "Themes"]
-                .into_iter()
-                .filter(|h| (show_price || *h != "Price") && (show_commander || !matches!(*h, "Color" | "Commander"))),
-        )
-        .style(Style::new().bold().fg(DIM));
+        let counts = &self.settings.count_labels;
+        let mut headers: Vec<String> = ["#", "Power", "B", "Salt", "Struct", "Syn"].map(String::from).to_vec();
+        if show_price {
+            headers.push("Price".into());
+        }
+        if show_commander {
+            headers.extend(["Color".into(), "Commander".into()]);
+        }
+        headers.extend(counts.iter().cloned());
+        headers.push("Themes".into());
+        let header = Row::new(headers).style(Style::new().bold().fg(DIM));
         let rows: Vec<Row> = self
             .visible()
             .iter()
@@ -338,6 +347,10 @@ impl<'a> App<'a> {
                     let names: Vec<&str> = deck.commanders.iter().map(|c| front_face(c)).collect();
                     cells.push(Cell::from(names.join(" + ")).style(Style::new().fg(ACCENT)));
                 }
+                for (i, label) in counts.iter().enumerate() {
+                    let n = a.matches.get(i).map_or("–".to_string(), |m| m.count.to_string());
+                    cells.push(Cell::from(format!("{n:>w$}", w = label.chars().count().max(3))));
+                }
                 cells.push(Cell::from(themes));
                 Row::new(cells).style(base)
             })
@@ -357,6 +370,7 @@ impl<'a> App<'a> {
             widths.push(Constraint::Length(5));
             widths.push(Constraint::Fill(1));
         }
+        widths.extend(counts.iter().map(|l| Constraint::Length(l.chars().count().max(3) as u16)));
         widths.push(Constraint::Fill(1));
         let title = if self.fits_only { " Decks in target " } else { " Decks " };
         let table = Table::new(rows, widths)
@@ -396,7 +410,12 @@ impl<'a> App<'a> {
 
     fn draw_decklist(&self, frame: &mut Frame, area: Rect) {
         let Some((title, deck)) = self.pane_title() else { return };
-        let block = Block::bordered().title(title.bold()).title_bottom(Line::from(" ⏎ details ").right_aligned());
+        let Some((_, r)) = self.selected() else { return };
+        let a = &self.pool.decks[r.index].1;
+        // Cards a -T card filter counted are marked.
+        let counted: HashSet<&str> = a.matches.iter().flat_map(|m| m.cards.iter().map(|(n, _)| n.as_str())).collect();
+        let hint = if counted.is_empty() { " ⏎ details " } else { " ▸ counted by -T · ⏎ details " };
+        let block = Block::bordered().title(title.bold()).title_bottom(Line::from(hint).right_aligned());
         let inner = block.inner(area);
         frame.render_widget(block, area);
         let mut lines: Vec<Line> = Vec::new();
@@ -404,7 +423,14 @@ impl<'a> App<'a> {
             let n: u32 = cards.iter().map(|(q, _)| q).sum();
             lines.push(Line::from(Span::styled(format!("{group} ({n})"), Style::new().bold().fg(ACCENT))));
             for (q, name) in cards {
-                lines.push(Line::from(format!(" {q} {name}")));
+                lines.push(if counted.contains(name.as_str()) {
+                    Line::from(vec![
+                        Span::styled("▸", Style::new().fg(GOOD)),
+                        Span::styled(format!("{q} {name}"), Style::new().fg(GOOD)),
+                    ])
+                } else {
+                    Line::from(format!(" {q} {name}"))
+                });
             }
             lines.push(Line::default());
         }

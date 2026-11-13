@@ -10,6 +10,7 @@ use edh_data::text::{fold, front_face};
 use edhpl::{BracketReport, PowerLevel};
 use serde::{Deserialize, Serialize};
 
+use crate::filters::Matched;
 use crate::roles::{self, Entry, Structure};
 
 /// Shared, per-commander inputs for analysing many decks.
@@ -52,6 +53,9 @@ pub struct Analysis {
     /// Names the card database doesn't know; they are left out of every score.
     pub unknown: Vec<String>,
     pub card_count: u32,
+    /// Per `-T` card filter: how many of the deck's cards count, and which.
+    #[serde(default)]
+    pub matches: Vec<Matched>,
 }
 
 /// A card record in the shape EDHPowerLevel's scorer takes.
@@ -175,5 +179,6 @@ pub fn analyze(deck: &Deck, ctx: &Context) -> Analysis {
         combos,
         unknown,
         card_count: deck.card_count(),
+        matches: Vec::new(),
     }
 }

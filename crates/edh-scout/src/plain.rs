@@ -21,10 +21,12 @@ fn tc(c: ratatui::style::Color) -> Color {
 }
 
 /// Optional columns.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Columns {
     pub price: bool,
     pub commander: bool,
+    /// Headers for the `-T` card filters' counts, one per filter.
+    pub counts: Vec<String>,
 }
 
 pub fn ranked_table(
@@ -33,30 +35,23 @@ pub fn ranked_table(
     ranking: &[Ranked],
     target: &Target,
     top: usize,
-    columns: Columns,
+    columns: &Columns,
 ) -> Table {
     let show_price = columns.price;
+    let mut headers: Vec<String> = ["#", "Power", "Bracket", "Salt", "Structure", "Synergy"].map(String::from).to_vec();
+    if show_price {
+        headers.push("Price".into());
+    }
+    if columns.commander {
+        headers.extend(["Colors".into(), "Commander".into()]);
+    }
+    let first_count = headers.len();
+    headers.extend(columns.counts.iter().cloned());
+    headers.extend(["Themes".into(), "EDHREC".into()]);
     let mut t = Table::new();
     t.load_style(UTF8_FULL_CONDENSED.with_rounded_corners())
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(
-            [
-                "#",
-                "Power",
-                "Bracket",
-                "Salt",
-                "Structure",
-                "Synergy",
-                "Price",
-                "Colors",
-                "Commander",
-                "Themes",
-                "EDHREC",
-            ]
-            .into_iter()
-            .filter(|h| (show_price || *h != "Price") && (columns.commander || !matches!(*h, "Colors" | "Commander")))
-            .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
-        );
+        .set_header(headers.into_iter().map(|h| Cell::new(h).add_attribute(Attribute::Bold)));
     for (pos, r) in ranking.iter().take(top).enumerate() {
         let (deck, a) = &decks[r.index];
         let dim = |c: Cell| if r.fits { c } else { c.fg(Color::DarkGrey) };
@@ -79,12 +74,16 @@ pub fn ranked_table(
             let names: Vec<&str> = deck.commanders.iter().map(|c| front_face(c)).collect();
             row.push(Cell::new(names.join(" + ")).fg(Color::Cyan));
         }
+        for i in 0..columns.counts.len() {
+            row.push(dim(Cell::new(a.matches.get(i).map_or("–".to_string(), |m| m.count.to_string()))));
+        }
         row.push(dim(Cell::new(if deck.meta.tags.is_empty() { "–".into() } else { deck.meta.tags.join(", ") })));
         row.push(dim(Cell::new(deck.meta.edhrec_url.clone().unwrap_or_default())));
         t.add_row(row);
     }
-    let numeric: &[usize] = if show_price { &[0, 1, 3, 4, 5, 6] } else { &[0, 1, 3, 4, 5] };
-    for &i in numeric {
+    let mut numeric: Vec<usize> = if show_price { vec![0, 1, 3, 4, 5, 6] } else { vec![0, 1, 3, 4, 5] };
+    numeric.extend(first_count..first_count + columns.counts.len());
+    for i in numeric {
         if let Some(col) = t.column_mut(i) {
             col.set_cell_alignment(CellAlignment::Right);
         }

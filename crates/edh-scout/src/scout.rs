@@ -22,6 +22,7 @@ use edh_data::text::commander_slug;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
 use crate::analysis::{Analysis, Context, analyze};
+use crate::filters::{CompiledFilter, Matched};
 use crate::select::{Ceiling, SelectOptions, select, weighted_order};
 
 /// Per-commander side data: synergy and combo votes. Each piece is optional — a failure costs
@@ -70,6 +71,8 @@ pub struct PoolStats {
     pub queued: usize,
     pub fetched: usize,
     pub failed: usize,
+    /// Decks (stored or fetched) left out because a `-T` card filter rejected them.
+    pub unmatched: usize,
     /// Searching across commanders: deck tables to scan, and scanned so far.
     pub commanders_total: usize,
     pub commanders_scanned: usize,
@@ -94,6 +97,9 @@ impl PoolStats {
         }
         if self.failed > 0 {
             s += &format!(", {} failed", self.failed);
+        }
+        if self.unmatched > 0 {
+            s += &format!(", {} didn't match", self.unmatched);
         }
         s
     }
@@ -358,13 +364,30 @@ pub struct Pool<'a> {
     commanders: HashMap<String, CommanderSources>,
     /// Used when a deck's commander slug has no entry (e.g. a `--slug` override).
     fallback: Option<String>,
+    /// `-T` card filters: decks failing one are left out.
+    filters: Vec<CompiledFilter>,
     pub decks: Vec<(Deck, Analysis)>,
     pub stats: PoolStats,
 }
 
 impl<'a> Pool<'a> {
     pub fn new(cards: &'a CardDb, combos: &'a ComboDb, salt: HashMap<String, f64>, stats: PoolStats) -> Self {
-        Self { cards, combos, salt, commanders: HashMap::new(), fallback: None, decks: Vec::new(), stats }
+        Self {
+            cards,
+            combos,
+            salt,
+            commanders: HashMap::new(),
+            fallback: None,
+            filters: Vec::new(),
+            decks: Vec::new(),
+            stats,
+        }
+    }
+
+    /// Only keep decks that pass every one of these card filters (set before adding decks).
+    pub fn with_filters(mut self, filters: Vec<CompiledFilter>) -> Self {
+        self.filters = filters;
+        self
     }
 
     pub fn cards(&self) -> &'a CardDb {
@@ -379,7 +402,13 @@ impl<'a> Pool<'a> {
         self.commanders.insert(slug.to_string(), sources);
     }
 
+    /// Analyse a deck and add it, unless a card filter rejects it.
     pub fn add(&mut self, deck: Deck) {
+        let matches: Vec<Matched> = self.filters.iter().map(|f| f.count(&deck, self.cards)).collect();
+        if self.filters.iter().zip(&matches).any(|(f, m)| !f.filter.passes(m.count)) {
+            self.stats.unmatched += 1;
+            return;
+        }
         let key = commander_slug(&deck.commanders);
         let sources = self.commanders.get(&key).or_else(|| self.fallback.as_ref().and_then(|f| self.commanders.get(f)));
         let ctx = Context {
@@ -389,7 +418,8 @@ impl<'a> Pool<'a> {
             salt: &self.salt,
             edhrec_combos: sources.map(|s| s.combos.as_slice()).unwrap_or(&[]),
         };
-        let a = analyze(&deck, &ctx);
+        let mut a = analyze(&deck, &ctx);
+        a.matches = matches;
         self.decks.push((deck, a));
     }
 
@@ -512,6 +542,30 @@ mod tests {
         pool.add(deck("Unknown Gamma")); // falls back to the first commander registered
         let syn: Vec<f64> = pool.decks.iter().map(|(_, a)| a.synergy.as_ref().unwrap().average).collect();
         assert_eq!(syn, vec![0.5, 0.1, 0.5]);
+    }
+
+    #[test]
+    fn card_filters_keep_matching_decks_only() {
+        let mut eq = creature("Bonesplitter");
+        eq.type_line = "Artifact — Equipment".into();
+        let cards = CardDb::new(vec![creature("Alpha One"), eq, creature("Grizzly Bears")]);
+        let combos = ComboDb::empty();
+        let filter = match "equipment=1+".parse::<crate::filters::Filter>().unwrap() {
+            crate::filters::Filter::Cards(c) => c.compile(&cards, None).unwrap(),
+            _ => unreachable!(),
+        };
+        let mut pool = Pool::new(&cards, &combos, HashMap::new(), PoolStats::default()).with_filters(vec![filter]);
+        let deck = |card: &str| Deck {
+            commanders: vec!["Alpha One".into()],
+            cards: [(card.to_string(), 1)].into(),
+            ..Default::default()
+        };
+        pool.add(deck("Bonesplitter"));
+        pool.add(deck("Grizzly Bears"));
+        assert_eq!(pool.decks.len(), 1);
+        assert_eq!(pool.decks[0].1.matches[0].count, 1);
+        assert_eq!(pool.stats.unmatched, 1);
+        assert!(pool.stats.summary().ends_with("1 didn't match"));
     }
 
     #[test]
