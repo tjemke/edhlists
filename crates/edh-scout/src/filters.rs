@@ -20,9 +20,10 @@ use std::str::FromStr;
 use anyhow::{Result, anyhow, bail};
 use edh_data::cards::{Card, CardDb};
 use edh_data::deck::Deck;
-use edh_data::edhrec::{TableRow, Theme};
+use edh_data::edhrec::{ListedCommander, TableRow, Theme};
 use edh_data::query::Query;
 use edh_data::tags::TagIndex;
+use edh_data::text::{slugify, strip_reminder};
 use serde::{Deserialize, Serialize};
 
 use crate::roles::{Role, roles};
@@ -218,6 +219,11 @@ impl CardFilter {
 
     pub fn needs_tags(&self) -> bool {
         matches!(&self.counted, Counted::Query(q) if q.needs_tags())
+    }
+
+    /// Does it ask for a minimum (and so pick themes and commanders when searching)?
+    pub fn wants_many(&self) -> bool {
+        self.min.is_some_and(|m| m > 0)
     }
 
     /// Check every card in the database once. An `otag:` needs Scryfall Tagger's tag tree; a
@@ -432,6 +438,46 @@ impl Prior {
     }
 }
 
+/// What the card filters that ask for many look for in type lines and rules text ("equipment",
+/// "create a treasure"): what a commander built for them is likely to mention.
+pub fn mention_texts(filters: &[CompiledFilter]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for f in filters.iter().filter(|f| f.filter.wants_many()) {
+        if let Counted::Query(q) = &f.filter.counted {
+            out.extend(q.texts().into_iter().filter(|t| !out.contains(t)).collect::<Vec<_>>());
+        }
+    }
+    out
+}
+
+/// Single commanders whose own rules text mentions one of `texts` (Wyleth's "Aura or Equipment
+/// spell" for "equipment"), most popular first, up to `limit`. Free: read from the card database.
+pub fn mentioning_commanders(texts: &[String], cards: &CardDb, limit: usize) -> Vec<ListedCommander> {
+    if texts.is_empty() {
+        return vec![];
+    }
+    // At the start of a word, so "aura" doesn't find "Laura" (plurals still match), and not about
+    // itself or in the negative ("exile this Saga", "the token isn't legendary").
+    let mentions = |text: &str, t: &str| {
+        text.match_indices(t).any(|(i, _)| {
+            let before = &text[..i];
+            before.chars().next_back().is_none_or(|c| !c.is_alphanumeric())
+                && !["this ", "isn't ", "not "].iter().any(|p| before.ends_with(p))
+        })
+    };
+    cards
+        .commanders()
+        .into_iter()
+        .filter(|c| c.rank.is_some())
+        .filter(|c| {
+            let text = strip_reminder(&c.oracle_joined().to_lowercase());
+            texts.iter().any(|t| mentions(&text, t))
+        })
+        .take(limit)
+        .map(|c| ListedCommander { name: c.name.clone(), slug: slugify(&c.name), num_decks: 0 })
+        .collect()
+}
+
 pub fn describe(table: &[TypeFilter], cards: &[CompiledFilter]) -> String {
     table
         .iter()
@@ -488,7 +534,7 @@ pub fn themes(filters: &[TypeFilter]) -> Vec<&'static str> {
 /// for many of: `equipment` -> equipment, `saga` -> sagas, `legendary` -> legends, `ramp` -> ramp.
 pub fn card_themes(filters: &[CompiledFilter], known: &[Theme]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    for f in filters.iter().map(|c| &c.filter).filter(|f| f.min.is_some_and(|m| m > 0)) {
+    for f in filters.iter().map(|c| &c.filter).filter(|f| f.wants_many()) {
         for word in f.words() {
             let w = word.to_lowercase();
             let mut names = vec![w.clone(), format!("{w}s"), format!("{w}es")];
@@ -669,6 +715,34 @@ mod tests {
         let counters = prior("t:instant=12+").unwrap();
         assert!(!counters.possible(&deck(30, 11, 20)) && counters.possible(&deck(0, 12, 0)));
         assert!(prior("equipment=..2").is_none(), "no minimum, no prior");
+    }
+
+    #[test]
+    fn commanders_whose_text_mentions_what_is_counted() {
+        let cmdr = |name: &str, text: &str, rank: u32| ranked(card(name, "Legendary Creature — Human", text), rank);
+        let db = CardDb::new(vec![
+            cmdr("Wyleth, Soul of Steel", "Whenever you cast an Aura or Equipment spell, draw a card.", 300),
+            cmdr("Sram, Senior Edificer", "Whenever you cast an Aura, Equipment, or Vehicle spell, draw a card.", 200),
+            cmdr("Laura, the Lost", "Flying", 10),
+            cmdr("Brenna, the Bold", "Equipped creatures you control get +1/+1.", 20),
+            cmdr("Self, the Armed", "When this Equipment is put into a graveyard, draw a card.", 5),
+            cmdr("Copy, the Cloner", "Create a token copy of it, except the token isn't legendary.", 6),
+            cmdr("Lord, of Legends", "Legendary spells you cast cost {1} less.", 400),
+            card("Unranked Smith", "Legendary Creature — Dwarf", "Equipment you control have equip {1}."),
+            card("Bonesplitter", "Artifact — Equipment", ""),
+            card("Ethereal Armor", "Enchantment — Aura", ""),
+        ]);
+        let compile = |s: &[&str]| -> Vec<CompiledFilter> {
+            s.iter().map(|x| cards_filter(x).compile(&db, None).unwrap()).collect()
+        };
+        let names = |f: &[CompiledFilter], limit| {
+            mentioning_commanders(&mention_texts(f), &db, limit).into_iter().map(|c| c.slug).collect::<Vec<_>>()
+        };
+        assert_eq!(names(&compile(&["equipment=10+"]), 5), vec!["sram-senior-edificer", "wyleth-soul-of-steel"]);
+        assert_eq!(names(&compile(&["equipment=10+"]), 1), vec!["sram-senior-edificer"]);
+        assert_eq!(names(&compile(&["aura=5+"]), 5), vec!["sram-senior-edificer", "wyleth-soul-of-steel"]);
+        assert!(names(&compile(&["equipment=..2", "ramp=10+"]), 5).is_empty(), "only minimums of searches");
+        assert_eq!(names(&compile(&["legendary=20+"]), 5), vec!["lord-of-legends"]);
     }
 
     #[test]

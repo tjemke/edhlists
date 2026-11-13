@@ -407,7 +407,7 @@ fn start_search<'a>(
     keep_fetching: bool,
 ) -> Result<Session<'a>> {
     let mut themes: Vec<String> = filters::themes(&select.types).into_iter().map(String::from).collect();
-    if card_filters.iter().any(|f| f.filter.min.is_some_and(|m| m > 0)) {
+    if card_filters.iter().any(|f| f.filter.wants_many()) {
         // Card filters name themes by their words (equipment, sagas, legends, ramp): one request
         // for EDHREC's theme list, cached for a week.
         match edhrec::themes(http) {
@@ -428,23 +428,35 @@ fn start_search<'a>(
             Err(e) => eprintln!("  note: couldn't load EDHREC's '{theme}' theme ({e:#})"),
         }
     }
-    let source = if candidates.is_empty() {
-        candidates = edhrec::top_commanders(http).context("EDHREC's top commanders")?;
-        "EDHREC's most-built commanders".to_string()
-    } else {
-        format!("EDHREC theme{} {}", if themes.len() > 1 { "s" } else { "" }, themes.join(", "))
-    };
+    let limit = args.commanders.max(1);
     let mut seen = std::collections::HashSet::new();
     candidates.retain(|c| seen.insert(c.slug.clone()));
     candidates.sort_by_key(|c| std::cmp::Reverse(c.num_decks));
-    candidates.truncate(args.commanders.max(1));
+    let from_themes = candidates.len().min(limit);
+    // Then commanders whose own text mentions what the card filters count (free, from the card
+    // database): they fill the slots the themes leave, and stand in for the most-built fallback.
+    let mentions = filters::mention_texts(&card_filters);
+    let mentioning = filters::mentioning_commanders(&mentions, cards, limit);
+    candidates.extend(mentioning.into_iter().filter(|c| seen.insert(c.slug.clone())));
+    candidates.truncate(limit);
+    let from_text = candidates.len() - from_themes;
+    let mentioned = mentions.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(" or ");
+    let themed = format!("from EDHREC theme{} {}", if themes.len() > 1 { "s" } else { "" }, themes.join(", "));
+    let source = match (from_themes, from_text) {
+        (0, 0) => {
+            candidates = edhrec::top_commanders(http).context("EDHREC's top commanders")?;
+            candidates.retain(|c| seen.insert(c.slug.clone()));
+            candidates.sort_by_key(|c| std::cmp::Reverse(c.num_decks));
+            candidates.truncate(limit);
+            "from EDHREC's most-built commanders".to_string()
+        }
+        (0, _) => format!("whose text mentions {mentioned}"),
+        (_, 0) => themed,
+        (_, n) => format!("{themed}, plus {n} whose text mentions {mentioned},"),
+    };
     let wanted = filters::describe(&select.types, &card_filters);
     let count_labels = count_labels(&card_filters);
-    eprintln!(
-        "searching {} commanders from {source} for decks with {wanted}, {} ...",
-        candidates.len(),
-        target.describe()
-    );
+    eprintln!("searching {} commanders {source} for decks with {wanted}, {} ...", candidates.len(), target.describe());
     let stats = PoolStats { commanders_total: candidates.len(), ..Default::default() };
     let pool = Pool::new(cards, combos, salt, stats).with_filters(card_filters);
     let fetcher = Fetcher::spawn_search(Arc::clone(http), store.clone(), candidates, select, keep_fetching);

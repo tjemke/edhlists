@@ -125,7 +125,10 @@ commanders: the filters pick EDHREC themes and their top commanders are scanned.
 `planeswalkers`, `spellslinger`, `creatureless`, `artifacts`, `enchantress` and `lands-matter`;
 decklist filters to the theme named after what they count (`equipment` → Equipment, `saga` → Sagas,
 `legendary` → Legends, `ramp` → Ramp, `o:treasure` → Treasure), looked up in EDHREC's theme list.
-When no theme fits (e.g. `creatures=40+`), EDHREC's most-built commanders are scanned instead.
+Commanders whose own rules text mentions what a decklist filter counts (Sram's "Aura, Equipment, or
+Vehicle spell" for `equipment=10+`) fill the slots the themes leave, most popular first, found in
+the card database for free. When neither fits (e.g. `creatures=40+`), EDHREC's most-built
+commanders are scanned instead.
 `--commanders N` (default 30) caps how many deck tables are scanned. The browser opens right away
 and fills as each commander's table and decks come in; commander and colour (WUBRG) columns show
 whose deck is whose. Cost: one request for the theme list (when a decklist filter asks for a

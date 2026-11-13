@@ -166,6 +166,23 @@ impl Query {
     }
 }
 
+impl Query {
+    /// The text it looks for in type lines and rules text, not negated (and not regexes or `~`):
+    /// "equipment" for `t:equipment`, "create a treasure" for `o:"create a treasure"`.
+    pub fn texts(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        self.expr.walk(&mut |t, negated| {
+            if let (false, Term::Type(Text::Contains(s)) | Term::Oracle { text: Text::Contains(s), .. }) = (negated, t)
+                && !s.is_empty()
+                && !s.contains('~')
+            {
+                out.push(s.clone());
+            }
+        });
+        out
+    }
+}
+
 impl FromStr for Query {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self> {
@@ -917,6 +934,8 @@ mod tests {
         assert_eq!(Query::parse("t:equipment -t:creature").unwrap().words(), vec!["equipment"]);
         assert_eq!(Query::parse(r#"o:treasure or otag:"mana rock""#).unwrap().words(), vec!["treasure", "mana-rock"]);
         assert!(Query::parse(r#"o:"create a treasure""#).unwrap().words().is_empty());
+        let q = Query::parse(r#"(t:equipment or o:"create a treasure") -t:creature o:/x/ o:"~ deals""#).unwrap();
+        assert_eq!(q.texts(), vec!["equipment", "create a treasure"]);
     }
 
     #[test]
