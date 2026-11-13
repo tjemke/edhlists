@@ -342,6 +342,44 @@ pub fn parse_theme_commanders(v: &Value) -> Vec<ListedCommander> {
     listed_commanders(v, &["topcommanders", "newcommanders"])
 }
 
+/// One of EDHREC's deck themes (`edhrec.com/tags/<slug>`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Theme {
+    /// As EDHREC shows it ("Equipment", "+1/+1 Counters"); also what decks are tagged with.
+    pub name: String,
+    /// The page slug ("equipment", "plus-1-plus-1-counters").
+    pub slug: String,
+    pub num_decks: u64,
+}
+
+/// Every theme EDHREC has a page for (1 request, cached for a week).
+pub fn themes(http: &Http) -> Result<Vec<Theme>> {
+    let url = format!("{EDHREC_JSON}/tags.json");
+    let v: Value = http.cached_json(&url, None, Ttl::For(TTL_COMMANDER_PAGE))?;
+    Ok(parse_themes(&v))
+}
+
+pub fn parse_themes(v: &Value) -> Vec<Theme> {
+    let mut out: Vec<Theme> = Vec::new();
+    for list in v["container"]["json_dict"]["cardlists"].as_array().into_iter().flatten() {
+        for cv in list["cardviews"].as_array().into_iter().flatten() {
+            let (Some(name), Some(slug)) =
+                (cv["name"].as_str(), cv["url"].as_str().and_then(|u| u.strip_prefix("/tags/")))
+            else {
+                continue;
+            };
+            if !out.iter().any(|t| t.slug == slug) {
+                out.push(Theme {
+                    name: name.to_string(),
+                    slug: slug.to_string(),
+                    num_decks: cv["num_decks"].as_u64().unwrap_or(0),
+                });
+            }
+        }
+    }
+    out
+}
+
 /// EDHREC's most-built commanders of the past two years.
 pub fn top_commanders(http: &Http) -> Result<Vec<ListedCommander>> {
     let url = format!("{EDHREC_JSON}/commanders/year.json");
@@ -467,6 +505,15 @@ mod tests {
         let top = parse_top_commanders(&v);
         assert_eq!(top.len(), 40);
         assert_eq!(top[0].slug, "yshtola-nights-blessed");
+    }
+
+    #[test]
+    fn theme_list() {
+        let v: Value = serde_json::from_str(&read("tags.json")).unwrap();
+        let t = parse_themes(&v);
+        assert_eq!(t.len(), 22);
+        assert_eq!(t[0], Theme { name: "Tokens".into(), slug: "tokens".into(), num_decks: 208811 });
+        assert!(t.iter().any(|t| t.slug == "sagas" && t.name == "Sagas"));
     }
 
     #[test]
