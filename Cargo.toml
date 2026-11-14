@@ -9,6 +9,9 @@ edition = "2024"
 publish = false
 rust-version = "1.88"
 
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
 [workspace.dependencies]
 edhpl = { path = "crates/edhpl" }
 edh-data = { path = "crates/edh-data" }
