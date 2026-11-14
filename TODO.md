@@ -25,6 +25,13 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
 
 ## Maybe
 
+- [ ] **Score each deck faster still.** Scoring takes ~150-180 µs a deck since combos are looked up
+  under their rarest card (it was ~285-435 µs). `edhpl::bracket` lowercases and regex-matches every
+  card's oracle text for every deck (~40 µs a deck); those results depend only on the card, so
+  they could be worked out once per card per run. `analyze` also rebuilds the commander's
+  combo-vote table for every deck (~11 µs). Touches `edhpl/src/bracket.rs` (keep the golden tests
+  passing) and `analysis.rs`. *Small–medium; only if rescoring after a sync still feels slow.*
+
 - [ ] **Count only stored decks that pass the card filters** towards a commander's share when
   fetching across commanders. Today `search` in `scout.rs` counts every stored eligible deck
   (`sel.cached.len()`), because the `-T` decklist filters live in `Pool`, not the background

@@ -57,6 +57,7 @@ pub struct ComboDb {
     pub source_timestamp: String,
     pub features: BTreeMap<u32, String>,
     pub combos: Vec<Combo>,
+    /// Each combo under one of its cards: the one that appears in the fewest combos.
     #[serde(skip)]
     by_card: HashMap<String, Vec<usize>>,
 }
@@ -70,11 +71,19 @@ impl ComboDb {
     }
 
     fn reindex(&mut self) {
+        // A combo is only included when all its cards are, so it's enough to look at it once,
+        // under its card that appears in the fewest combos. Filing it under every card made a
+        // deck with Sol Ring re-check thousands of combos it can't have.
+        let mut uses: HashMap<&str, usize> = HashMap::new();
+        for c in &self.combos {
+            for name in c.card_names().collect::<HashSet<_>>() {
+                *uses.entry(name).or_default() += 1;
+            }
+        }
         let mut by_card: HashMap<String, Vec<usize>> = HashMap::new();
         for (i, c) in self.combos.iter().enumerate() {
-            // Index each combo under its rarest-looking card only once per name.
-            for name in c.card_names().collect::<HashSet<_>>() {
-                by_card.entry(name.to_string()).or_default().push(i);
+            if let Some(rarest) = c.card_names().min_by_key(|n| (uses[n], *n)) {
+                by_card.entry(rarest.to_string()).or_default().push(i);
             }
         }
         self.by_card = by_card;
@@ -124,6 +133,22 @@ impl ComboDb {
                 }
             }
         }
+        out.sort_by(|a, b| a.cards.len().cmp(&b.cards.len()).then_with(|| a.id.cmp(&b.id)));
+        out
+    }
+
+    /// [`ComboDb::included`] the slow way, checking every combo (for tests).
+    #[cfg(test)]
+    fn included_by_scanning(&self, deck: &HashSet<String>, commanders: &HashSet<String>) -> Vec<&Combo> {
+        let mut out: Vec<&Combo> = self
+            .combos
+            .iter()
+            .filter(|c| {
+                c.cards
+                    .iter()
+                    .all(|cc| deck.contains(&cc.name) && (!cc.must_be_commander || commanders.contains(&cc.name)))
+            })
+            .collect();
         out.sort_by(|a, b| a.cards.len().cmp(&b.cards.len()).then_with(|| a.id.cmp(&b.id)));
         out
     }
@@ -296,5 +321,36 @@ mod tests {
         let cmdr: HashSet<String> = ["A".to_string()].into();
         let ids: Vec<_> = db.included(&deck, &cmdr).iter().map(|c| c.id.clone()).collect();
         assert_eq!(ids, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn included_finds_what_checking_every_combo_finds() {
+        // "Common" is in every combo; each other card in only a few. Combos are filed under their
+        // rarest card, so decks with and without that card must still get exactly the combos a
+        // full scan would find.
+        let mut combos = Vec::new();
+        for i in 0..40 {
+            let a = format!("Rare {}", i % 7);
+            let b = format!("Rare {}", (i * 3 + 1) % 11);
+            combos.push(combo(&format!("c{i}"), &[("Common", i % 13 == 0), (&a, false), (&b, false)]));
+        }
+        combos.push(combo("pair", &[("Common", false), ("Rare 3", false)]));
+        let db = ComboDb::new(String::new(), BTreeMap::new(), combos);
+        let names = |v: &[&str]| -> HashSet<String> { v.iter().map(|s| s.to_string()).collect() };
+        let ids = |v: Vec<&Combo>| -> Vec<String> { v.into_iter().map(|c| c.id.clone()).collect() };
+        let decks = [
+            names(&["Common", "Rare 1", "Rare 3", "Rare 4", "Rare 6"]),
+            names(&["Common", "Rare 0", "Rare 1", "Rare 2", "Rare 3", "Rare 5", "Rare 7", "Rare 10"]),
+            names(&["Rare 0", "Rare 1", "Rare 2", "Rare 3"]),
+            names(&["Common"]),
+        ];
+        for commanders in [HashSet::new(), names(&["Common"])] {
+            for deck in &decks {
+                let found = ids(db.included(deck, &commanders));
+                assert_eq!(found, ids(db.included_by_scanning(deck, &commanders)), "{deck:?}");
+            }
+        }
+        assert!(ids(db.included(&decks[0], &HashSet::new())).contains(&"pair".to_string()));
+        assert!(db.included(&decks[3], &HashSet::new()).is_empty());
     }
 }
