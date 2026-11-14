@@ -22,7 +22,7 @@ use crate::config::PaneLayout;
 use crate::export::{self, ExportFormat, ReportInput};
 use crate::filters::CountColumn;
 use crate::rank::{RankMode, Ranked, Target, Weights, mix, rank};
-use crate::scout::{Entry, FetchEvent, Fetcher, Pool};
+use crate::scout::{Entry, Feed, FeedEvent, FetchEvent, Pool};
 use crate::view::{
     ACCENT, BAD, DIM, GOOD, OK, deck_identity, detail_lines, grouped_list, identity_line, power_color, score_color,
     wrap_lines,
@@ -58,8 +58,8 @@ pub struct Settings {
 pub struct App<'a> {
     settings: Settings,
     pool: Pool<'a>,
-    /// Still fetching decks in the background?
-    fetcher: Option<Fetcher>,
+    /// Decks still being scored or fetched in the background.
+    feed: Option<Feed>,
     /// Shared HTTP client, to surface its notices (retries, back-offs) in the status line.
     http: Option<&'a Http>,
     ranking: Vec<Ranked>,
@@ -80,16 +80,13 @@ pub struct App<'a> {
 const SPINNER: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
 /// How often the event loop wakes up when nothing happens, to pick up arriving decks.
 const TICK: Duration = Duration::from_millis(120);
-/// How long one turn of the loop may spend folding in arrived decks (scoring them) before it
-/// draws and reads keys again: about a frame.
-const PUMP_BUDGET: Duration = Duration::from_millis(16);
 
 impl<'a> App<'a> {
-    pub fn new(settings: Settings, pool: Pool<'a>, fetcher: Option<Fetcher>, http: Option<&'a Http>) -> Self {
+    pub fn new(settings: Settings, pool: Pool<'a>, feed: Option<Feed>, http: Option<&'a Http>) -> Self {
         let mut app = Self {
             settings,
             pool,
-            fetcher,
+            feed,
             http,
             ranking: Vec::new(),
             visible: Vec::new(),
@@ -133,30 +130,24 @@ impl<'a> App<'a> {
         &self.pool.stats
     }
 
-    /// Take in what the background fetcher has delivered since the last frame, for at most
-    /// [`PUMP_BUDGET`]: decks are scored as they're folded in, and a search can deliver thousands
-    /// of stored decks at once. Returns whether events are still waiting.
+    /// Take in what the feed has delivered since the last frame: decks already scored, so this
+    /// is quick however many there are. Returns whether anything changed.
     fn pump(&mut self) -> bool {
         let mut arrived = false;
         let mut finished = false;
-        let mut waiting = false;
-        if let Some(f) = &self.fetcher {
-            let started = Instant::now();
-            loop {
-                if started.elapsed() >= PUMP_BUDGET {
-                    waiting = true;
-                    break;
-                }
-                let Some(event) = f.try_next() else { break };
-                finished |= matches!(event, FetchEvent::Done | FetchEvent::Stopped(_));
-                arrived |= matches!(event, FetchEvent::Deck(_) | FetchEvent::StoredDeck(_));
+        let mut changed = false;
+        if let Some(f) = &self.feed {
+            while let Some(event) = f.try_next() {
+                changed = true;
+                finished |= matches!(event, FeedEvent::Fetch(FetchEvent::Done | FetchEvent::Stopped(_)));
+                arrived |= matches!(event, FeedEvent::Scored { .. });
                 if let Some(msg) = self.pool.apply(event) {
                     self.status = Some((msg, true));
                 }
             }
         }
         if finished {
-            self.fetcher = None;
+            self.feed = None;
             if self.status.is_none() {
                 self.status = Some((format!("done: {}", self.pool.stats.summary()), false));
             }
@@ -166,8 +157,14 @@ impl<'a> App<'a> {
         }
         if let Some(n) = self.http.and_then(|h| h.take_notices().pop()) {
             self.status = Some((n, true));
+            changed = true;
         }
-        waiting
+        changed
+    }
+
+    /// The spinner's frame: it follows the clock, not the loop.
+    fn spinner_frame(&self) -> usize {
+        (self.opened.elapsed().as_millis() / TICK.as_millis()) as usize
     }
 
     fn refresh_visible(&mut self) {
@@ -335,10 +332,11 @@ impl<'a> App<'a> {
                 Style::new().fg(ACCENT),
             ),
         ];
-        if self.fetcher.is_some() {
-            let frame = (self.opened.elapsed().as_millis() / TICK.as_millis()) as usize;
-            let spin = SPINNER[frame % SPINNER.len()];
-            let progress = if st.scanning() {
+        if self.feed.is_some() {
+            let spin = SPINNER[self.spinner_frame() % SPINNER.len()];
+            let progress = if st.scoring > 0 {
+                format!(" {spin} scoring {} more stored decks ", st.scoring)
+            } else if st.scanning() {
                 format!(" {spin} scanning commanders {}/{} ", st.commanders_scanned, st.commanders_total)
             } else {
                 format!(" {spin} fetching {}/{} ", st.fetched + st.failed, st.queued)
@@ -444,7 +442,7 @@ impl<'a> App<'a> {
 
     fn draw_details(&self, frame: &mut Frame, area: Rect) {
         let Some((title, _)) = self.pane_title() else {
-            let msg = if self.fetcher.is_some() {
+            let msg = if self.feed.is_some() {
                 "Fetching decklists in the background — they show up here as they arrive (one every few seconds)."
             } else {
                 "No decks to show."
@@ -554,18 +552,32 @@ pub fn run(app: &mut App) -> Result<()> {
     }
     let mut terminal: DefaultTerminal = ratatui::init();
     let result = (|| -> Result<()> {
+        // Draw only when something changed: a key, a resize, decks arriving, or (while work goes
+        // on in the background) the spinner moving on.
+        let mut dirty = true;
+        let mut spun = usize::MAX;
         loop {
-            let waiting = app.pump();
-            terminal.draw(|f| app.draw(f))?;
-            // Wake up regularly to pick up decks arriving in the background; straight away when
-            // some are already waiting.
-            let wait = if waiting { Duration::ZERO } else { TICK };
-            if event::poll(wait)?
-                && let Event::Key(key) = event::read()?
-                && key.kind == KeyEventKind::Press
-                && !app.handle(key)
-            {
-                return Ok(());
+            dirty |= app.pump();
+            if app.feed.is_some() && app.spinner_frame() != spun {
+                spun = app.spinner_frame();
+                dirty = true;
+            }
+            if dirty {
+                terminal.draw(|f| app.draw(f))?;
+                dirty = false;
+            }
+            // Wake up regularly to pick up decks arriving in the background.
+            if event::poll(TICK)? {
+                match event::read()? {
+                    Event::Key(key) if key.kind == KeyEventKind::Press => {
+                        if !app.handle(key) {
+                            return Ok(());
+                        }
+                        dirty = true;
+                    }
+                    Event::Resize(..) => dirty = true,
+                    _ => {}
+                }
             }
         }
     })();

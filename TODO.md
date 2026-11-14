@@ -19,6 +19,9 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   with. *Value high, cost medium–large.*
 - [ ] **Rank by a filter's count.** An extra `r` mode in `rank.rs`: most equipment first, decks in
   the target still first; left out of the cycle when there are no card filters. *Small.*
+- [ ] **Widen the browser's `#` column for big pools.** It is 3 cells wide (`draw_table` in
+  `tui.rs`), so past 999 decks the position is cut off: row 11066 shows as "110". Size it to the
+  digits of the visible list's length. *Small.*
 - [ ] **Browser header overflow.** Long filter descriptions push the run summary off the header
   ("5 didn't m" at 200 columns); shorten or wrap it in `tui.rs` `draw_header`. *Small.*
 

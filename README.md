@@ -247,7 +247,9 @@ Windows the platform's cache and local app-data directories are used instead.
 Stored decks are read from the deck database with their scores, so a commander with thousands of
 them opens in about a second. Scores are worked out again only when what they depend on changes: a
 `sync` (card prices, Game Changers, Tagger roles and combos all feed the scores), a new version of
-the scoring, or the commander's EDHREC synergy data. Decks fetched before the database existed (kept as pages in `$XDG_STATE_HOME/edh-scout/decks`)
+the scoring, or the commander's EDHREC synergy data. Then the browser waits at most about two
+seconds, scoring the decks that ranked best before first, and opens; the rest join the list as
+they're scored. Plain output waits for all of them. Decks fetched before the database existed (kept as pages in `$XDG_STATE_HOME/edh-scout/decks`)
 are read into it once, on the first run (~25k pages: about 14 s on two threads), and the pages
 move to the cache; when the cache is on another filesystem they stay put, and the run says how
 much space deleting them frees.

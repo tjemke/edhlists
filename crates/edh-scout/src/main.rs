@@ -8,7 +8,7 @@ use clap::{Args, Parser, Subcommand};
 use edh_data::cards::CardDb;
 use edh_data::combos::ComboDb;
 use edh_data::config::Paths;
-use edh_data::deck::parse_decklist;
+use edh_data::deck::{Deck, parse_decklist};
 use edh_data::edhrec::{self, ListedCommander};
 use edh_data::http::{Http, OfflineMiss, summarize_counts};
 use edh_data::progress::{Lines, Progress};
@@ -20,7 +20,9 @@ use edh_scout::config::{Config, PaneLayout};
 use edh_scout::export::{self, ExportFormat, ReportInput};
 use edh_scout::filters::{self, CardFilter, CompiledFilter, CountColumn, Filter};
 use edh_scout::rank::{RankMode, Target, Weights, mix, parse_range, rank};
-use edh_scout::scout::{Fetcher, Pool, PoolStats, Prepared, ScoutOptions, load_commander_sources, load_salt, prepare};
+use edh_scout::scout::{
+    Feed, Fetcher, Pool, PoolStats, Prepared, ScoutOptions, load_commander_sources, load_salt, prepare,
+};
 use edh_scout::select::SelectOptions;
 use edh_scout::status::Status;
 use edh_scout::{picker, plain, tui, view};
@@ -241,6 +243,10 @@ fn resolve_commander(cards: &CardDb, query: &str, role: &str, status: &Status) -
     )
 }
 
+/// How long the browser waits for stored decks to be scored (after a `sync`, or the first time)
+/// before it opens with the decks that are ready; the rest join the list as they're done.
+const START_BUDGET: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// A scout in progress: decks so far, and the background work still filling them in.
 struct Session<'a> {
     title: String,
@@ -248,6 +254,8 @@ struct Session<'a> {
     name: String,
     pool: Pool<'a>,
     fetcher: Option<Fetcher>,
+    /// Stored decks still to be scored, best first.
+    backlog: Vec<Deck>,
     show_commander: bool,
     /// Columns for the `-T` card filters' counts.
     count_columns: Vec<CountColumn>,
@@ -295,6 +303,7 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
             &args,
             name,
             &target,
+            &weights,
             select,
             card_filters,
             keep_fetching,
@@ -398,6 +407,7 @@ fn start_single<'a>(
     args: &ScoutArgs,
     name: &str,
     target: &Target,
+    weights: &Weights,
     select: SelectOptions,
     card_filters: Vec<CompiledFilter>,
     keep_fetching: bool,
@@ -433,8 +443,11 @@ fn start_single<'a>(
         .with_store(store.clone(), score_epoch(cards, combos));
     pool.add_commander(&slug, sources);
     status.step(&format!("scoring {} stored decks", decks.len()));
-    pool.add_many(decks);
-    if pool.decks.is_empty() && to_fetch.is_empty() {
+    // In the browser, decks that still need scoring after a short wait join the list as they're
+    // done; plain output waits for all of them.
+    let budget = interactive(args.output.plain).then_some(START_BUDGET);
+    let backlog = pool.add_stored(decks, budget, &|s| rank(s, target, args.rank, weights));
+    if pool.decks.is_empty() && backlog.is_empty() && to_fetch.is_empty() {
         bail!(if http.offline() {
             "no stored decks to show (offline)".to_string()
         } else if pool.stats.unmatched > 0 {
@@ -456,8 +469,9 @@ fn start_single<'a>(
     } else {
         String::new()
     };
+    let scoring = if backlog.is_empty() { String::new() } else { format!(", {} more being scored", backlog.len()) };
     status.note(&format!(
-        "  {} stored deck(s) ready{skipped}, {} to fetch in the background{later} · {}",
+        "  {} stored deck(s) ready{skipped}{scoring}, {} to fetch in the background{later} · {}",
         pool.decks.len(),
         to_fetch.len(),
         summarize_counts(&http.request_counts())
@@ -467,7 +481,7 @@ fn start_single<'a>(
     }
     let fetcher = (!to_fetch.is_empty())
         .then(|| Fetcher::spawn(Arc::clone(http), store.clone(), to_fetch, opts.commanders.clone()));
-    Ok(Session { title, name: slug, pool, fetcher, show_commander: false, count_columns })
+    Ok(Session { title, name: slug, pool, fetcher, backlog, show_commander: false, count_columns })
 }
 
 /// No commander: find decks matching the `-T` filters across the commanders EDHREC lists for the
@@ -557,6 +571,7 @@ fn start_search<'a>(
         name: format!("search-{}", slugify(&wanted)),
         pool,
         fetcher: Some(fetcher),
+        backlog: Vec::new(),
         show_commander: true,
         count_columns,
     })
@@ -571,35 +586,57 @@ fn finish(
     weights: Weights,
     layout: PaneLayout,
 ) -> Result<()> {
-    let Session { title, name, mut pool, fetcher, show_commander, count_columns } = session;
+    let Session { title, name, mut pool, fetcher, backlog, show_commander, count_columns } = session;
     let export_dir = args.output.export.clone().unwrap_or_else(|| PathBuf::from(format!("edh-scout-{name}")));
-    if interactive(args.output.plain) {
-        let settings = tui::Settings {
-            title,
-            target,
-            mode: args.rank,
-            weights,
-            export_dir,
-            format: args.output.format,
-            report_top: args.output.top,
-            show_price: args.output.price,
-            show_commander,
-            mix: !args.no_mix,
-            count_columns,
-            layout,
-        };
-        let mut app = tui::App::new(settings, pool, fetcher, Some(http));
-        tui::run(&mut app)?;
-        let stats = app.stats();
-        if let Some(why) = &stats.stopped {
-            eprintln!("  stopped fetching early: {why}");
+    let scorer = pool.scorer();
+    // Decks are scored on a thread of their own (in this scope, so it can borrow the databases),
+    // and the browser or the plain table only takes in finished results.
+    std::thread::scope(|scope| -> Result<()> {
+        let feed = (fetcher.is_some() || !backlog.is_empty()).then(|| Feed::start(scope, scorer, backlog, fetcher));
+        if interactive(args.output.plain) {
+            let settings = tui::Settings {
+                title,
+                target,
+                mode: args.rank,
+                weights,
+                export_dir,
+                format: args.output.format,
+                report_top: args.output.top,
+                show_price: args.output.price,
+                show_commander,
+                mix: !args.no_mix,
+                count_columns,
+                layout,
+            };
+            let mut app = tui::App::new(settings, pool, feed, Some(http));
+            tui::run(&mut app)?;
+            let stats = app.stats();
+            if let Some(why) = &stats.stopped {
+                eprintln!("  stopped fetching early: {why}");
+            }
+            eprintln!("  {} · {}", stats.summary(), summarize_counts(&http.request_counts()));
+            return Ok(());
         }
-        eprintln!("  {} · {}", stats.summary(), summarize_counts(&http.request_counts()));
-        return Ok(());
-    }
-    if let Some(f) = fetcher {
-        pool.drain(f);
-    }
+        if let Some(f) = feed {
+            pool.drain(f);
+        }
+        print_plain(http, &pool, args, &title, &target, &weights, show_commander, &count_columns, &export_dir)
+    })
+}
+
+/// The plain table (and with `--export`, the report) for a finished session.
+#[allow(clippy::too_many_arguments)]
+fn print_plain(
+    http: &Http,
+    pool: &Pool,
+    args: &ScoutArgs,
+    title: &str,
+    target: &Target,
+    weights: &Weights,
+    show_commander: bool,
+    count_columns: &[CountColumn],
+    export_dir: &std::path::Path,
+) -> Result<()> {
     if let Some(why) = &pool.stats.stopped {
         eprintln!("  stopped fetching early: {why}");
     }
@@ -615,18 +652,19 @@ fn finish(
     if pool.stats.unmatched > 0 && pool.decks.len() < args.output.top {
         eprintln!("  {checked_after}");
     }
-    let mut ranking = rank(&pool.scores(), &target, args.rank, &weights);
+    let mut ranking = rank(&pool.scores(), target, args.rank, weights);
     if show_commander && !args.no_mix {
         let (group, weights) = pool.commander_groups();
         ranking = mix(ranking, &group, &weights);
     }
-    let columns = plain::Columns { price: args.output.price, commander: show_commander, counts: count_columns.clone() };
-    println!("{}", plain::ranked_table(&pool.decks, pool.cards(), &ranking, &target, args.output.top, &columns));
-    println!("{}", plain::legend(&target, args.rank));
+    let columns =
+        plain::Columns { price: args.output.price, commander: show_commander, counts: count_columns.to_vec() };
+    println!("{}", plain::ranked_table(&pool.decks, pool.cards(), &ranking, target, args.output.top, &columns));
+    println!("{}", plain::legend(target, args.rank));
     if args.output.export.is_some() {
         let input = ReportInput {
-            title: &title,
-            target: &target,
+            title,
+            target,
             mode: args.rank,
             decks: &pool.decks,
             analyze: &|i| pool.details(i),
@@ -634,9 +672,9 @@ fn finish(
             limit: args.output.top,
             format: args.output.format,
             show_price: args.output.price,
-            count_columns: &count_columns,
+            count_columns,
         };
-        let path = export::write_report(&export_dir, &input)?;
+        let path = export::write_report(export_dir, &input)?;
         eprintln!("wrote {} and the top {} decklists", path.display(), args.output.top.min(ranking.len()));
     }
     Ok(())

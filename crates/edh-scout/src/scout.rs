@@ -1,5 +1,6 @@
 //! The `scout` pipeline: deck table(s) -> candidate selection -> stored decks right away, new decks
-//! fetched in the background -> analysis as they arrive.
+//! fetched in the background -> scored as they arrive, on a thread of their own ([`Feed`]), so the
+//! browser only ever folds in finished results.
 //!
 //! Two shapes: one commander ([`prepare`] + [`Fetcher::spawn`]), or a search across commanders
 //! picked by card-type filters ([`Fetcher::spawn_search`]), where the deck tables themselves load
@@ -7,10 +8,10 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::IsTerminal;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::Duration;
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use edh_data::cards::CardDb;
@@ -26,6 +27,7 @@ use rayon::prelude::*;
 
 use crate::analysis::{Analysis, Context, Score, analyze, synergy_source};
 use crate::filters::{CompiledFilter, Matched};
+use crate::rank::Ranked;
 use crate::select::{Ceiling, SelectOptions, select, weighted_order_from};
 
 /// Per-commander side data: synergy and combo votes. Each piece is optional — a failure costs
@@ -76,6 +78,8 @@ pub struct PoolStats {
     pub failed: usize,
     /// Decks (stored or fetched) left out because a `-T` card filter rejected them.
     pub unmatched: usize,
+    /// Stored decks still being scored in the background (after a `sync`, or never scored).
+    pub scoring: usize,
     /// Searching across commanders: deck tables to scan, and scanned so far.
     pub commanders_total: usize,
     pub commanders_scanned: usize,
@@ -376,11 +380,13 @@ fn search(
 }
 
 /// A deck's score and what each card filter counted, or `None` when a filter rejects it.
-type Scored = Option<(Score, Vec<Matched>)>;
+pub type Scored = Option<(Score, Vec<Matched>)>;
 
-/// A deck's score, what it should be kept in the deck database as (when it was worked out rather
-/// than remembered).
+/// A score worked out rather than remembered, as the deck database should keep it.
 type Fresh = Option<StoredScore>;
+
+/// Decks scored together on the thread pool, and passed on together.
+const SCORE_CHUNK: usize = 256;
 
 /// One deck in the pool: the deck, its score, and what each `-T` card filter counted in it.
 pub struct Entry {
@@ -389,21 +395,150 @@ pub struct Entry {
     pub matches: Vec<Matched>,
 }
 
-/// The decks being compared, scored as they arrive, each against its own commander's data. Only
-/// the scores are kept; [`Pool::details`] works out a deck's full analysis when it's needed.
-pub struct Pool<'a> {
+/// Commanders' side data, as it arrives.
+#[derive(Default)]
+struct Commanders {
+    sources: HashMap<String, CommanderSources>,
+    /// Per commander, a fingerprint of the data synergy is measured against.
+    synergy: HashMap<String, i64>,
+    /// Used when a deck's commander slug has no entry (e.g. a `--slug` override): the first
+    /// commander registered.
+    fallback: Option<String>,
+}
+
+impl Commanders {
+    /// The slug whose data `deck` is scored against: its own commander's, or the fallback's.
+    fn slug_for(&self, deck: &Deck) -> Option<String> {
+        let key = commander_slug(&deck.commanders);
+        if self.sources.contains_key(&key) { Some(key) } else { self.fallback.clone() }
+    }
+}
+
+/// Everything scoring a deck needs. The pool shares it with the thread that scores arriving decks
+/// (see [`Feed`]), and uses it to work out a deck's details on the browser's thread.
+pub struct Scorer<'a> {
     cards: &'a CardDb,
     combos: &'a ComboDb,
     salt: HashMap<String, f64>,
-    commanders: HashMap<String, CommanderSources>,
-    /// Per commander, a fingerprint of the data synergy is measured against.
-    synergy_sources: HashMap<String, i64>,
-    /// Where scores are remembered, and the epoch they must match (see [`crate::analysis::score_epoch`]).
-    store: Option<(DeckStore, i64)>,
-    /// Used when a deck's commander slug has no entry (e.g. a `--slug` override).
-    fallback: Option<String>,
+    commanders: RwLock<Commanders>,
     /// `-T` card filters: decks failing one are left out.
     filters: Vec<CompiledFilter>,
+    /// Where scores are remembered, and the epoch they must match (see [`crate::analysis::score_epoch`]).
+    store: Option<(DeckStore, i64)>,
+}
+
+impl Scorer<'_> {
+    fn commanders(&self) -> std::sync::RwLockReadGuard<'_, Commanders> {
+        self.commanders.read().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Register a commander's side data; the first one registered is also the fallback.
+    pub fn add_commander(&self, slug: &str, sources: CommanderSources) {
+        let mut c = self.commanders.write().unwrap_or_else(|e| e.into_inner());
+        if c.fallback.is_none() {
+            c.fallback = Some(slug.to_string());
+        }
+        c.synergy.insert(slug.to_string(), synergy_source(sources.page.as_ref()));
+        c.sources.insert(slug.to_string(), sources);
+    }
+
+    /// The scores the deck database has for these decks, in order.
+    fn kept_scores(&self, decks: &[Deck]) -> Vec<Option<StoredScore>> {
+        let none = || vec![None; decks.len()];
+        let Some((store, _)) = &self.store else { return none() };
+        let ids: Vec<&str> = decks.iter().map(|d| d.id.as_str()).collect();
+        store.db().scores(&ids).unwrap_or_else(|_| none())
+    }
+
+    /// Was `kept` scored against what `deck` would be scored against now?
+    fn current(&self, deck: &Deck, kept: &StoredScore) -> bool {
+        self.store.as_ref().is_some_and(|(_, epoch)| kept.epoch == *epoch) && kept.synergy_src == self.synergy_src(deck)
+    }
+
+    /// Score decks on the thread pool, in order, reusing the kept scores that are still current
+    /// and keeping the others.
+    pub fn score_many(&self, decks: &[Deck]) -> Vec<Scored> {
+        self.score_with(decks, self.kept_scores(decks))
+    }
+
+    fn score_with(&self, decks: &[Deck], kept: Vec<Option<StoredScore>>) -> Vec<Scored> {
+        let scored: Vec<(Scored, Fresh)> = decks.par_iter().zip(kept).map(|(d, k)| self.score(d, k)).collect();
+        let fresh: Vec<(&str, StoredScore)> =
+            decks.iter().zip(&scored).filter_map(|(d, (_, f))| f.map(|f| (d.id.as_str(), f))).collect();
+        if let (Some((store, _)), false) = (&self.store, fresh.is_empty()) {
+            // A score that can't be kept is just worked out again next time.
+            let _ = store.db().put_scores(&fresh);
+        }
+        scored.into_iter().map(|(s, _)| s).collect()
+    }
+
+    /// The deck's score and filter counts, or `None` if a card filter rejects it. `kept` is used
+    /// when it's still current; otherwise the score is worked out and also returned as what to
+    /// keep.
+    fn score(&self, deck: &Deck, kept: Option<StoredScore>) -> (Scored, Fresh) {
+        let matches: Vec<Matched> = self.filters.iter().map(|f| f.count(deck, self.cards)).collect();
+        if matches.iter().any(|m| !m.passes) {
+            return (None, None);
+        }
+        if let Some(k) = kept.filter(|k| self.current(deck, k)) {
+            return (Some((stored_score(&k, deck), matches)), None);
+        }
+        let s = Score::of(&self.with_context(deck, |ctx| analyze(deck, ctx)));
+        let fresh = self.store.as_ref().map(|(_, epoch)| StoredScore {
+            epoch: *epoch,
+            synergy_src: self.synergy_src(deck),
+            power: s.power,
+            bracket: s.bracket,
+            floor: s.floor,
+            structure: s.structure,
+            synergy: s.synergy,
+        });
+        (Some((s, matches)), fresh)
+    }
+
+    /// A deck's full analysis (bracket reasons, card lists, combos), with the cards each filter
+    /// counted: about a millisecond.
+    pub fn details(&self, deck: &Deck, matches: &[Matched]) -> Analysis {
+        let mut a = self.with_context(deck, |ctx| analyze(deck, ctx));
+        a.matches = matches.to_vec();
+        a
+    }
+
+    fn synergy_src(&self, deck: &Deck) -> i64 {
+        let c = self.commanders();
+        c.slug_for(deck).and_then(|s| c.synergy.get(&s).copied()).unwrap_or(0)
+    }
+
+    /// Run `f` with what analysing `deck` needs: its own commander's data, or the fallback's.
+    fn with_context<R>(&self, deck: &Deck, f: impl FnOnce(&Context) -> R) -> R {
+        let c = self.commanders();
+        let sources = c.slug_for(deck).and_then(|s| c.sources.get(&s));
+        f(&Context {
+            cards: self.cards,
+            combos: self.combos,
+            commander: sources.and_then(|s| s.page.as_ref()),
+            salt: &self.salt,
+            edhrec_combos: sources.map(|s| s.combos.as_slice()).unwrap_or(&[]),
+        })
+    }
+}
+
+/// A kept score as the pool uses it; salt comes from the deck itself.
+fn stored_score(k: &StoredScore, deck: &Deck) -> Score {
+    Score {
+        power: k.power,
+        bracket: k.bracket,
+        floor: k.floor,
+        structure: k.structure,
+        synergy: k.synergy,
+        salt: deck.meta.salt,
+    }
+}
+
+/// The decks being compared, each scored against its own commander's data. Only the scores are
+/// kept; [`Pool::details`] works out a deck's full analysis when it's needed.
+pub struct Pool<'a> {
+    scorer: Arc<Scorer<'a>>,
     pub decks: Vec<Entry>,
     /// Searching across commanders: how many eligible decks EDHREC lists for each one (by slug),
     /// a measure of how popular the commander is for this kind of deck.
@@ -413,44 +548,38 @@ pub struct Pool<'a> {
 
 impl<'a> Pool<'a> {
     pub fn new(cards: &'a CardDb, combos: &'a ComboDb, salt: HashMap<String, f64>, stats: PoolStats) -> Self {
-        Self {
-            cards,
-            combos,
-            salt,
-            commanders: HashMap::new(),
-            synergy_sources: HashMap::new(),
-            store: None,
-            fallback: None,
-            filters: Vec::new(),
-            decks: Vec::new(),
-            eligible: HashMap::new(),
-            stats,
-        }
+        let scorer = Scorer { cards, combos, salt, commanders: RwLock::default(), filters: Vec::new(), store: None };
+        Self { scorer: Arc::new(scorer), decks: Vec::new(), eligible: HashMap::new(), stats }
+    }
+
+    fn scorer_mut(&mut self) -> &mut Scorer<'a> {
+        Arc::get_mut(&mut self.scorer).expect("the pool is set up before scoring is shared")
     }
 
     /// Only keep decks that pass every one of these card filters (set before adding decks).
     pub fn with_filters(mut self, filters: Vec<CompiledFilter>) -> Self {
-        self.filters = filters;
+        self.scorer_mut().filters = filters;
         self
     }
 
     /// Remember scores in the deck database, and reuse those still valid for `epoch`.
     pub fn with_store(mut self, store: DeckStore, epoch: i64) -> Self {
-        self.store = Some((store, epoch));
+        self.scorer_mut().store = Some((store, epoch));
         self
     }
 
     pub fn cards(&self) -> &'a CardDb {
-        self.cards
+        self.scorer.cards
+    }
+
+    /// The scorer, to score decks on another thread (see [`Feed`]).
+    pub fn scorer(&self) -> Arc<Scorer<'a>> {
+        Arc::clone(&self.scorer)
     }
 
     /// Register a commander's side data; the first one registered is also the fallback.
     pub fn add_commander(&mut self, slug: &str, sources: CommanderSources) {
-        if self.fallback.is_none() {
-            self.fallback = Some(slug.to_string());
-        }
-        self.synergy_sources.insert(slug.to_string(), synergy_source(sources.page.as_ref()));
-        self.commanders.insert(slug.to_string(), sources);
+        self.scorer.add_commander(slug, sources);
     }
 
     /// For mixing commanders in the ranking: each deck's commander, and how much room that
@@ -480,32 +609,55 @@ impl<'a> Pool<'a> {
     /// [`Pool::add`] for many decks at once; they're added in order. Scores the deck database
     /// still has are reused; the rest are worked out on the thread pool and kept there.
     pub fn add_many(&mut self, decks: Vec<Deck>) {
-        let kept = self.kept_scores(&decks);
-        let scored: Vec<(Deck, Scored, Fresh)> = decks
-            .into_par_iter()
-            .zip(kept)
-            .map(|(deck, kept)| {
-                let (s, fresh) = self.score(&deck, kept);
-                (deck, s, fresh)
-            })
-            .collect();
-        let fresh: Vec<(&str, StoredScore)> =
-            scored.iter().filter_map(|(d, _, f)| f.map(|f| (d.id.as_str(), f))).collect();
-        if let (Some((store, _)), false) = (&self.store, fresh.is_empty()) {
-            // A score that can't be kept is just worked out again next time.
-            let _ = store.db().put_scores(&fresh);
-        }
-        for (deck, s, _) in scored {
+        let scored = self.scorer.score_many(&decks);
+        for (deck, s) in decks.into_iter().zip(scored) {
             self.push(deck, s);
         }
     }
 
-    /// The scores the deck database has for these decks, in order.
-    fn kept_scores(&self, decks: &[Deck]) -> Vec<Option<StoredScore>> {
-        let none = || vec![None; decks.len()];
-        let Some((store, _)) = &self.store else { return none() };
-        let ids: Vec<&str> = decks.iter().map(|d| d.id.as_str()).collect();
-        store.db().scores(&ids).unwrap_or_else(|_| none())
+    /// Add the stored decks a run starts with. Those whose kept score is still current go in at
+    /// once. The others (after a `sync`, or never scored) are scored for up to `budget`, best
+    /// first by their old score as `rank` orders it, so the top of the list is likely settled when
+    /// the browser opens; the rest are returned, in that order, for a [`Feed`] to score while the
+    /// browser is open. Without a budget all of them are scored here.
+    pub fn add_stored(
+        &mut self,
+        decks: Vec<Deck>,
+        budget: Option<Duration>,
+        rank: &dyn Fn(&[&Score]) -> Vec<Ranked>,
+    ) -> Vec<Deck> {
+        let started = Instant::now();
+        let kept = self.scorer.kept_scores(&decks);
+        let (mut ready, mut stale, mut unscored) = (Vec::new(), Vec::new(), Vec::new());
+        for (deck, k) in decks.into_iter().zip(kept) {
+            match k {
+                Some(k) if self.scorer.current(&deck, &k) => ready.push((deck, Some(k))),
+                Some(k) => stale.push((stored_score(&k, &deck), deck)),
+                None => unscored.push(deck),
+            }
+        }
+        let (ready, kept): (Vec<Deck>, Vec<Option<StoredScore>>) = ready.into_iter().unzip();
+        let scored = self.scorer.score_with(&ready, kept);
+        for (deck, s) in ready.into_iter().zip(scored) {
+            self.push(deck, s);
+        }
+        let order = rank(&stale.iter().map(|(s, _)| s).collect::<Vec<_>>());
+        let mut stale: Vec<Option<Deck>> = stale.into_iter().map(|(_, d)| Some(d)).collect();
+        let mut pending = order.iter().filter_map(|r| stale[r.index].take()).chain(unscored);
+        let mut rest = Vec::new();
+        loop {
+            if budget.is_some_and(|b| started.elapsed() >= b) {
+                rest.extend(pending);
+                break;
+            }
+            let chunk: Vec<Deck> = pending.by_ref().take(SCORE_CHUNK).collect();
+            if chunk.is_empty() {
+                break;
+            }
+            self.add_many(chunk);
+        }
+        self.stats.scoring = rest.len();
+        rest
     }
 
     fn push(&mut self, deck: Deck, scored: Scored) {
@@ -515,47 +667,11 @@ impl<'a> Pool<'a> {
         }
     }
 
-    /// The deck's score and filter counts, or `None` if a card filter rejects it. `kept` is used
-    /// when it was scored against the same inputs; otherwise the score is worked out and also
-    /// returned as what to keep.
-    fn score(&self, deck: &Deck, kept: Option<StoredScore>) -> (Scored, Fresh) {
-        let matches: Vec<Matched> = self.filters.iter().map(|f| f.count(deck, self.cards)).collect();
-        if matches.iter().any(|m| !m.passes) {
-            return (None, None);
-        }
-        let synergy_src = self.synergy_src(deck);
-        let epoch = self.store.as_ref().map(|(_, e)| *e);
-        if let Some(k) = kept.filter(|k| Some(k.epoch) == epoch && k.synergy_src == synergy_src) {
-            let s = Score {
-                power: k.power,
-                bracket: k.bracket,
-                floor: k.floor,
-                structure: k.structure,
-                synergy: k.synergy,
-                salt: deck.meta.salt,
-            };
-            return (Some((s, matches)), None);
-        }
-        let s = Score::of(&analyze(deck, &self.context(deck)));
-        let fresh = epoch.map(|epoch| StoredScore {
-            epoch,
-            synergy_src,
-            power: s.power,
-            bracket: s.bracket,
-            floor: s.floor,
-            structure: s.structure,
-            synergy: s.synergy,
-        });
-        (Some((s, matches)), fresh)
-    }
-
     /// The full analysis of the pool's deck `i` (bracket reasons, card lists, combos, the cards
     /// each filter counted), worked out again: about a millisecond.
     pub fn details(&self, i: usize) -> Analysis {
         let e = &self.decks[i];
-        let mut a = analyze(&e.deck, &self.context(&e.deck));
-        a.matches = e.matches.clone();
-        a
+        self.scorer.details(&e.deck, &e.matches)
     }
 
     /// The scores, in pool order, for ranking.
@@ -563,31 +679,22 @@ impl<'a> Pool<'a> {
         self.decks.iter().map(|e| &e.score).collect()
     }
 
-    /// The slug whose data `deck` is scored against: its own commander's, or the fallback's.
-    fn sources_slug(&self, deck: &Deck) -> Option<String> {
-        let key = commander_slug(&deck.commanders);
-        if self.commanders.contains_key(&key) { Some(key) } else { self.fallback.clone() }
-    }
-
-    fn synergy_src(&self, deck: &Deck) -> i64 {
-        self.sources_slug(deck).and_then(|s| self.synergy_sources.get(&s).copied()).unwrap_or(0)
-    }
-
-    /// What analysing `deck` needs: its own commander's data, or the fallback's.
-    fn context(&self, deck: &Deck) -> Context<'_> {
-        let sources = self.sources_slug(deck).and_then(|s| self.commanders.get(&s));
-        Context {
-            cards: self.cards,
-            combos: self.combos,
-            commander: sources.and_then(|s| s.page.as_ref()),
-            salt: &self.salt,
-            edhrec_combos: sources.map(|s| s.combos.as_slice()).unwrap_or(&[]),
-        }
-    }
-
-    /// Fold one fetch event into the pool. Returns a message worth showing, if any.
-    pub fn apply(&mut self, event: FetchEvent) -> Option<String> {
+    /// Fold one event into the pool. Returns a message worth showing, if any.
+    pub fn apply(&mut self, event: FeedEvent) -> Option<String> {
+        let event = match event {
+            FeedEvent::Scored { deck, scored, from } => {
+                match from {
+                    Origin::Backlog => self.stats.scoring = self.stats.scoring.saturating_sub(1),
+                    Origin::Stored => self.stats.cached += 1,
+                    Origin::Fetched => self.stats.fetched += 1,
+                }
+                self.push(*deck, scored);
+                return None;
+            }
+            FeedEvent::Fetch(e) => e,
+        };
         match event {
+            // Not scored yet (no feed in between): score them here.
             FetchEvent::Deck(d) => {
                 self.stats.fetched += 1;
                 self.add(*d);
@@ -627,11 +734,11 @@ impl<'a> Pool<'a> {
         }
     }
 
-    /// Wait for the fetcher to finish, with a progress bar (for non-interactive output).
-    pub fn drain(&mut self, fetcher: Fetcher) {
+    /// Wait for the feed to finish, with a progress bar (for non-interactive output).
+    pub fn drain(&mut self, feed: Feed) {
         let pb = progress_bar();
-        while let Some(event) = fetcher.next() {
-            if matches!(event, FetchEvent::Done) {
+        while let Some(event) = feed.next() {
+            if matches!(event, FeedEvent::Fetch(FetchEvent::Done)) {
                 break;
             }
             if let Some(msg) = self.apply(event) {
@@ -649,6 +756,136 @@ impl<'a> Pool<'a> {
             }
         }
         pb.finish_and_clear();
+    }
+}
+
+/// Where a scored deck came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Origin {
+    /// A stored deck [`Pool::add_stored`] left to score in the background.
+    Backlog,
+    /// A stored deck a search across commanders found.
+    Stored,
+    /// A deck just fetched.
+    Fetched,
+}
+
+/// What a [`Feed`] passes on: fetch events, with the decks in them already scored.
+pub enum FeedEvent {
+    Scored { deck: Box<Deck>, scored: Scored, from: Origin },
+    Fetch(FetchEvent),
+}
+
+/// Scores decks on a thread of its own, so the browser only ever folds in finished results:
+/// first the stored decks [`Pool::add_stored`] left, then whatever the fetcher brings, in order.
+/// It runs inside a thread scope, so it can borrow the card and combo databases. Dropping it stops
+/// that thread within a fraction of a second, and the fetcher with it.
+pub struct Feed {
+    rx: Receiver<FeedEvent>,
+    stop: Arc<AtomicBool>,
+}
+
+impl Feed {
+    pub fn start<'scope, 'env>(
+        scope: &'scope std::thread::Scope<'scope, 'env>,
+        scorer: Arc<Scorer<'env>>,
+        backlog: Vec<Deck>,
+        fetcher: Option<Fetcher>,
+    ) -> Self {
+        let (tx, rx) = mpsc::channel();
+        let stop = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&stop);
+        scope.spawn(move || feed(&scorer, backlog, fetcher, &tx, &flag));
+        Self { rx, stop }
+    }
+
+    /// The next event if one is waiting.
+    pub fn try_next(&self) -> Option<FeedEvent> {
+        self.rx.try_recv().ok()
+    }
+
+    /// Wait for the next event; `None` once the feed is gone.
+    pub fn next(&self) -> Option<FeedEvent> {
+        self.rx.recv().ok()
+    }
+}
+
+impl Drop for Feed {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
+fn feed(scorer: &Scorer, backlog: Vec<Deck>, fetcher: Option<Fetcher>, tx: &Sender<FeedEvent>, stop: &AtomicBool) {
+    // Score a batch together, then pass each deck on; false once nobody is listening.
+    let pass_on = |batch: Vec<(Deck, Origin)>| -> bool {
+        let (decks, from): (Vec<Deck>, Vec<Origin>) = batch.into_iter().unzip();
+        let scored = scorer.score_many(&decks);
+        decks
+            .into_iter()
+            .zip(scored)
+            .zip(from)
+            .all(|((deck, scored), from)| tx.send(FeedEvent::Scored { deck: Box::new(deck), scored, from }).is_ok())
+    };
+    let mut backlog = backlog.into_iter();
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            return;
+        }
+        let chunk: Vec<(Deck, Origin)> = backlog.by_ref().take(SCORE_CHUNK).map(|d| (d, Origin::Backlog)).collect();
+        if chunk.is_empty() {
+            break;
+        }
+        if !pass_on(chunk) {
+            return;
+        }
+    }
+    let Some(fetcher) = fetcher else {
+        let _ = tx.send(FeedEvent::Fetch(FetchEvent::Done));
+        return;
+    };
+    // Decks arrive one at a time when fetched, or by the thousand when a search reads a
+    // commander's stored decks: whatever has arrived together is scored together.
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            return;
+        }
+        let first = match fetcher.rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(e) => e,
+            Err(RecvTimeoutError::Timeout) => continue,
+            Err(RecvTimeoutError::Disconnected) => return,
+        };
+        let mut events = vec![first];
+        while events.len() < SCORE_CHUNK
+            && let Ok(e) = fetcher.rx.try_recv()
+        {
+            events.push(e);
+        }
+        let mut batch = Vec::new();
+        for event in events {
+            match event {
+                FetchEvent::Deck(d) => batch.push((*d, Origin::Fetched)),
+                FetchEvent::StoredDeck(d) => batch.push((*d, Origin::Stored)),
+                other => {
+                    // In order: the decks before a commander's data arrived don't need it.
+                    if !pass_on(std::mem::take(&mut batch)) {
+                        return;
+                    }
+                    match other {
+                        FetchEvent::Commander { slug, sources } => scorer.add_commander(&slug, *sources),
+                        other => {
+                            let done = matches!(other, FetchEvent::Done);
+                            if tx.send(FeedEvent::Fetch(other)).is_err() || done {
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !pass_on(batch) {
+            return;
+        }
     }
 }
 
@@ -752,6 +989,76 @@ mod tests {
         assert_eq!((with_page.power, with_page.synergy), (first.power, Some(0.4)));
     }
 
+    fn decks(n: usize) -> Vec<Deck> {
+        (0..n)
+            .map(|i| Deck {
+                id: format!("d{i}"),
+                commanders: vec!["Alpha One".into()],
+                cards: [("Grizzly Bears".to_string(), (i % 5) as u32 + 1)].into(),
+                ..Default::default()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn stored_decks_with_stale_scores_wait_their_turn_best_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = DeckStore::open(&dir.path().join("decks.sqlite"), dir.path().join("pages")).unwrap();
+        let cards = CardDb::new(vec![creature("Alpha One"), creature("Grizzly Bears")]);
+        let combos = ComboDb::empty();
+        let target = crate::rank::Target::new((2, 3), None);
+        let by_power = |s: &[&Score]| crate::rank::rank(s, &target, crate::rank::RankMode::Power, &Default::default());
+        // Kept from an older epoch: d3 had the highest power, then d1; d0 and d2 were never scored.
+        let old = |power: f64| StoredScore {
+            epoch: 1,
+            synergy_src: 0,
+            power,
+            bracket: 3,
+            floor: 1,
+            structure: 0.5,
+            synergy: None,
+        };
+        store.db().put_scores(&[("d1", old(5.0)), ("d3", old(7.0))]).unwrap();
+        let pool = || Pool::new(&cards, &combos, HashMap::new(), PoolStats::default()).with_store(store.clone(), 2);
+        let mut p = pool();
+        let rest = p.add_stored(decks(4), Some(Duration::ZERO), &by_power);
+        assert!(p.decks.is_empty());
+        assert_eq!(rest.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), vec!["d3", "d1", "d0", "d2"]);
+        assert_eq!(p.stats.scoring, 4);
+        // Without a budget everything is scored before returning, and the scores are kept.
+        let rest = pool().add_stored(decks(4), None, &by_power);
+        assert!(rest.is_empty());
+        assert!(store.db().scores(&["d0", "d3"]).unwrap().iter().all(|s| s.is_some_and(|s| s.epoch == 2)));
+        // Next time they're all current: in at once, whatever the budget.
+        let mut p = pool();
+        assert!(p.add_stored(decks(4), Some(Duration::ZERO), &by_power).is_empty());
+        assert_eq!(p.decks.len(), 4);
+    }
+
+    #[test]
+    fn a_feed_scores_the_backlog_then_the_fetched_decks() {
+        let cards = CardDb::new(vec![creature("Alpha One"), creature("Grizzly Bears")]);
+        let combos = ComboDb::empty();
+        let mut pool = Pool::new(&cards, &combos, HashMap::new(), PoolStats { scoring: 3, ..Default::default() });
+        let (tx, rx) = mpsc::channel();
+        let fetcher = Fetcher { rx, cancel: Arc::new(AtomicBool::new(false)) };
+        let mut fetched = decks(5).split_off(3);
+        tx.send(FetchEvent::Deck(Box::new(fetched.remove(0)))).unwrap();
+        tx.send(FetchEvent::StoredDeck(Box::new(fetched.remove(0)))).unwrap();
+        tx.send(FetchEvent::Done).unwrap();
+        std::thread::scope(|s| {
+            let feed = Feed::start(s, pool.scorer(), decks(3), Some(fetcher));
+            pool.drain(feed);
+        });
+        let ids: Vec<&str> = pool.decks.iter().map(|e| e.deck.id.as_str()).collect();
+        assert_eq!(ids, vec!["d0", "d1", "d2", "d3", "d4"]);
+        assert_eq!((pool.stats.scoring, pool.stats.fetched, pool.stats.cached), (0, 1, 1));
+        // Dropping a feed stops its thread even while the fetcher is still quiet.
+        let (_tx, rx) = mpsc::channel();
+        let quiet = Fetcher { rx, cancel: Arc::new(AtomicBool::new(false)) };
+        std::thread::scope(|s| drop(Feed::start(s, pool.scorer(), vec![], Some(quiet))));
+    }
+
     #[test]
     fn card_filters_keep_matching_decks_only() {
         let mut eq = creature("Bonesplitter");
@@ -785,9 +1092,9 @@ mod tests {
         let mut pool =
             Pool::new(&cards, &combos, HashMap::new(), PoolStats { commanders_total: 2, ..Default::default() });
         assert!(pool.stats.scanning());
-        pool.apply(FetchEvent::Table { slug: "a".into(), listed: 100, eligible: 10 });
-        pool.apply(FetchEvent::Table { slug: "b".into(), listed: 50, eligible: 5 });
-        pool.apply(FetchEvent::Queued(7));
+        pool.apply(FeedEvent::Fetch(FetchEvent::Table { slug: "a".into(), listed: 100, eligible: 10 }));
+        pool.apply(FeedEvent::Fetch(FetchEvent::Table { slug: "b".into(), listed: 50, eligible: 5 }));
+        pool.apply(FeedEvent::Fetch(FetchEvent::Queued(7)));
         assert!(!pool.stats.scanning());
         assert_eq!((pool.stats.listed, pool.stats.eligible, pool.stats.queued), (150, 15, 7));
         assert!(pool.stats.summary().starts_with("2 commanders, 150 on EDHREC, 15 eligible"));
