@@ -63,6 +63,9 @@ pub struct App<'a> {
     /// Shared HTTP client, to surface its notices (retries, back-offs) in the status line.
     http: Option<&'a Http>,
     ranking: Vec<Ranked>,
+    /// The part of `ranking` on show (all of it, or only the fits), with each deck's position in
+    /// the full ranking. Rebuilt when the ranking or the filter changes, not every frame.
+    visible: Vec<(usize, Ranked)>,
     fits_only: bool,
     pane: Pane,
     state: TableState,
@@ -81,6 +84,7 @@ impl<'a> App<'a> {
             fetcher,
             http,
             ranking: Vec::new(),
+            visible: Vec::new(),
             fits_only: false,
             pane: Pane::Details,
             state: TableState::default(),
@@ -102,12 +106,10 @@ impl<'a> App<'a> {
             let (group, weights) = self.pool.commander_groups();
             self.ranking = mix(std::mem::take(&mut self.ranking), &group, &weights);
         }
-        let visible = self.visible();
-        let pos = keep_deck.and_then(|d| visible.iter().position(|(_, r)| r.index == d)).or(if visible.is_empty() {
-            None
-        } else {
-            Some(0)
-        });
+        self.refresh_visible();
+        let pos = keep_deck
+            .and_then(|d| self.visible.iter().position(|(_, r)| r.index == d))
+            .or(if self.visible.is_empty() { None } else { Some(0) });
         self.state.select(pos);
         if !keep {
             self.scroll = 0;
@@ -150,16 +152,16 @@ impl<'a> App<'a> {
         }
     }
 
-    fn visible(&self) -> Vec<(usize, Ranked)> {
-        self.ranking.iter().copied().enumerate().filter(|(_, r)| !self.fits_only || r.fits).collect()
+    fn refresh_visible(&mut self) {
+        self.visible = self.ranking.iter().copied().enumerate().filter(|(_, r)| !self.fits_only || r.fits).collect();
     }
 
     fn selected(&self) -> Option<(usize, Ranked)> {
-        self.state.selected().and_then(|i| self.visible().get(i).copied())
+        self.state.selected().and_then(|i| self.visible.get(i).copied())
     }
 
     fn move_by(&mut self, delta: isize) {
-        let n = self.visible().len();
+        let n = self.visible.len();
         if n == 0 {
             return;
         }
@@ -214,9 +216,9 @@ impl<'a> App<'a> {
             KeyCode::Char('f') => {
                 let keep = self.selected().map(|(_, r)| r.index);
                 self.fits_only = !self.fits_only;
-                let visible = self.visible();
-                let pos = keep.and_then(|d| visible.iter().position(|(_, r)| r.index == d));
-                self.state.select(pos.or(if visible.is_empty() { None } else { Some(0) }));
+                self.refresh_visible();
+                let pos = keep.and_then(|d| self.visible.iter().position(|(_, r)| r.index == d));
+                self.state.select(pos.or(if self.visible.is_empty() { None } else { Some(0) }));
                 let msg = if self.fits_only { "showing only decks in the target" } else { "showing all decks" };
                 self.status = Some((msg.into(), false));
             }
@@ -249,7 +251,7 @@ impl<'a> App<'a> {
                 }
             }
             KeyCode::Char('E') => {
-                let ranking: Vec<Ranked> = self.visible().into_iter().map(|(_, r)| r).collect();
+                let ranking: Vec<Ranked> = self.visible.iter().map(|(_, r)| *r).collect();
                 let input = ReportInput {
                     title: &self.settings.title,
                     target: &self.settings.target,
@@ -335,8 +337,14 @@ impl<'a> App<'a> {
         headers.extend(counts.iter().map(|c| c.label.clone()));
         headers.push("Themes".into());
         let header = Row::new(headers).style(Style::new().bold().fg(DIM));
-        let rows: Vec<Row> = self
-            .visible()
+        // Only the rows that fit are built: formatting every deck's row each frame cost 15 ms for
+        // 11k decks. The table then renders that window, at our own scroll offset.
+        let height = usize::from(area.height.saturating_sub(3)).max(1);
+        let selected = self.state.selected();
+        let offset = window_offset(self.state.offset(), selected, height, self.visible.len());
+        *self.state.offset_mut() = offset;
+        let end = (offset + height).min(self.visible.len());
+        let rows: Vec<Row> = self.visible[offset..end]
             .iter()
             .map(|(pos, r)| {
                 let (deck, a) = &self.pool.decks[r.index];
@@ -401,7 +409,8 @@ impl<'a> App<'a> {
             .block(Block::bordered().title(title.bold()))
             .row_highlight_style(Style::new().add_modifier(Modifier::REVERSED))
             .highlight_symbol("▶ ");
-        frame.render_stateful_widget(table, area, &mut self.state);
+        let mut window = TableState::default().with_selected(selected.map(|s| s - offset));
+        frame.render_stateful_widget(table, area, &mut window);
     }
 
     fn pane_title(&self) -> Option<(String, &Deck)> {
@@ -501,6 +510,20 @@ impl<'a> App<'a> {
     }
 }
 
+/// The first row to show in a window of `height` rows over `len`: the previous one, moved just
+/// enough to keep the selection in view, and never past the end.
+fn window_offset(previous: usize, selected: Option<usize>, height: usize, len: usize) -> usize {
+    let mut offset = previous.min(len.saturating_sub(height));
+    if let Some(sel) = selected {
+        if sel < offset {
+            offset = sel;
+        } else if sel >= offset + height {
+            offset = sel + 1 - height;
+        }
+    }
+    offset
+}
+
 pub fn run(app: &mut App) -> Result<()> {
     if let Some(h) = app.http {
         h.set_quiet(true);
@@ -526,4 +549,22 @@ pub fn run(app: &mut App) -> Result<()> {
         h.set_quiet(false);
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::window_offset;
+
+    #[test]
+    fn the_window_follows_the_selection_and_stays_in_range() {
+        // Moving within the window keeps it still; leaving it scrolls just enough.
+        assert_eq!(window_offset(0, Some(5), 10, 100), 0);
+        assert_eq!(window_offset(0, Some(10), 10, 100), 1);
+        assert_eq!(window_offset(20, Some(19), 10, 100), 19);
+        assert_eq!(window_offset(20, Some(25), 10, 100), 20);
+        // A list that shrank (the fits filter) pulls the window back.
+        assert_eq!(window_offset(50, Some(3), 10, 8), 0);
+        assert_eq!(window_offset(50, None, 10, 30), 20);
+        assert_eq!(window_offset(0, None, 10, 0), 0);
+    }
 }
