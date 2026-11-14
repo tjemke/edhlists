@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use edh_data::deck::Deck;
@@ -71,10 +71,16 @@ pub struct App<'a> {
     state: TableState,
     scroll: u16,
     status: Option<(String, bool)>,
-    tick: usize,
+    /// When the browser opened; the spinner's frame follows the clock, not the loop.
+    opened: Instant,
 }
 
 const SPINNER: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
+/// How often the event loop wakes up when nothing happens, to pick up arriving decks.
+const TICK: Duration = Duration::from_millis(120);
+/// How long one turn of the loop may spend folding in arrived decks (scoring them) before it
+/// draws and reads keys again: about a frame.
+const PUMP_BUDGET: Duration = Duration::from_millis(16);
 
 impl<'a> App<'a> {
     pub fn new(settings: Settings, pool: Pool<'a>, fetcher: Option<Fetcher>, http: Option<&'a Http>) -> Self {
@@ -90,7 +96,7 @@ impl<'a> App<'a> {
             state: TableState::default(),
             scroll: 0,
             status: None,
-            tick: 0,
+            opened: Instant::now(),
         };
         app.rerank(false);
         app
@@ -125,12 +131,21 @@ impl<'a> App<'a> {
         &self.pool.stats
     }
 
-    /// Take in whatever the background fetcher has delivered since the last frame.
-    fn pump(&mut self) {
+    /// Take in what the background fetcher has delivered since the last frame, for at most
+    /// [`PUMP_BUDGET`]: decks are scored as they're folded in, and a search can deliver thousands
+    /// of stored decks at once. Returns whether events are still waiting.
+    fn pump(&mut self) -> bool {
         let mut arrived = false;
         let mut finished = false;
+        let mut waiting = false;
         if let Some(f) = &self.fetcher {
-            while let Some(event) = f.try_next() {
+            let started = Instant::now();
+            loop {
+                if started.elapsed() >= PUMP_BUDGET {
+                    waiting = true;
+                    break;
+                }
+                let Some(event) = f.try_next() else { break };
                 finished |= matches!(event, FetchEvent::Done | FetchEvent::Stopped(_));
                 arrived |= matches!(event, FetchEvent::Deck(_) | FetchEvent::StoredDeck(_));
                 if let Some(msg) = self.pool.apply(event) {
@@ -150,6 +165,7 @@ impl<'a> App<'a> {
         if let Some(n) = self.http.and_then(|h| h.take_notices().pop()) {
             self.status = Some((n, true));
         }
+        waiting
     }
 
     fn refresh_visible(&mut self) {
@@ -308,7 +324,8 @@ impl<'a> App<'a> {
             ),
         ];
         if self.fetcher.is_some() {
-            let spin = SPINNER[self.tick % SPINNER.len()];
+            let frame = (self.opened.elapsed().as_millis() / TICK.as_millis()) as usize;
+            let spin = SPINNER[frame % SPINNER.len()];
             let progress = if st.scanning() {
                 format!(" {spin} scanning commanders {}/{} ", st.commanders_scanned, st.commanders_total)
             } else {
@@ -531,17 +548,18 @@ pub fn run(app: &mut App) -> Result<()> {
     let mut terminal: DefaultTerminal = ratatui::init();
     let result = (|| -> Result<()> {
         loop {
-            app.pump();
+            let waiting = app.pump();
             terminal.draw(|f| app.draw(f))?;
-            // Wake up regularly to pick up decks arriving in the background.
-            if event::poll(Duration::from_millis(120))?
+            // Wake up regularly to pick up decks arriving in the background; straight away when
+            // some are already waiting.
+            let wait = if waiting { Duration::ZERO } else { TICK };
+            if event::poll(wait)?
                 && let Event::Key(key) = event::read()?
                 && key.kind == KeyEventKind::Press
                 && !app.handle(key)
             {
                 return Ok(());
             }
-            app.tick = app.tick.wrapping_add(1);
         }
     })();
     ratatui::restore();
