@@ -7,6 +7,10 @@
 //! keep_fetching = true
 //! # Deck list beside the details ("side-by-side"), above them ("stacked"), or "auto".
 //! layout = "auto"
+//!
+//! [performance]
+//! # Threads for bulk work (reading, parsing and scoring stored decks); default: half the CPUs.
+//! threads = 4
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -18,6 +22,22 @@ use serde::Deserialize;
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub tui: TuiConfig,
+    pub performance: PerformanceConfig,
+}
+
+#[derive(Debug, Default, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct PerformanceConfig {
+    /// Threads for bulk work: reading, parsing and scoring stored decks. `None`: half the CPUs.
+    pub threads: Option<usize>,
+}
+
+impl PerformanceConfig {
+    /// How many threads bulk work may use: the setting, or half the CPUs the system reports (at
+    /// least one), so a long scoring run doesn't take over the whole machine.
+    pub fn threads(&self) -> usize {
+        self.threads.unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get() / 2).unwrap_or(1).max(1))
+    }
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -93,7 +113,11 @@ impl Config {
     }
 
     pub fn parse(text: &str) -> Result<Self> {
-        Ok(toml::from_str(text)?)
+        let config: Self = toml::from_str(text)?;
+        if config.performance.threads == Some(0) {
+            anyhow::bail!("[performance] threads must be at least 1");
+        }
+        Ok(config)
     }
 }
 
@@ -124,6 +148,13 @@ mod tests {
         // Too narrow either way.
         assert!(!Auto.side_by_side(100, 30));
         assert!(!SideBySide.side_by_side(100, 30));
+    }
+
+    #[test]
+    fn threads() {
+        assert_eq!(Config::parse("[performance]\nthreads = 3\n").unwrap().performance.threads(), 3);
+        assert!(Config::parse("").unwrap().performance.threads() >= 1);
+        assert!(Config::parse("[performance]\nthreads = 0\n").is_err());
     }
 
     #[test]

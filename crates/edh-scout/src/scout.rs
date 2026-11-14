@@ -21,6 +21,7 @@ use edh_data::http::{HostBlocked, Http, OfflineMiss};
 use edh_data::progress::Progress;
 use edh_data::text::commander_slug;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
+use rayon::prelude::*;
 
 use crate::analysis::{Analysis, Context, analyze};
 use crate::filters::{CompiledFilter, Matched};
@@ -149,13 +150,14 @@ pub fn prepare(http: &Http, store: &DeckStore, opts: &ScoutOptions, progress: &d
     progress.step("loading EDHREC's synergy and combo votes");
     let sources = load_commander_sources(http, &opts.slug);
     progress.step(&format!("reading {} stored decks", sel.cached.len()));
-    let mut decks = Vec::with_capacity(sel.cached.len());
-    for row in &sel.cached {
-        match store.fetch(http, &row.urlhash) {
-            Ok(d) => decks.push(finish_deck(d, row, &opts.commanders)),
-            Err(_) => stats.failed += 1,
-        }
-    }
+    // Reading and parsing a stored page takes ~0.5 ms, so thousands of them go to the thread pool.
+    let read: Vec<Option<Deck>> = sel
+        .cached
+        .par_iter()
+        .map(|row| store.fetch(http, &row.urlhash).ok().map(|d| finish_deck(d, row, &opts.commanders)))
+        .collect();
+    stats.failed += read.iter().filter(|d| d.is_none()).count();
+    let decks: Vec<Deck> = read.into_iter().flatten().collect();
     stats.cached = decks.len();
     let (to_fetch, more): (Vec<TableRow>, Vec<TableRow>) = if http.offline() {
         Default::default()
@@ -328,10 +330,13 @@ fn search(
             if !ensure_sources(&c.slug, &mut with_sources) {
                 return;
             }
-            for row in &sel.cached {
-                if let Ok(d) = store.fetch(http, &row.urlhash)
-                    && !w.send(FetchEvent::StoredDeck(Box::new(finish_deck(d, row, &[]))))
-                {
+            let stored: Vec<Deck> = sel
+                .cached
+                .par_iter()
+                .filter_map(|row| store.fetch(http, &row.urlhash).ok().map(|d| finish_deck(d, row, &[])))
+                .collect();
+            for d in stored {
+                if !w.send(FetchEvent::StoredDeck(Box::new(d))) {
                     return;
                 }
             }
@@ -437,10 +442,36 @@ impl<'a> Pool<'a> {
 
     /// Analyse a deck and add it, unless a card filter rejects it.
     pub fn add(&mut self, deck: Deck) {
-        let matches: Vec<Matched> = self.filters.iter().map(|f| f.count(&deck, self.cards)).collect();
+        let a = self.analyze(&deck);
+        self.push(deck, a);
+    }
+
+    /// [`Pool::add`] for many decks at once, analysed on the thread pool; they're added in order.
+    pub fn add_many(&mut self, decks: Vec<Deck>) {
+        let analysed: Vec<(Deck, Option<Analysis>)> = decks
+            .into_par_iter()
+            .map(|deck| {
+                let a = self.analyze(&deck);
+                (deck, a)
+            })
+            .collect();
+        for (deck, a) in analysed {
+            self.push(deck, a);
+        }
+    }
+
+    fn push(&mut self, deck: Deck, analysis: Option<Analysis>) {
+        match analysis {
+            Some(a) => self.decks.push((deck, a)),
+            None => self.stats.unmatched += 1,
+        }
+    }
+
+    /// The deck's analysis against its own commander's data, or `None` if a card filter rejects it.
+    fn analyze(&self, deck: &Deck) -> Option<Analysis> {
+        let matches: Vec<Matched> = self.filters.iter().map(|f| f.count(deck, self.cards)).collect();
         if matches.iter().any(|m| !m.passes) {
-            self.stats.unmatched += 1;
-            return;
+            return None;
         }
         let key = commander_slug(&deck.commanders);
         let sources = self.commanders.get(&key).or_else(|| self.fallback.as_ref().and_then(|f| self.commanders.get(f)));
@@ -451,9 +482,9 @@ impl<'a> Pool<'a> {
             salt: &self.salt,
             edhrec_combos: sources.map(|s| s.combos.as_slice()).unwrap_or(&[]),
         };
-        let mut a = analyze(&deck, &ctx);
+        let mut a = analyze(deck, &ctx);
         a.matches = matches;
-        self.decks.push((deck, a));
+        Some(a)
     }
 
     /// Fold one fetch event into the pool. Returns a message worth showing, if any.

@@ -173,6 +173,12 @@ keep_fetching = true
 # tall as wide), and stacks them in a portrait one; "side-by-side" whenever 110 columns fit;
 # "stacked" always.
 layout = "auto"
+
+[performance]
+# Threads for bulk work: reading, parsing and scoring the decks already on disk, which takes
+# seconds for a commander with thousands of stored decks. Default: half the CPUs the system
+# reports, at least 1, so a big run leaves the rest of the machine alone.
+threads = 4
 ```
 
 ### Exports (proxies)

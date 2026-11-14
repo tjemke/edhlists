@@ -383,9 +383,7 @@ fn start_single<'a>(
     let mut pool = Pool::new(cards, combos, salt, stats).with_filters(card_filters);
     pool.add_commander(&slug, sources);
     status.step(&format!("scoring {} stored decks", decks.len()));
-    for d in decks {
-        pool.add(d);
-    }
+    pool.add_many(decks);
     if pool.decks.is_empty() && to_fetch.is_empty() {
         bail!(if http.offline() {
             "no stored decks to show (offline)".to_string()
@@ -659,14 +657,26 @@ fn run_check(http: &Http, paths: &Paths, config: &Config, args: CheckArgs) -> Re
     Ok(())
 }
 
+/// Read the config file, and size the thread pool for bulk work by it.
+fn load_config(path: Option<PathBuf>) -> Result<Config> {
+    let config = Config::load(path)?;
+    let threads = config.performance.threads();
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .thread_name(|i| format!("edh-scout-{i}"))
+        .build_global()
+        .context("starting the thread pool")?;
+    Ok(config)
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = (|| -> Result<()> {
         let paths = Paths::new(cli.cache_dir.clone(), cli.state_dir.clone())?;
         let http = Arc::new(Http::new(paths.http(), cli.offline));
         match cli.command {
-            Command::Scout(args) => run_scout(&http, &paths, &Config::load(cli.config.clone())?, args),
-            Command::Check(args) => run_check(&http, &paths, &Config::load(cli.config.clone())?, args),
+            Command::Scout(args) => run_scout(&http, &paths, &load_config(cli.config.clone())?, args),
+            Command::Check(args) => run_check(&http, &paths, &load_config(cli.config.clone())?, args),
             Command::Sync(args) => {
                 let both = !args.cards && !args.combos;
                 sync(
