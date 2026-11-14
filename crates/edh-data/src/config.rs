@@ -79,8 +79,14 @@ impl Paths {
         self.state.join("decks.sqlite")
     }
 
-    /// Fetched EDHREC deck pages, one `<urlhash>.html` per deck.
-    pub fn decks(&self) -> PathBuf {
+    /// Fetched EDHREC deck pages, as fetched (`<urlhash>.html.gz`). A cache: every deck is in
+    /// the deck database, which keeps what a parser needs to read it again.
+    pub fn pages(&self) -> PathBuf {
+        self.root.join("pages")
+    }
+
+    /// Where deck pages were kept before the deck database (`<urlhash>.html`), as state.
+    pub fn old_decks(&self) -> PathBuf {
         self.state.join("decks")
     }
 

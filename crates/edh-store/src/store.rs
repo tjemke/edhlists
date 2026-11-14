@@ -1,6 +1,6 @@
 //! Decks by EDHREC id: from the deck database, or fetched (one request), parsed and stored.
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -18,11 +18,23 @@ use crate::DeckDb;
 const IMPORT_BATCH: usize = 512;
 
 /// The decklists we have fetched. Decks are snapshots: once stored, a deck never costs a request
-/// again. Each fetched page is also written to `pages`, as it came.
+/// again. Each fetched page is also kept, gzipped, in `pages`: a cache, since the database keeps
+/// what a parser needs to read the deck again.
 #[derive(Clone)]
 pub struct DeckStore {
     db: Arc<DeckDb>,
     pages: PathBuf,
+}
+
+/// What [`DeckStore::retire_old_pages`] did.
+#[derive(Debug, PartialEq)]
+pub enum Retired {
+    Nothing,
+    Moved,
+    /// Some pages couldn't move (another filesystem, or already in the cache): this many bytes.
+    LeftInPlace {
+        bytes: u64,
+    },
 }
 
 /// What [`DeckStore::import`] did.
@@ -58,9 +70,44 @@ impl DeckStore {
         let html = fetch_deck_page(http, urlhash)?;
         // Parse before storing, so a page we can't read is never kept as "fetched".
         let page = read_deck_page(&html, urlhash)?;
-        atomic_write(&self.pages.join(format!("{urlhash}.html")), html.as_bytes())?;
         self.db.put(&page.deck, &page.source, DECK_PARSER_VERSION)?;
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        gz.write_all(html.as_bytes())?;
+        atomic_write(&self.pages.join(format!("{urlhash}.html.gz")), &gz.finish()?)?;
         Ok(page.deck)
+    }
+
+    /// Where fetched pages are kept.
+    pub fn pages(&self) -> &Path {
+        &self.pages
+    }
+
+    /// Move a directory of deck pages already read into the database (where they were kept
+    /// before it existed) into the page cache. A rename when both are on one filesystem;
+    /// otherwise the pages stay where they are.
+    pub fn retire_old_pages(&self, old: &Path) -> Result<Retired> {
+        if !old.exists() {
+            return Ok(Retired::Nothing);
+        }
+        if let Some(parent) = self.pages.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        if !self.pages.exists() && std::fs::rename(old, &self.pages).is_ok() {
+            return Ok(Retired::Moved);
+        }
+        // The cache already has pages (or the whole directory couldn't move): one by one.
+        std::fs::create_dir_all(&self.pages)?;
+        let mut left = 0u64;
+        for entry in std::fs::read_dir(old)?.filter_map(|e| e.ok()) {
+            let dest = self.pages.join(entry.file_name());
+            if dest.exists() || std::fs::rename(entry.path(), &dest).is_err() {
+                left += entry.metadata().map(|m| m.len()).unwrap_or(0);
+            }
+        }
+        if left == 0 && std::fs::remove_dir(old).is_ok() {
+            return Ok(Retired::Moved);
+        }
+        Ok(Retired::LeftInPlace { bytes: left })
     }
 
     /// The stored decks with these ids, in order; `None` where a deck isn't stored.
@@ -188,6 +235,24 @@ mod tests {
         assert_eq!(store.import(&old, &Silent).unwrap().decks, 0);
         // A missing directory is nothing to import.
         assert_eq!(store.import(&dir.path().join("nope"), &Silent).unwrap(), Imported::default());
+    }
+
+    #[test]
+    fn old_pages_move_into_the_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let (old, cache) = (dir.path().join("state").join("decks"), dir.path().join("cache").join("pages"));
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("aaa.html"), "a").unwrap();
+        let store = DeckStore::open(&dir.path().join("decks.sqlite"), cache.clone()).unwrap();
+        assert_eq!(store.retire_old_pages(&old).unwrap(), Retired::Moved);
+        assert!(!old.exists() && cache.join("aaa.html").exists());
+        assert_eq!(store.retire_old_pages(&old).unwrap(), Retired::Nothing);
+        // Into a cache that already has pages: one by one; a page already there stays behind.
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("bbb.html"), "b").unwrap();
+        std::fs::write(old.join("aaa.html"), "a again").unwrap();
+        assert_eq!(store.retire_old_pages(&old).unwrap(), Retired::LeftInPlace { bytes: 7 });
+        assert!(cache.join("bbb.html").exists() && old.join("aaa.html").exists());
     }
 
     #[test]

@@ -23,7 +23,7 @@ use edh_scout::scout::{Fetcher, Pool, PoolStats, Prepared, ScoutOptions, load_co
 use edh_scout::select::SelectOptions;
 use edh_scout::status::Status;
 use edh_scout::{picker, plain, tui, view};
-use edh_store::DeckStore;
+use edh_store::{DeckStore, Retired};
 
 /// Find well-rounded, fun Commander decklists on EDHREC.
 ///
@@ -317,12 +317,25 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
     finish(http, session, &args, target, weights, config.tui.layout)
 }
 
-/// The deck database, with any deck pages it doesn't have yet read into it: on the first run
-/// after upgrading, every page in the old deck directory.
+/// The deck database. On the first run after upgrading, the deck pages kept in the state
+/// directory are read into it and moved to the cache; if the database is ever deleted, it is
+/// rebuilt from the pages still in the cache.
 fn open_store(paths: &Paths, status: &Status) -> Result<DeckStore> {
     status.step("opening the deck database");
-    let store = DeckStore::open(&paths.decks_db(), paths.decks()).context("opening the deck database")?;
-    let done = store.import(&paths.decks(), status).context("reading stored deck pages into the deck database")?;
+    let store = DeckStore::open(&paths.decks_db(), paths.pages()).context("opening the deck database")?;
+    let old = paths.old_decks();
+    let from = if old.exists() {
+        Some(old.clone())
+    } else if store.db().is_empty() {
+        Some(paths.pages())
+    } else {
+        None
+    };
+    let Some(from) = from else {
+        store.reparse(status)?;
+        return Ok(store);
+    };
+    let done = store.import(&from, status).context("reading stored deck pages into the deck database")?;
     if done.decks > 0 {
         status.note(&format!("  read {} stored deck pages into the deck database (once)", done.decks));
     }
@@ -332,6 +345,20 @@ fn open_store(paths: &Paths, status: &Status) -> Result<DeckStore> {
             done.failed,
             done.first_error.unwrap_or_default()
         ));
+    }
+    if from == old {
+        match store.retire_old_pages(&old)? {
+            Retired::Moved => status.note(&format!("  moved the deck pages to {}", store.pages().display())),
+            Retired::LeftInPlace { bytes } => status.note(&format!(
+                "  note: {:.1} GB of deck pages in {} are no longer needed (every deck is in {}); delete them, or \
+                 move them to {} to keep them as a cache",
+                bytes as f64 / 1e9,
+                old.display(),
+                paths.decks_db().display(),
+                store.pages().display()
+            )),
+            Retired::Nothing => {}
+        }
     }
     store.reparse(status)?;
     Ok(store)
@@ -709,7 +736,7 @@ fn main() -> ExitCode {
                     "{} · cache in {} · decks in {}",
                     summarize_counts(&http.request_counts()),
                     paths.root.display(),
-                    paths.decks().display()
+                    paths.decks_db().display()
                 );
                 Ok(())
             }
