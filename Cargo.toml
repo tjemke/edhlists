@@ -34,3 +34,13 @@ ureq = { version = "3.5.1", features = ["gzip"] }
 [profile.release]
 lto = "thin"
 strip = true
+
+# `cargo run` builds the dev profile. Unoptimised, regex and serde_json are an order of magnitude
+# slower, and a large deck store becomes unusable (one 11k-deck commander: 106 s to open, 3.2 s
+# per rerank). Dependencies get full optimisation and our own crates a light one; debug assertions
+# and overflow checks stay on. For a debugger session: CARGO_PROFILE_DEV_OPT_LEVEL=0 cargo run.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

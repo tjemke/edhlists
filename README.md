@@ -250,6 +250,10 @@ cargo test --workspace
 cargo clippy --workspace --all-targets
 ```
 
+Dev builds (`cargo run`, `cargo test`) optimise dependencies fully and the workspace's own crates
+lightly, so a large deck store stays usable without `--release`; the first build takes a little
+longer. For a debugger session, `CARGO_PROFILE_DEV_OPT_LEVEL=0 cargo run` builds unoptimised.
+
 The test suite is offline: EDHREC payloads, deck fixtures and golden values live in
 `crates/*/tests/data`.
 
