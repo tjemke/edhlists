@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 edhpl.workspace = true
 edh-data.workspace = true
+edh-store.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 comfy-table.workspace = true

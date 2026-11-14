@@ -24,6 +24,9 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use rusqlite::{Connection, OptionalExtension, params};
 
+mod store;
+pub use store::{DeckStore, Imported};
+
 /// The schema this code reads and writes (`PRAGMA user_version`).
 pub const SCHEMA: i64 = 1;
 

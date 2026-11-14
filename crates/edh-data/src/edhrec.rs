@@ -8,7 +8,6 @@
 //!   bracket votes) and the top-salt list.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::LazyLock;
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -19,7 +18,6 @@ use serde_json::Value;
 use crate::config::{EDHREC_JSON, EDHREC_SITE, TTL_COMMANDER_PAGE, TTL_DECK_TABLE, TTL_SALT};
 use crate::deck::{Deck, DeckMeta};
 use crate::http::{Http, Ttl};
-use crate::storage::atomic_write;
 
 // --- deck table -----------------------------------------------------------------------------------
 
@@ -79,45 +77,26 @@ pub fn deck_url(urlhash: &str) -> String {
     format!("{EDHREC_SITE}/deckpreview/{urlhash}")
 }
 
-/// The decklists we have fetched, kept as the raw deck pages (`<urlhash>.html`) so a parser fix
-/// never needs a refetch. Decks are snapshots: once stored, a deck never costs a request again.
-/// Lives in the XDG *state* dir (see [`crate::config::Paths`]) so cache cleanups don't eat it.
-#[derive(Clone, Debug)]
-pub struct DeckStore {
-    dir: PathBuf,
+/// Bump when the parser reads deck pages differently (more fields, a fix): stored decks read by
+/// an older version are re-read from the deck object kept with them (see [`deck_from_source`]).
+pub const DECK_PARSER_VERSION: u32 = 1;
+
+/// Is this a plain EDHREC urlhash (safe to use as a file name)?
+pub fn is_deck_id(urlhash: &str) -> bool {
+    !urlhash.is_empty() && urlhash.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-impl DeckStore {
-    pub fn new(dir: PathBuf) -> Self {
-        Self { dir }
-    }
+/// A deck's page (one request).
+pub fn fetch_deck_page(http: &Http, urlhash: &str) -> Result<String> {
+    let bytes = http.get_bytes(&deck_url(urlhash))?;
+    String::from_utf8(bytes).with_context(|| format!("non-UTF-8 deck page {urlhash}"))
+}
 
-    /// `None` for anything that isn't a plain EDHREC urlhash (so it can't escape the directory).
-    fn path(&self, urlhash: &str) -> Option<PathBuf> {
-        let ok = !urlhash.is_empty() && urlhash.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
-        ok.then(|| self.dir.join(format!("{urlhash}.html")))
-    }
-
-    pub fn contains(&self, urlhash: &str) -> bool {
-        self.path(urlhash).is_some_and(|p| p.exists())
-    }
-
-    /// The deck from disk, or fetched (one request) and stored.
-    pub fn fetch(&self, http: &Http, urlhash: &str) -> Result<Deck> {
-        let path = self.path(urlhash).ok_or_else(|| anyhow!("'{urlhash}' is not an EDHREC deck id"))?;
-        let html = match std::fs::read_to_string(&path) {
-            Ok(html) => html,
-            Err(_) => {
-                let bytes = http.get_bytes(&deck_url(urlhash))?;
-                let html = String::from_utf8(bytes).with_context(|| format!("non-UTF-8 deck page {urlhash}"))?;
-                // Parse before storing, so a page we can't read is never kept as "fetched".
-                let deck = parse_deck_page(&html, urlhash)?;
-                atomic_write(&path, html.as_bytes())?;
-                return Ok(deck);
-            }
-        };
-        parse_deck_page(&html, urlhash)
-    }
+/// What a deck page holds: the deck, and EDHREC's deck object it was read from (compact JSON,
+/// ~9 KB of the page's ~270), which is all a later parser needs to read the deck again.
+pub struct DeckPage {
+    pub deck: Deck,
+    pub source: String,
 }
 
 static RSC_PUSH: LazyLock<Regex> =
@@ -154,6 +133,11 @@ fn enclosing_object(blob: &str, anchor: &str, accept: impl Fn(&Value) -> bool) -
 }
 
 pub fn parse_deck_page(html: &str, urlhash: &str) -> Result<Deck> {
+    read_deck_page(html, urlhash).map(|p| p.deck)
+}
+
+/// The deck on a deck page, with the deck object it came from.
+pub fn read_deck_page(html: &str, urlhash: &str) -> Result<DeckPage> {
     let blob = rsc_payload(html);
     if blob.is_empty() {
         bail!("deck page {urlhash} has no RSC payload — EDHREC's page format may have changed");
@@ -162,7 +146,16 @@ pub fn parse_deck_page(html: &str, urlhash: &str) -> Result<Deck> {
         v.get("commanderRec").is_some() || v.get("price").is_some() || v.get("salt").is_some()
     })
     .ok_or_else(|| anyhow!("no decklist in deck page {urlhash} — EDHREC's page format may have changed"))?;
+    Ok(DeckPage { deck: deck_from_object(&data, urlhash)?, source: data.to_string() })
+}
 
+/// Read a deck again from the deck object [`read_deck_page`] kept.
+pub fn deck_from_source(source: &str, urlhash: &str) -> Result<Deck> {
+    let data: Value = serde_json::from_str(source).with_context(|| format!("stored deck object for {urlhash}"))?;
+    deck_from_object(&data, urlhash)
+}
+
+fn deck_from_object(data: &Value, urlhash: &str) -> Result<Deck> {
     let mut commanders = Vec::new();
     let mut cards = std::collections::BTreeMap::new();
     for rec in data["recs"].as_array().into_iter().flatten() {
@@ -442,21 +435,14 @@ mod tests {
     }
 
     #[test]
-    fn deck_store_reads_from_disk_and_never_fetches_twice() {
-        let state = tempfile::tempdir().unwrap();
-        let store = DeckStore::new(state.path().join("decks"));
-        let offline = Http::new(state.path().join("http"), true);
-        let id = "8K2SZWMbz80NrhCJmt9DsA";
-        assert!(!store.contains(id));
-        let err = store.fetch(&offline, id).unwrap_err();
-        assert!(err.downcast_ref::<crate::http::OfflineMiss>().is_some());
-        atomic_write(&state.path().join("decks").join(format!("{id}.html")), read("deckpreview_jodah.html").as_bytes())
-            .unwrap();
-        assert!(store.contains(id));
-        assert_eq!(store.fetch(&offline, id).unwrap().commanders, vec!["Jodah, the Unifier"]);
-        assert!(offline.request_counts().is_empty());
-        assert!(store.fetch(&offline, "../etc/passwd").is_err());
-        assert!(!store.contains("../x"));
+    fn a_deck_reads_the_same_from_its_kept_deck_object() {
+        let page = read_deck_page(&read("deckpreview_jodah.html"), "8K2SZWMbz80NrhCJmt9DsA").unwrap();
+        assert!(page.source.len() < 20_000, "{}", page.source.len());
+        let again = deck_from_source(&page.source, "8K2SZWMbz80NrhCJmt9DsA").unwrap();
+        assert_eq!((again.commanders, again.cards), (page.deck.commanders, page.deck.cards));
+        assert_eq!(again.meta.tags, page.deck.meta.tags);
+        assert_eq!(again.meta.salt, page.deck.meta.salt);
+        assert!(!is_deck_id("../etc/passwd") && is_deck_id("8K2SZWMbz80NrhCJmt9DsA"));
     }
 
     #[test]

@@ -237,11 +237,16 @@ Where things live (XDG):
 | Path | Contents | If deleted |
 |---|---|---|
 | `$XDG_CACHE_HOME/edh-scout` (`~/.cache/…`) | bulk downloads, the card/combo databases built from them, EDHREC pages that expire anyway | re-downloaded by the next `sync` / run |
-| `$XDG_STATE_HOME/edh-scout/decks` (`~/.local/state/…`) | every fetched decklist, as `<urlhash>.html` | each deck costs a request again |
+| `$XDG_STATE_HOME/edh-scout/decks.sqlite` (`~/.local/state/…`) | every fetched decklist, parsed, with EDHREC's deck data it was read from (~5 KB a deck) | rebuilt from `decks/` while that's there; otherwise each deck costs a request again |
+| `$XDG_STATE_HOME/edh-scout/decks` | the deck pages as fetched, `<urlhash>.html` (~270 KB each) | the database still has every deck |
 | `$XDG_CONFIG_HOME/edh-scout/config.toml` (`~/.config/…`) | optional settings, see [Config file](#config-file) | defaults apply |
 
 Override with `--cache-dir` / `--state-dir` (or `EDH_SCOUT_CACHE` / `EDH_SCOUT_STATE`). On macOS and
 Windows the platform's cache and local app-data directories are used instead.
+
+Stored decks are read from the deck database, so a commander with thousands of them opens in
+seconds. Decks fetched before the database existed are read into it once, from their pages, on the
+first run (~25k pages: about 14 s on two threads).
 
 A first `scout` for a commander costs about 64 requests (≈2 minutes at the default pace), but you
 don't wait for them: the browser opens as soon as the deck table is in, with the decks already on

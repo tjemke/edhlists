@@ -9,7 +9,6 @@ use edh_data::cards::CardDb;
 use edh_data::combos::ComboDb;
 use edh_data::config::Paths;
 use edh_data::deck::parse_decklist;
-use edh_data::edhrec::DeckStore;
 use edh_data::edhrec::{self, ListedCommander};
 use edh_data::http::{Http, OfflineMiss, summarize_counts};
 use edh_data::progress::{Lines, Progress};
@@ -24,6 +23,7 @@ use edh_scout::scout::{Fetcher, Pool, PoolStats, Prepared, ScoutOptions, load_co
 use edh_scout::select::SelectOptions;
 use edh_scout::status::Status;
 use edh_scout::{picker, plain, tui, view};
+use edh_store::DeckStore;
 
 /// Find well-rounded, fun Commander decklists on EDHREC.
 ///
@@ -281,7 +281,7 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
         priors: card_filters.iter().filter_map(|f| f.prior(&cards)).collect(),
         budget: args.fetch,
     };
-    let store = DeckStore::new(paths.decks());
+    let store = open_store(paths, &status)?;
     status.step("loading EDHREC's salt scores");
     let salt = load_salt(http);
     let session = match &args.commander {
@@ -315,6 +315,26 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
     };
     drop(status);
     finish(http, session, &args, target, weights, config.tui.layout)
+}
+
+/// The deck database, with any deck pages it doesn't have yet read into it: on the first run
+/// after upgrading, every page in the old deck directory.
+fn open_store(paths: &Paths, status: &Status) -> Result<DeckStore> {
+    status.step("opening the deck database");
+    let store = DeckStore::open(&paths.decks_db(), paths.decks()).context("opening the deck database")?;
+    let done = store.import(&paths.decks(), status).context("reading stored deck pages into the deck database")?;
+    if done.decks > 0 {
+        status.note(&format!("  read {} stored deck pages into the deck database (once)", done.decks));
+    }
+    if done.failed > 0 {
+        status.note(&format!(
+            "  note: {} stored deck pages couldn't be read ({})",
+            done.failed,
+            done.first_error.unwrap_or_default()
+        ));
+    }
+    store.reparse(status)?;
+    Ok(store)
 }
 
 /// Check the `-T` card filters against the card database (and, for `otag:`, Scryfall Tagger's

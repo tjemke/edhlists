@@ -30,6 +30,10 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   they could be worked out once per card per run. `analyze` also rebuilds the commander's
   combo-vote table for every deck (~11 µs). Touches `edhpl/src/bracket.rs` (keep the golden tests
   passing) and `analysis.rs`. *Small–medium; only if rescoring after a sync still feels slow.*
+- [ ] **Parse deck pages faster.** `parse_deck_page` takes ~330 µs a page, most of it in
+  `enclosing_object` (`edh-data/src/edhrec.rs`), which tries a JSON parse from every `{` up to
+  20 KB before `"recs":[`. With the deck database it only runs once per fetched deck and in the
+  one-time import of older pages (24,696 pages: 14 s on two threads). *Small; measure first.*
 
 - [ ] **Count only stored decks that pass the card filters** towards a commander's share when
   fetching across commanders. Today `search` in `scout.rs` counts every stored eligible deck

@@ -16,10 +16,11 @@ use anyhow::Result;
 use edh_data::cards::CardDb;
 use edh_data::combos::ComboDb;
 use edh_data::deck::Deck;
-use edh_data::edhrec::{self, CommanderPage, DeckStore, EdhrecCombo, ListedCommander, TableRow};
+use edh_data::edhrec::{self, CommanderPage, EdhrecCombo, ListedCommander, TableRow};
 use edh_data::http::{HostBlocked, Http, OfflineMiss};
 use edh_data::progress::Progress;
 use edh_data::text::commander_slug;
+use edh_store::DeckStore;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rayon::prelude::*;
 
@@ -141,6 +142,13 @@ fn finish_deck(mut deck: Deck, row: &TableRow, commanders: &[String]) -> Deck {
     deck
 }
 
+/// These table rows' decks from the deck database (one query), with what the table knows added.
+fn stored_decks(store: &DeckStore, rows: &[&TableRow], commanders: &[String]) -> Result<Vec<Deck>> {
+    let ids: Vec<&str> = rows.iter().map(|r| r.urlhash.as_str()).collect();
+    let found = store.get_many(&ids)?;
+    Ok(found.into_iter().zip(rows).filter_map(|(d, row)| d.map(|d| finish_deck(d, row, commanders))).collect())
+}
+
 /// Deck table, candidate selection, side pages and stored decks: a handful of (cached) requests.
 pub fn prepare(http: &Http, store: &DeckStore, opts: &ScoutOptions, progress: &dyn Progress) -> Result<Prepared> {
     progress.step(&format!("loading EDHREC's deck table for {}", opts.slug));
@@ -150,14 +158,8 @@ pub fn prepare(http: &Http, store: &DeckStore, opts: &ScoutOptions, progress: &d
     progress.step("loading EDHREC's synergy and combo votes");
     let sources = load_commander_sources(http, &opts.slug);
     progress.step(&format!("reading {} stored decks", sel.cached.len()));
-    // Reading and parsing a stored page takes ~0.5 ms, so thousands of them go to the thread pool.
-    let read: Vec<Option<Deck>> = sel
-        .cached
-        .par_iter()
-        .map(|row| store.fetch(http, &row.urlhash).ok().map(|d| finish_deck(d, row, &opts.commanders)))
-        .collect();
-    stats.failed += read.iter().filter(|d| d.is_none()).count();
-    let decks: Vec<Deck> = read.into_iter().flatten().collect();
+    let decks = stored_decks(store, &sel.cached, &opts.commanders)?;
+    stats.failed += sel.cached.len() - decks.len();
     stats.cached = decks.len();
     let (to_fetch, more): (Vec<TableRow>, Vec<TableRow>) = if http.offline() {
         Default::default()
@@ -330,11 +332,13 @@ fn search(
             if !ensure_sources(&c.slug, &mut with_sources) {
                 return;
             }
-            let stored: Vec<Deck> = sel
-                .cached
-                .par_iter()
-                .filter_map(|row| store.fetch(http, &row.urlhash).ok().map(|d| finish_deck(d, row, &[])))
-                .collect();
+            let stored = match stored_decks(store, &sel.cached, &[]) {
+                Ok(decks) => decks,
+                Err(e) => {
+                    w.send(FetchEvent::Failed { what: format!("{}'s stored decks", c.name), error: format!("{e:#}") });
+                    Vec::new()
+                }
+            };
             for d in stored {
                 if !w.send(FetchEvent::StoredDeck(Box::new(d))) {
                     return;

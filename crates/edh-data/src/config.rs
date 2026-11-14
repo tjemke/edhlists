@@ -74,7 +74,12 @@ impl Paths {
         Ok(Self { root, state })
     }
 
-    /// Fetched EDHREC decklists, one `<urlhash>.html` per deck.
+    /// The deck database: every fetched decklist, parsed (see the `edh-store` crate).
+    pub fn decks_db(&self) -> PathBuf {
+        self.state.join("decks.sqlite")
+    }
+
+    /// Fetched EDHREC deck pages, one `<urlhash>.html` per deck.
     pub fn decks(&self) -> PathBuf {
         self.state.join("decks")
     }
