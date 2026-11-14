@@ -267,5 +267,6 @@ The test suite is offline: EDHREC payloads, deck fixtures and golden values live
 crates/
   edhpl/       EDHPowerLevel's power level + bracket, ported from the site (see its README)
   edh-data/    polite cached HTTP, Scryfall/Spellbook databases and sync, EDHREC readers, decks
+  edh-store/   the deck database: every fetched decklist, parsed, in SQLite
   edh-scout/   the app: analysis, roles, ranking, candidate selection, exports, CLI and TUI
 ```
