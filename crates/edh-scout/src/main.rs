@@ -610,8 +610,7 @@ fn finish(
     if pool.stats.unmatched > 0 && pool.decks.len() < args.output.top {
         eprintln!("  {checked_after}");
     }
-    let refs: Vec<_> = pool.decks.iter().map(|(_, a)| a).collect();
-    let mut ranking = rank(&refs, &target, args.rank, &weights);
+    let mut ranking = rank(&pool.scores(), &target, args.rank, &weights);
     if show_commander && !args.no_mix {
         let (group, weights) = pool.commander_groups();
         ranking = mix(ranking, &group, &weights);
@@ -625,6 +624,7 @@ fn finish(
             target: &target,
             mode: args.rank,
             decks: &pool.decks,
+            analyze: &|i| pool.details(i),
             ranking: &ranking,
             limit: args.output.top,
             format: args.output.format,
@@ -670,8 +670,8 @@ fn run_check(http: &Http, paths: &Paths, config: &Config, args: CheckArgs) -> Re
     }
     status.step("scoring the deck");
     pool.add(deck);
-    if let Some((deck, a)) = pool.decks.first_mut() {
-        a.matches = card_filters.iter().map(|f| f.count(deck, &cards)).collect();
+    if let Some(e) = pool.decks.first_mut() {
+        e.matches = card_filters.iter().map(|f| f.count(&e.deck, &cards)).collect();
     }
     drop(status);
     if interactive(args.plain) {
@@ -691,9 +691,9 @@ fn run_check(http: &Http, paths: &Paths, config: &Config, args: CheckArgs) -> Re
         };
         tui::run(&mut tui::App::new(settings, pool, None, None))?;
     } else {
-        let (deck, a) = &pool.decks[0];
-        let fits = target.fits(a);
-        let mut lines = view::detail_lines(deck, a, &target, None, args.price);
+        let (deck, a) = (&pool.decks[0].deck, pool.details(0));
+        let fits = target.fits(&pool.decks[0].score);
+        let mut lines = view::detail_lines(deck, &a, &target, None, args.price);
         if let Some(width) = terminal_width() {
             lines = view::wrap_lines(lines, width);
         }

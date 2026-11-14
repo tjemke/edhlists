@@ -24,7 +24,7 @@ use edh_store::DeckStore;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rayon::prelude::*;
 
-use crate::analysis::{Analysis, Context, analyze};
+use crate::analysis::{Analysis, Context, Score, analyze};
 use crate::filters::{CompiledFilter, Matched};
 use crate::select::{Ceiling, SelectOptions, select, weighted_order_from};
 
@@ -375,7 +375,18 @@ fn search(
     }
 }
 
-/// The decks being compared, analysed as they arrive, each against its own commander's data.
+/// A deck's score and what each card filter counted, or `None` when a filter rejects it.
+type Scored = Option<(Score, Vec<Matched>)>;
+
+/// One deck in the pool: the deck, its score, and what each `-T` card filter counted in it.
+pub struct Entry {
+    pub deck: Deck,
+    pub score: Score,
+    pub matches: Vec<Matched>,
+}
+
+/// The decks being compared, scored as they arrive, each against its own commander's data. Only
+/// the scores are kept; [`Pool::details`] works out a deck's full analysis when it's needed.
 pub struct Pool<'a> {
     cards: &'a CardDb,
     combos: &'a ComboDb,
@@ -385,7 +396,7 @@ pub struct Pool<'a> {
     fallback: Option<String>,
     /// `-T` card filters: decks failing one are left out.
     filters: Vec<CompiledFilter>,
-    pub decks: Vec<(Deck, Analysis)>,
+    pub decks: Vec<Entry>,
     /// Searching across commanders: how many eligible decks EDHREC lists for each one (by slug),
     /// a measure of how popular the commander is for this kind of deck.
     eligible: HashMap<String, usize>,
@@ -433,8 +444,8 @@ impl<'a> Pool<'a> {
         let groups = self
             .decks
             .iter()
-            .map(|(d, _)| {
-                let slug = commander_slug(&d.commanders);
+            .map(|e| {
+                let slug = commander_slug(&e.deck.commanders);
                 *slugs.entry(slug.clone()).or_insert_with(|| {
                     weights.push((self.eligible.get(&slug).copied().unwrap_or(1).max(1) as f64).sqrt());
                     weights.len() - 1
@@ -444,51 +455,67 @@ impl<'a> Pool<'a> {
         (groups, weights)
     }
 
-    /// Analyse a deck and add it, unless a card filter rejects it.
+    /// Score a deck and add it, unless a card filter rejects it.
     pub fn add(&mut self, deck: Deck) {
-        let a = self.analyze(&deck);
-        self.push(deck, a);
+        let scored = self.score(&deck);
+        self.push(deck, scored);
     }
 
-    /// [`Pool::add`] for many decks at once, analysed on the thread pool; they're added in order.
+    /// [`Pool::add`] for many decks at once, scored on the thread pool; they're added in order.
     pub fn add_many(&mut self, decks: Vec<Deck>) {
-        let analysed: Vec<(Deck, Option<Analysis>)> = decks
+        let scored: Vec<(Deck, Scored)> = decks
             .into_par_iter()
             .map(|deck| {
-                let a = self.analyze(&deck);
-                (deck, a)
+                let s = self.score(&deck);
+                (deck, s)
             })
             .collect();
-        for (deck, a) in analysed {
-            self.push(deck, a);
+        for (deck, s) in scored {
+            self.push(deck, s);
         }
     }
 
-    fn push(&mut self, deck: Deck, analysis: Option<Analysis>) {
-        match analysis {
-            Some(a) => self.decks.push((deck, a)),
+    fn push(&mut self, deck: Deck, scored: Scored) {
+        match scored {
+            Some((score, matches)) => self.decks.push(Entry { deck, score, matches }),
             None => self.stats.unmatched += 1,
         }
     }
 
-    /// The deck's analysis against its own commander's data, or `None` if a card filter rejects it.
-    fn analyze(&self, deck: &Deck) -> Option<Analysis> {
+    /// The deck's score and filter counts, or `None` if a card filter rejects it.
+    fn score(&self, deck: &Deck) -> Scored {
         let matches: Vec<Matched> = self.filters.iter().map(|f| f.count(deck, self.cards)).collect();
         if matches.iter().any(|m| !m.passes) {
             return None;
         }
+        Some((Score::of(&analyze(deck, &self.context(deck))), matches))
+    }
+
+    /// The full analysis of the pool's deck `i` (bracket reasons, card lists, combos, the cards
+    /// each filter counted), worked out again: about a millisecond.
+    pub fn details(&self, i: usize) -> Analysis {
+        let e = &self.decks[i];
+        let mut a = analyze(&e.deck, &self.context(&e.deck));
+        a.matches = e.matches.clone();
+        a
+    }
+
+    /// The scores, in pool order, for ranking.
+    pub fn scores(&self) -> Vec<&Score> {
+        self.decks.iter().map(|e| &e.score).collect()
+    }
+
+    /// What analysing `deck` needs: its own commander's data, or the fallback's.
+    fn context(&self, deck: &Deck) -> Context<'_> {
         let key = commander_slug(&deck.commanders);
         let sources = self.commanders.get(&key).or_else(|| self.fallback.as_ref().and_then(|f| self.commanders.get(f)));
-        let ctx = Context {
+        Context {
             cards: self.cards,
             combos: self.combos,
             commander: sources.and_then(|s| s.page.as_ref()),
             salt: &self.salt,
             edhrec_combos: sources.map(|s| s.combos.as_slice()).unwrap_or(&[]),
-        };
-        let mut a = analyze(deck, &ctx);
-        a.matches = matches;
-        Some(a)
+        }
     }
 
     /// Fold one fetch event into the pool. Returns a message worth showing, if any.
@@ -611,7 +638,7 @@ mod tests {
         pool.add(deck("Alpha One"));
         pool.add(deck("Beta Two"));
         pool.add(deck("Unknown Gamma")); // falls back to the first commander registered
-        let syn: Vec<f64> = pool.decks.iter().map(|(_, a)| a.synergy.as_ref().unwrap().average).collect();
+        let syn: Vec<f64> = pool.decks.iter().map(|e| e.score.synergy.unwrap()).collect();
         assert_eq!(syn, vec![0.5, 0.1, 0.5]);
     }
 
@@ -634,7 +661,9 @@ mod tests {
         pool.add(deck("Bonesplitter"));
         pool.add(deck("Grizzly Bears"));
         assert_eq!(pool.decks.len(), 1);
-        assert_eq!(pool.decks[0].1.matches[0].count, 1);
+        assert_eq!(pool.decks[0].matches[0].count, 1);
+        let details = pool.details(0);
+        assert_eq!((details.matches[0].count, details.card_count), (1, 2));
         assert_eq!(pool.stats.unmatched, 1);
         assert!(pool.stats.summary().ends_with("1 didn't match"));
     }

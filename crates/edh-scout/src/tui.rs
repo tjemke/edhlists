@@ -22,7 +22,7 @@ use crate::config::PaneLayout;
 use crate::export::{self, ExportFormat, ReportInput};
 use crate::filters::CountColumn;
 use crate::rank::{RankMode, Ranked, Target, Weights, mix, rank};
-use crate::scout::{FetchEvent, Fetcher, Pool};
+use crate::scout::{Entry, FetchEvent, Fetcher, Pool};
 use crate::view::{
     ACCENT, BAD, DIM, GOOD, OK, deck_identity, detail_lines, grouped_list, identity_line, power_color, score_color,
     wrap_lines,
@@ -66,6 +66,8 @@ pub struct App<'a> {
     /// The part of `ranking` on show (all of it, or only the fits), with each deck's position in
     /// the full ranking. Rebuilt when the ranking or the filter changes, not every frame.
     visible: Vec<(usize, Ranked)>,
+    /// The selected deck's full analysis (by pool index), worked out when the selection moves.
+    details: Option<(usize, Analysis)>,
     fits_only: bool,
     pane: Pane,
     state: TableState,
@@ -91,6 +93,7 @@ impl<'a> App<'a> {
             http,
             ranking: Vec::new(),
             visible: Vec::new(),
+            details: None,
             fits_only: false,
             pane: Pane::Details,
             state: TableState::default(),
@@ -106,8 +109,7 @@ impl<'a> App<'a> {
     /// background reshuffle the list; the user's place shouldn't move).
     fn rerank(&mut self, keep: bool) {
         let keep_deck = if keep { self.selected().map(|(_, r)| r.index) } else { None };
-        let refs: Vec<&Analysis> = self.pool.decks.iter().map(|(_, a)| a).collect();
-        self.ranking = rank(&refs, &self.settings.target, self.settings.mode, &self.settings.weights);
+        self.ranking = rank(&self.pool.scores(), &self.settings.target, self.settings.mode, &self.settings.weights);
         if self.mixing() {
             let (group, weights) = self.pool.commander_groups();
             self.ranking = mix(std::mem::take(&mut self.ranking), &group, &weights);
@@ -176,6 +178,14 @@ impl<'a> App<'a> {
         self.state.selected().and_then(|i| self.visible.get(i).copied())
     }
 
+    /// Work out the selected deck's full analysis if the selection moved (about a millisecond).
+    fn refresh_details(&mut self) {
+        let want = self.selected().map(|(_, r)| r.index);
+        if want != self.details.as_ref().map(|(i, _)| *i) {
+            self.details = want.map(|i| (i, self.pool.details(i)));
+        }
+    }
+
     fn move_by(&mut self, delta: isize) {
         let n = self.visible.len();
         if n == 0 {
@@ -239,16 +249,16 @@ impl<'a> App<'a> {
                 self.status = Some((msg.into(), false));
             }
             KeyCode::Char('o') => {
-                let url = self.selected().and_then(|(_, r)| self.pool.decks[r.index].0.meta.edhrec_url.clone());
+                let url = self.selected().and_then(|(_, r)| self.pool.decks[r.index].deck.meta.edhrec_url.clone());
                 self.open("EDHREC", url);
             }
             KeyCode::Char('s') => {
-                let url = self.selected().and_then(|(_, r)| self.pool.decks[r.index].0.meta.source_url.clone());
+                let url = self.selected().and_then(|(_, r)| self.pool.decks[r.index].deck.meta.source_url.clone());
                 self.open("source", url);
             }
             KeyCode::Char('p') => {
                 let url =
-                    self.selected().map(|(_, r)| edhpowerlevel_url(&self.pool.decks[r.index].0.sectioned_lines()));
+                    self.selected().map(|(_, r)| edhpowerlevel_url(&self.pool.decks[r.index].deck.sectioned_lines()));
                 self.open("EDHPowerLevel", url);
             }
             KeyCode::Char('e') => {
@@ -257,7 +267,7 @@ impl<'a> App<'a> {
                         match export::write_deck(
                             &self.settings.export_dir,
                             pos + 1,
-                            &self.pool.decks[r.index].0,
+                            &self.pool.decks[r.index].deck,
                             self.settings.format,
                         ) {
                             Ok(p) => (format!("wrote {}", p.display()), false),
@@ -273,6 +283,7 @@ impl<'a> App<'a> {
                     target: &self.settings.target,
                     mode: self.settings.mode,
                     decks: &self.pool.decks,
+                    analyze: &|i| self.pool.details(i),
                     ranking: &ranking,
                     limit: self.settings.report_top,
                     format: self.settings.format,
@@ -293,6 +304,7 @@ impl<'a> App<'a> {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
+        self.refresh_details();
         let [header, body, footer] =
             Layout::vertical([Constraint::Length(1), Constraint::Fill(1), Constraint::Length(1)]).areas(frame.area());
         self.draw_header(frame, header);
@@ -364,26 +376,20 @@ impl<'a> App<'a> {
         let rows: Vec<Row> = self.visible[offset..end]
             .iter()
             .map(|(pos, r)| {
-                let (deck, a) = &self.pool.decks[r.index];
+                let Entry { deck, score: s, matches } = &self.pool.decks[r.index];
                 let base = if r.fits { Style::new() } else { Style::new().fg(DIM) };
                 let themes = if deck.meta.tags.is_empty() { "–".to_string() } else { deck.meta.tags.join(", ") };
                 let mut cells = vec![
                     Cell::from(format!("{:>2}", pos + 1)),
-                    Cell::from(format!("{:>5}", a.power.label()))
-                        .style(Style::new().fg(power_color(&self.settings.target, a.power.level)).bold()),
-                    Cell::from(format!("B{}", a.bracket.bracket)).style(Style::new().fg(if r.fits {
-                        GOOD
-                    } else {
-                        BAD
-                    })),
-                    Cell::from(a.salt.map(|s| format!("{s:>4.0}")).unwrap_or("   –".into()))
+                    Cell::from(format!("{:>5}", s.power_label()))
+                        .style(Style::new().fg(power_color(&self.settings.target, s.power)).bold()),
+                    Cell::from(format!("B{}", s.bracket)).style(Style::new().fg(if r.fits { GOOD } else { BAD })),
+                    Cell::from(s.salt.map(|s| format!("{s:>4.0}")).unwrap_or("   –".into()))
                         .style(Style::new().fg(score_color(r.scores.salt))),
-                    Cell::from(format!("{:>5.0}%", a.structure.score * 100.0))
-                        .style(Style::new().fg(score_color(a.structure.score))),
-                    Cell::from(
-                        a.synergy.as_ref().map(|s| format!("{:>4.1}%", s.average * 100.0)).unwrap_or("–".into()),
-                    )
-                    .style(Style::new().fg(score_color(r.scores.synergy))),
+                    Cell::from(format!("{:>5.0}%", s.structure * 100.0))
+                        .style(Style::new().fg(score_color(s.structure))),
+                    Cell::from(s.synergy.map(|s| format!("{:>4.1}%", s * 100.0)).unwrap_or("–".into()))
+                        .style(Style::new().fg(score_color(r.scores.synergy))),
                 ];
                 if show_price {
                     cells.push(Cell::from(
@@ -396,7 +402,7 @@ impl<'a> App<'a> {
                     cells.push(Cell::from(names.join(" + ")).style(Style::new().fg(ACCENT)));
                 }
                 for c in counts {
-                    let n = c.cell(&a.matches);
+                    let n = c.cell(matches);
                     cells.push(Cell::from(format!("{n:>w$}", w = c.label.chars().count().max(3))));
                 }
                 cells.push(Cell::from(themes));
@@ -432,7 +438,7 @@ impl<'a> App<'a> {
 
     fn pane_title(&self) -> Option<(String, &Deck)> {
         let (pos, r) = self.selected()?;
-        let deck = &self.pool.decks[r.index].0;
+        let deck = &self.pool.decks[r.index].deck;
         Some((format!(" #{} · {} ", pos + 1, deck.id), deck))
     }
 
@@ -448,7 +454,8 @@ impl<'a> App<'a> {
             return;
         };
         let (_, r) = self.selected().expect("selected");
-        let (deck, a) = &self.pool.decks[r.index];
+        let Some((_, a)) = &self.details else { return };
+        let deck = &self.pool.decks[r.index].deck;
         let lines = detail_lines(deck, a, &self.settings.target, Some(&r), self.settings.show_price);
         let lines = wrap_lines(lines, area.width.saturating_sub(2) as usize);
         let p = Paragraph::new(lines)
@@ -460,9 +467,9 @@ impl<'a> App<'a> {
     fn draw_decklist(&self, frame: &mut Frame, area: Rect) {
         let Some((title, deck)) = self.pane_title() else { return };
         let Some((_, r)) = self.selected() else { return };
-        let a = &self.pool.decks[r.index].1;
         // Cards a -T card filter counted are marked.
-        let counted: HashSet<&str> = a.matches.iter().flat_map(|m| m.cards.iter().map(|(n, _)| n.as_str())).collect();
+        let counted: HashSet<&str> =
+            self.pool.decks[r.index].matches.iter().flat_map(|m| m.cards.iter().map(|(n, _)| n.as_str())).collect();
         let hint = if counted.is_empty() { " ⏎ details " } else { " ▸ counted by -T · ⏎ details " };
         let block = Block::bordered().title(title.bold()).title_bottom(Line::from(hint).right_aligned());
         let inner = block.inner(area);

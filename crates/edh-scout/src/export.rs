@@ -9,6 +9,7 @@ use anyhow::Result;
 use crate::analysis::Analysis;
 use crate::filters::CountColumn;
 use crate::rank::{RankMode, Ranked, Target};
+use crate::scout::Entry;
 use edh_data::deck::Deck;
 use edh_data::text::front_face;
 use edhpl::edhpowerlevel_url;
@@ -59,7 +60,9 @@ pub struct ReportInput<'a> {
     pub title: &'a str,
     pub target: &'a Target,
     pub mode: RankMode,
-    pub decks: &'a [(Deck, Analysis)],
+    pub decks: &'a [Entry],
+    /// The full analysis of deck `i` (see [`crate::scout::Pool::details`]), for the decks shown.
+    pub analyze: &'a dyn Fn(usize) -> Analysis,
     pub ranking: &'a [Ranked],
     /// Only the first `limit` ranked decks get a section and an exported list.
     pub limit: usize,
@@ -91,8 +94,9 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
     )?;
     let commanders_of = |d: &Deck| d.commanders.iter().map(|c| front_face(c)).collect::<Vec<_>>().join(" + ");
     let shown: Vec<&Ranked> = input.ranking.iter().take(input.limit).collect();
+    let analyses: Vec<Analysis> = shown.iter().map(|r| (input.analyze)(r.index)).collect();
     let many_commanders =
-        shown.iter().map(|r| commanders_of(&input.decks[r.index].0)).collect::<std::collections::HashSet<_>>().len()
+        shown.iter().map(|r| commanders_of(&input.decks[r.index].deck)).collect::<std::collections::HashSet<_>>().len()
             > 1;
     let price_col = if input.show_price { " price |" } else { "" };
     let cmdr_col = if many_commanders { " commander |" } else { "" };
@@ -109,8 +113,8 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
         if many_commanders { "---|" } else { "" },
         "---|".repeat(input.count_columns.len())
     )?;
-    for (pos, r) in input.ranking.iter().take(input.limit).enumerate() {
-        let (deck, a) = &input.decks[r.index];
+    for (pos, r) in shown.iter().enumerate() {
+        let (deck, a) = (&input.decks[r.index].deck, &analyses[pos]);
         let file = write_deck(dir, pos + 1, deck, input.format)?;
         let rel = file.strip_prefix(dir).unwrap_or(&file).display().to_string();
         writeln!(
@@ -130,8 +134,8 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
         )?;
     }
     writeln!(md)?;
-    for (pos, r) in input.ranking.iter().take(input.limit).enumerate() {
-        let (deck, a) = &input.decks[r.index];
+    for (pos, r) in shown.iter().enumerate() {
+        let (deck, a) = (&input.decks[r.index].deck, &analyses[pos]);
         writeln!(md, "## Deck {} · {}\n", pos + 1, commanders_of(deck))?;
         let mut links = Vec::new();
         if let Some(u) = &deck.meta.edhrec_url {

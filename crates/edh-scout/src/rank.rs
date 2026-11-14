@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use anyhow::{Result, bail};
 
-use crate::analysis::Analysis;
+use crate::analysis::Score;
 use crate::select::weighted_order;
 use edhpl::level_band;
 
@@ -142,12 +142,11 @@ impl Target {
 
     /// The deck fits if EDHPowerLevel's bracket is in range (or, with a custom band, if the power
     /// level is in the band and the rules floor doesn't exceed the top bracket).
-    pub fn fits(&self, a: &Analysis) -> bool {
+    pub fn fits(&self, s: &Score) -> bool {
         if self.custom_band {
-            let lvl = a.power.level;
-            lvl > self.band.0 && lvl <= self.band.1 && a.bracket.floor <= self.brackets.1
+            s.power > self.band.0 && s.power <= self.band.1 && s.floor <= self.brackets.1
         } else {
-            (self.brackets.0..=self.brackets.1).contains(&a.bracket.bracket)
+            (self.brackets.0..=self.brackets.1).contains(&s.bracket)
         }
     }
 
@@ -192,10 +191,11 @@ fn percentile(sorted: &[f64], x: f64) -> f64 {
     (below + 0.5 * (equal - 1.0)) / (sorted.len() as f64 - 1.0)
 }
 
-/// Rank analyses (best first). Salt and synergy are scored relative to the pool being ranked.
-pub fn rank(analyses: &[&Analysis], target: &Target, mode: RankMode, weights: &Weights) -> Vec<Ranked> {
+/// Rank decks by their scores (best first). Salt and synergy are scored relative to the pool being
+/// ranked.
+pub fn rank(analyses: &[&Score], target: &Target, mode: RankMode, weights: &Weights) -> Vec<Ranked> {
     let mut salts: Vec<f64> = analyses.iter().filter_map(|a| a.salt).collect();
-    let mut syns: Vec<f64> = analyses.iter().filter_map(|a| a.synergy.as_ref().map(|s| s.average)).collect();
+    let mut syns: Vec<f64> = analyses.iter().filter_map(|a| a.synergy).collect();
     salts.sort_by(f64::total_cmp);
     syns.sort_by(f64::total_cmp);
     let mut out: Vec<Ranked> = analyses
@@ -203,14 +203,14 @@ pub fn rank(analyses: &[&Analysis], target: &Target, mode: RankMode, weights: &W
         .enumerate()
         .map(|(index, a)| {
             let scores = Scores {
-                fit: target.power_fit(a.power.level),
+                fit: target.power_fit(a.power),
                 salt: a.salt.map(|s| 1.0 - percentile(&salts, s)).unwrap_or(0.5),
-                structure: a.structure.score,
-                synergy: a.synergy.as_ref().map(|s| percentile(&syns, s.average)).unwrap_or(0.5),
+                structure: a.structure,
+                synergy: a.synergy.map(|s| percentile(&syns, s)).unwrap_or(0.5),
             };
             let key = match mode {
                 RankMode::Fit => scores.fit,
-                RankMode::Power => a.power.level,
+                RankMode::Power => a.power,
                 RankMode::Salt => scores.salt,
                 RankMode::Structure => scores.structure,
                 RankMode::Synergy => scores.synergy,
@@ -259,13 +259,8 @@ pub fn mix(ranking: Vec<Ranked>, group: &[usize], weights: &[f64]) -> Vec<Ranked
 mod tests {
     use super::*;
 
-    fn analysis(level: f64, bracket: u8, salt: f64) -> Analysis {
-        let mut a = Analysis::default();
-        a.power.level = level;
-        a.bracket.bracket = bracket;
-        a.bracket.floor = 1;
-        a.salt = Some(salt);
-        a
+    fn analysis(level: f64, bracket: u8, salt: f64) -> Score {
+        Score { power: level, bracket, floor: 1, salt: Some(salt), ..Default::default() }
     }
 
     #[test]
@@ -330,11 +325,11 @@ mod tests {
     fn mixing_interleaves_commanders_by_weight_and_keeps_fits_first() {
         // Decks 0-5 belong to commander 0, 6-7 to commander 1; deck 7 misses the target.
         let t = Target::new((2, 3), None);
-        let decks: Vec<Analysis> = [6.2, 6.1, 6.0, 5.9, 5.8, 5.7, 5.5, 9.5]
+        let decks: Vec<Score> = [6.2, 6.1, 6.0, 5.9, 5.8, 5.7, 5.5, 9.5]
             .iter()
             .map(|&l| analysis(l, if l > 8.0 { 5 } else { 3 }, 50.0))
             .collect();
-        let refs: Vec<&Analysis> = decks.iter().collect();
+        let refs: Vec<&Score> = decks.iter().collect();
         let ranked = rank(&refs, &t, RankMode::Power, &Weights::default());
         let group = [0, 0, 0, 0, 0, 0, 1, 1];
         let order = |w: &[f64]| mix(ranked.clone(), &group, w).iter().map(|r| r.index).collect::<Vec<_>>();

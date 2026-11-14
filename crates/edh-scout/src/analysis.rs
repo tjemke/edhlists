@@ -58,6 +58,42 @@ pub struct Analysis {
     pub matches: Vec<Matched>,
 }
 
+/// What the deck list, the ranking and the deck database keep for every deck: a few numbers.
+/// The rest of an [`Analysis`] (reasons, card lists, combos) is worked out again, in about a
+/// millisecond, when a deck is opened or exported.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Score {
+    /// EDHPowerLevel's 0-10 power level.
+    pub power: f64,
+    pub bracket: u8,
+    /// The bracket EDHPowerLevel's rules alone set.
+    pub floor: u8,
+    /// Closeness to the deckbuilding template, 0-1.
+    pub structure: f64,
+    /// Average EDHREC synergy with the commander, when its page was there to compare with.
+    pub synergy: Option<f64>,
+    /// EDHREC's deck salt.
+    pub salt: Option<f64>,
+}
+
+impl Score {
+    pub fn of(a: &Analysis) -> Self {
+        Self {
+            power: a.power.level,
+            bracket: a.bracket.bracket,
+            floor: a.bracket.floor,
+            structure: a.structure.score,
+            synergy: a.synergy.as_ref().map(|s| s.average),
+            salt: a.salt,
+        }
+    }
+
+    /// The power level as EDHPowerLevel shows it ("6.2", "10+").
+    pub fn power_label(&self) -> String {
+        if self.power >= 10.0 { "10+".into() } else { format!("{:.1}", self.power) }
+    }
+}
+
 /// A card record in the shape EDHPowerLevel's scorer takes.
 pub fn edhpl_card(card: &Card, quantity: u32, is_commander: bool) -> edhpl::DeckCard {
     edhpl::DeckCard {
