@@ -91,12 +91,16 @@ pub fn sync(http: &Http, paths: &Paths, what: SyncWhat, progress: &dyn Progress)
 }
 
 /// Load both databases, syncing whatever is missing or from an older schema first. Each file is
-/// read once: a current one is kept as loaded, not loaded again after the schema check.
+/// read once, both at the same time: a current one is kept as loaded, not loaded again after the
+/// schema check.
 pub fn ensure_databases(http: &Http, paths: &Paths, progress: &dyn Progress) -> Result<(CardDb, ComboDb)> {
-    progress.step("loading card database");
-    let cards = current(&paths.cards_db(), CardDb::load, |d| d.schema == CARDS_SCHEMA);
-    progress.step("loading combo database");
-    let combos = current(&paths.combos_db(), ComboDb::load, |d| d.schema == COMBOS_SCHEMA);
+    progress.step("loading card and combo databases");
+    // Side by side: the combo database takes the longer, and nothing needs one before the other.
+    let (cards, combos) = std::thread::scope(|s| {
+        let combos = s.spawn(|| current(&paths.combos_db(), ComboDb::load, |d| d.schema == COMBOS_SCHEMA));
+        let cards = current(&paths.cards_db(), CardDb::load, |d| d.schema == CARDS_SCHEMA);
+        (cards, combos.join().unwrap_or_else(|e| std::panic::resume_unwind(e)))
+    });
     if cards.is_none() || combos.is_none() {
         let missing_raw = (cards.is_none() && !(paths.scryfall_raw().exists() && paths.scryfall_tags_raw().exists()))
             || (combos.is_none() && !paths.spellbook_raw().exists());
