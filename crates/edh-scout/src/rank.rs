@@ -180,20 +180,24 @@ pub struct Ranked {
     pub key: f64,
 }
 
-/// Fraction of `values` strictly below `x`, counting ties as half.
-fn percentile(values: &[f64], x: f64) -> f64 {
-    if values.len() <= 1 {
+/// Fraction of the other values strictly below `x`, counting ties as half. `sorted` must be in
+/// ascending order and contain `x`; two binary searches replace a scan, so ranking stays
+/// O(n log n) however many decks there are.
+fn percentile(sorted: &[f64], x: f64) -> f64 {
+    if sorted.len() <= 1 {
         return 0.5;
     }
-    let below = values.iter().filter(|v| **v < x).count() as f64;
-    let equal = values.iter().filter(|v| **v == x).count() as f64;
-    (below + 0.5 * (equal - 1.0)) / (values.len() as f64 - 1.0)
+    let below = sorted.partition_point(|v| *v < x) as f64;
+    let equal = sorted.partition_point(|v| *v <= x) as f64 - below;
+    (below + 0.5 * (equal - 1.0)) / (sorted.len() as f64 - 1.0)
 }
 
 /// Rank analyses (best first). Salt and synergy are scored relative to the pool being ranked.
 pub fn rank(analyses: &[&Analysis], target: &Target, mode: RankMode, weights: &Weights) -> Vec<Ranked> {
-    let salts: Vec<f64> = analyses.iter().filter_map(|a| a.salt).collect();
-    let syns: Vec<f64> = analyses.iter().filter_map(|a| a.synergy.as_ref().map(|s| s.average)).collect();
+    let mut salts: Vec<f64> = analyses.iter().filter_map(|a| a.salt).collect();
+    let mut syns: Vec<f64> = analyses.iter().filter_map(|a| a.synergy.as_ref().map(|s| s.average)).collect();
+    salts.sort_by(f64::total_cmp);
+    syns.sort_by(f64::total_cmp);
     let mut out: Vec<Ranked> = analyses
         .iter()
         .enumerate()
@@ -262,6 +266,26 @@ mod tests {
         a.bracket.floor = 1;
         a.salt = Some(salt);
         a
+    }
+
+    #[test]
+    fn percentiles_match_counting_every_value() {
+        // The scan this replaced: below + half the other ties, out of everything else.
+        fn counted(values: &[f64], x: f64) -> f64 {
+            if values.len() <= 1 {
+                return 0.5;
+            }
+            let below = values.iter().filter(|v| **v < x).count() as f64;
+            let equal = values.iter().filter(|v| **v == x).count() as f64;
+            (below + 0.5 * (equal - 1.0)) / (values.len() as f64 - 1.0)
+        }
+        let values: Vec<f64> = (0..200).map(|i| f64::from((i * 37) % 23) * 0.5).collect();
+        let mut sorted = values.clone();
+        sorted.sort_by(f64::total_cmp);
+        for &x in &values {
+            assert!((percentile(&sorted, x) - counted(&values, x)).abs() < 1e-12, "{x}");
+        }
+        assert_eq!(percentile(&[3.0], 3.0), 0.5);
     }
 
     #[test]
