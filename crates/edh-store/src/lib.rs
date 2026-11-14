@@ -3,7 +3,8 @@
 //! Each row keeps the parsed deck (commanders, the 99, EDHREC's price, salt, tags and links) and,
 //! gzipped, EDHREC's own deck object from the page it came from, so a parser fix can re-read
 //! every deck without fetching its page again. Reading a commander's thousands of stored decks is
-//! one query instead of thousands of 270 KB pages to parse.
+//! one query instead of thousands of 270 KB pages to parse. Each deck's score is kept too, with
+//! what it was scored against, so decks are only scored again when that changes.
 //!
 //! One writer at a time, readers alongside it (WAL); two runs at once wait for each other briefly
 //! rather than fail. The connection sits behind a mutex, so one [`DeckDb`] can be shared between
@@ -28,10 +29,11 @@ mod store;
 pub use store::{DeckStore, Imported, Retired};
 
 /// The schema this code reads and writes (`PRAGMA user_version`).
-pub const SCHEMA: i64 = 1;
+pub const SCHEMA: i64 = 2;
 
 /// Each step brings the schema from version `i` to `i + 1`.
-const MIGRATIONS: &[&str] = &["
+const MIGRATIONS: &[&str] = &[
+    "
     CREATE TABLE deck (
         id          TEXT PRIMARY KEY,   -- EDHREC urlhash
         slug        TEXT NOT NULL,      -- commander_slug(commanders)
@@ -46,7 +48,34 @@ const MIGRATIONS: &[&str] = &["
         parser      INTEGER NOT NULL    -- version of the parser that filled the columns
     ) WITHOUT ROWID;
     CREATE INDEX deck_by_slug ON deck(slug);
-"];
+",
+    "
+    CREATE TABLE score (
+        id          TEXT PRIMARY KEY,   -- deck id
+        epoch       INTEGER NOT NULL,   -- the scorer and card/combo databases it was scored with
+        synergy_src INTEGER NOT NULL,   -- the commander data synergy was scored against
+        power       REAL NOT NULL,
+        bracket     INTEGER NOT NULL,
+        floor       INTEGER NOT NULL,
+        structure   REAL NOT NULL,
+        synergy     REAL
+    ) WITHOUT ROWID;
+",
+];
+
+/// A deck's score as the database keeps it, with what it was scored against: an `epoch` for the
+/// scorer and the card and combo databases, and a fingerprint of the commander data synergy was
+/// measured with. A score is only good while both still match.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StoredScore {
+    pub epoch: i64,
+    pub synergy_src: i64,
+    pub power: f64,
+    pub bracket: u8,
+    pub floor: u8,
+    pub structure: f64,
+    pub synergy: Option<f64>,
+}
 
 pub struct DeckDb {
     conn: Mutex<Connection>,
@@ -189,7 +218,10 @@ impl DeckDb {
                  (id, slug, commanders, cards, savedate, price, salt, source_url, tags, source, parser)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             )?;
+            // A deck read again may score differently.
+            let mut forget = tx.prepare_cached("DELETE FROM score WHERE id = ?1")?;
             for ((deck, _), row) in decks.iter().zip(&rows) {
+                forget.execute([&deck.id])?;
                 let m = &deck.meta;
                 ins.execute(params![
                     deck.id,
@@ -221,7 +253,59 @@ impl DeckDb {
 
     /// The stored decks with these ids, in the same order; `None` where a deck isn't stored.
     pub fn get_many(&self, ids: &[&str]) -> Result<Vec<Option<Deck>>> {
-        let mut out: Vec<Option<Deck>> = (0..ids.len()).map(|_| None).collect();
+        let rows =
+            self.by_ids(ids, &format!("SELECT w.pos, {COLUMNS} FROM temp.wanted w JOIN deck d ON d.id = w.id"), |r| {
+                deck_at(r, 1)
+            })?;
+        rows.into_iter().map(|d| d.transpose()).collect()
+    }
+
+    /// The stored scores of these decks, in the same order; `None` where a deck has none.
+    pub fn scores(&self, ids: &[&str]) -> Result<Vec<Option<StoredScore>>> {
+        self.by_ids(
+            ids,
+            "SELECT w.pos, s.epoch, s.synergy_src, s.power, s.bracket, s.floor, s.structure, s.synergy
+             FROM temp.wanted w JOIN score s ON s.id = w.id",
+            |r| {
+                Ok(StoredScore {
+                    epoch: r.get(1)?,
+                    synergy_src: r.get(2)?,
+                    power: r.get(3)?,
+                    bracket: r.get(4)?,
+                    floor: r.get(5)?,
+                    structure: r.get(6)?,
+                    synergy: r.get(7)?,
+                })
+            },
+        )
+    }
+
+    /// Keep these decks' scores (replacing earlier ones), in one transaction.
+    pub fn put_scores(&self, scores: &[(&str, StoredScore)]) -> Result<()> {
+        let mut conn = lock(&self.conn);
+        let tx = conn.transaction()?;
+        {
+            let mut ins = tx.prepare_cached(
+                "INSERT OR REPLACE INTO score (id, epoch, synergy_src, power, bracket, floor, structure, synergy)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            )?;
+            for (id, s) in scores {
+                ins.execute(params![id, s.epoch, s.synergy_src, s.power, s.bracket, s.floor, s.structure, s.synergy])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Run `select` (which reads `temp.wanted (pos, id)` and returns `pos` first) for these ids,
+    /// and map its rows into the positions asked for; `None` where nothing came back.
+    fn by_ids<T>(
+        &self,
+        ids: &[&str],
+        select: &str,
+        mut row: impl FnMut(&rusqlite::Row) -> rusqlite::Result<T>,
+    ) -> Result<Vec<Option<T>>> {
+        let mut out: Vec<Option<T>> = (0..ids.len()).map(|_| None).collect();
         let mut conn = lock(&self.conn);
         let tx = conn.transaction()?;
         tx.execute_batch(
@@ -233,12 +317,11 @@ impl DeckDb {
             for (pos, id) in ids.iter().enumerate() {
                 ins.execute(params![pos as i64, id])?;
             }
-            let mut q =
-                tx.prepare(&format!("SELECT w.pos, {COLUMNS} FROM temp.wanted w JOIN deck d ON d.id = w.id"))?;
-            let rows = q.query_map([], |r| Ok((r.get::<_, i64>(0)?, deck_at(r, 1)?)))?;
-            for row in rows {
-                let (pos, deck) = row?;
-                out[pos as usize] = Some(deck?);
+            let mut q = tx.prepare(select)?;
+            let rows = q.query_map([], |r| Ok((r.get::<_, i64>(0)?, row(r)?)))?;
+            for r in rows {
+                let (pos, value) = r?;
+                out[pos as usize] = Some(value);
             }
         }
         tx.execute_batch("DELETE FROM temp.wanted;")?;
@@ -323,6 +406,28 @@ mod tests {
         assert!(db.parsed_before(2).unwrap().is_empty());
         db.put(&deck("ccc", "Jodah, the Unifier", "Bonesplitter"), "{}", 1).unwrap();
         assert_eq!(db.parsed_before(2).unwrap(), vec!["ccc".to_string()]);
+    }
+
+    #[test]
+    fn scores_are_kept_and_forgotten_when_the_deck_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = DeckDb::open(&dir.path().join("d.sqlite")).unwrap();
+        db.put_many(
+            &[
+                (&deck("aaa", "Jodah, the Unifier", "Bonesplitter"), "{}"),
+                (&deck("bbb", "Jodah, the Unifier", "Ponder"), "{}"),
+            ],
+            1,
+        )
+        .unwrap();
+        let s =
+            StoredScore { epoch: 7, synergy_src: 3, power: 6.25, bracket: 3, floor: 2, structure: 0.9, synergy: None };
+        db.put_scores(&[("aaa", s), ("bbb", StoredScore { synergy: Some(0.1), ..s })]).unwrap();
+        let got = db.scores(&["bbb", "zzz", "aaa"]).unwrap();
+        assert_eq!(got, vec![Some(StoredScore { synergy: Some(0.1), ..s }), None, Some(s)]);
+        // Storing a deck again (a re-read) drops its score.
+        db.put(&deck("aaa", "Jodah, the Unifier", "Swords to Plowshares"), "{}", 1).unwrap();
+        assert_eq!(db.scores(&["aaa", "bbb"]).unwrap()[0], None);
     }
 
     #[test]

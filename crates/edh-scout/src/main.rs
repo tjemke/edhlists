@@ -15,6 +15,7 @@ use edh_data::progress::{Lines, Progress};
 use edh_data::sync::{SyncWhat, ensure_databases, sync};
 use edh_data::tags::TagIndex;
 use edh_data::text::{commander_slug, date_days_ago, front_face, slugify};
+use edh_scout::analysis::score_epoch;
 use edh_scout::config::{Config, PaneLayout};
 use edh_scout::export::{self, ExportFormat, ReportInput};
 use edh_scout::filters::{self, CardFilter, CompiledFilter, CountColumn, Filter};
@@ -427,7 +428,9 @@ fn start_single<'a>(
     if keep_fetching {
         stats.queued = to_fetch.len() + more.len();
     }
-    let mut pool = Pool::new(cards, combos, salt, stats).with_filters(card_filters);
+    let mut pool = Pool::new(cards, combos, salt, stats)
+        .with_filters(card_filters)
+        .with_store(store.clone(), score_epoch(cards, combos));
     pool.add_commander(&slug, sources);
     status.step(&format!("scoring {} stored decks", decks.len()));
     pool.add_many(decks);
@@ -545,7 +548,9 @@ fn start_search<'a>(
         target.describe()
     ));
     let stats = PoolStats { commanders_total: candidates.len(), ..Default::default() };
-    let pool = Pool::new(cards, combos, salt, stats).with_filters(card_filters);
+    let pool = Pool::new(cards, combos, salt, stats)
+        .with_filters(card_filters)
+        .with_store(store.clone(), score_epoch(cards, combos));
     let fetcher = Fetcher::spawn_search(Arc::clone(http), store.clone(), candidates, select, keep_fetching);
     Ok(Session {
         title: format!("decks with {wanted}"),

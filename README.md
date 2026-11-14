@@ -238,14 +238,16 @@ Where things live (XDG):
 |---|---|---|
 | `$XDG_CACHE_HOME/edh-scout` (`~/.cache/…`) | bulk downloads, the card/combo databases built from them, EDHREC pages that expire anyway | re-downloaded by the next `sync` / run |
 | `$XDG_CACHE_HOME/edh-scout/pages` | the deck pages as fetched, `<urlhash>.html.gz` (~35 KB each) | nothing lost: the database has every deck |
-| `$XDG_STATE_HOME/edh-scout/decks.sqlite` (`~/.local/state/…`) | every fetched decklist, parsed, with EDHREC's deck data it was read from (~5 KB a deck) | rebuilt from the page cache while that lasts; otherwise each deck costs a request again |
+| `$XDG_STATE_HOME/edh-scout/decks.sqlite` (`~/.local/state/…`) | every fetched decklist, parsed, with EDHREC's deck data it was read from (~5 KB a deck), and its score | rebuilt from the page cache while that lasts; otherwise each deck costs a request again |
 | `$XDG_CONFIG_HOME/edh-scout/config.toml` (`~/.config/…`) | optional settings, see [Config file](#config-file) | defaults apply |
 
 Override with `--cache-dir` / `--state-dir` (or `EDH_SCOUT_CACHE` / `EDH_SCOUT_STATE`). On macOS and
 Windows the platform's cache and local app-data directories are used instead.
 
-Stored decks are read from the deck database, so a commander with thousands of them opens in
-seconds. Decks fetched before the database existed (kept as pages in `$XDG_STATE_HOME/edh-scout/decks`)
+Stored decks are read from the deck database with their scores, so a commander with thousands of
+them opens in about a second. Scores are worked out again only when what they depend on changes: a
+`sync` (card prices, Game Changers, Tagger roles and combos all feed the scores), a new version of
+the scoring, or the commander's EDHREC synergy data. Decks fetched before the database existed (kept as pages in `$XDG_STATE_HOME/edh-scout/decks`)
 are read into it once, on the first run (~25k pages: about 14 s on two threads), and the pages
 move to the cache; when the cache is on another filesystem they stay put, and the run says how
 much space deleting them frees.

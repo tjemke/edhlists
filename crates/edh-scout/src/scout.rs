@@ -20,11 +20,11 @@ use edh_data::edhrec::{self, CommanderPage, EdhrecCombo, ListedCommander, TableR
 use edh_data::http::{HostBlocked, Http, OfflineMiss};
 use edh_data::progress::Progress;
 use edh_data::text::commander_slug;
-use edh_store::DeckStore;
+use edh_store::{DeckStore, StoredScore};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rayon::prelude::*;
 
-use crate::analysis::{Analysis, Context, Score, analyze};
+use crate::analysis::{Analysis, Context, Score, analyze, synergy_source};
 use crate::filters::{CompiledFilter, Matched};
 use crate::select::{Ceiling, SelectOptions, select, weighted_order_from};
 
@@ -378,6 +378,10 @@ fn search(
 /// A deck's score and what each card filter counted, or `None` when a filter rejects it.
 type Scored = Option<(Score, Vec<Matched>)>;
 
+/// A deck's score, what it should be kept in the deck database as (when it was worked out rather
+/// than remembered).
+type Fresh = Option<StoredScore>;
+
 /// One deck in the pool: the deck, its score, and what each `-T` card filter counted in it.
 pub struct Entry {
     pub deck: Deck,
@@ -392,6 +396,10 @@ pub struct Pool<'a> {
     combos: &'a ComboDb,
     salt: HashMap<String, f64>,
     commanders: HashMap<String, CommanderSources>,
+    /// Per commander, a fingerprint of the data synergy is measured against.
+    synergy_sources: HashMap<String, i64>,
+    /// Where scores are remembered, and the epoch they must match (see [`crate::analysis::score_epoch`]).
+    store: Option<(DeckStore, i64)>,
     /// Used when a deck's commander slug has no entry (e.g. a `--slug` override).
     fallback: Option<String>,
     /// `-T` card filters: decks failing one are left out.
@@ -410,6 +418,8 @@ impl<'a> Pool<'a> {
             combos,
             salt,
             commanders: HashMap::new(),
+            synergy_sources: HashMap::new(),
+            store: None,
             fallback: None,
             filters: Vec::new(),
             decks: Vec::new(),
@@ -424,6 +434,12 @@ impl<'a> Pool<'a> {
         self
     }
 
+    /// Remember scores in the deck database, and reuse those still valid for `epoch`.
+    pub fn with_store(mut self, store: DeckStore, epoch: i64) -> Self {
+        self.store = Some((store, epoch));
+        self
+    }
+
     pub fn cards(&self) -> &'a CardDb {
         self.cards
     }
@@ -433,6 +449,7 @@ impl<'a> Pool<'a> {
         if self.fallback.is_none() {
             self.fallback = Some(slug.to_string());
         }
+        self.synergy_sources.insert(slug.to_string(), synergy_source(sources.page.as_ref()));
         self.commanders.insert(slug.to_string(), sources);
     }
 
@@ -457,22 +474,38 @@ impl<'a> Pool<'a> {
 
     /// Score a deck and add it, unless a card filter rejects it.
     pub fn add(&mut self, deck: Deck) {
-        let scored = self.score(&deck);
-        self.push(deck, scored);
+        self.add_many(vec![deck]);
     }
 
-    /// [`Pool::add`] for many decks at once, scored on the thread pool; they're added in order.
+    /// [`Pool::add`] for many decks at once; they're added in order. Scores the deck database
+    /// still has are reused; the rest are worked out on the thread pool and kept there.
     pub fn add_many(&mut self, decks: Vec<Deck>) {
-        let scored: Vec<(Deck, Scored)> = decks
+        let kept = self.kept_scores(&decks);
+        let scored: Vec<(Deck, Scored, Fresh)> = decks
             .into_par_iter()
-            .map(|deck| {
-                let s = self.score(&deck);
-                (deck, s)
+            .zip(kept)
+            .map(|(deck, kept)| {
+                let (s, fresh) = self.score(&deck, kept);
+                (deck, s, fresh)
             })
             .collect();
-        for (deck, s) in scored {
+        let fresh: Vec<(&str, StoredScore)> =
+            scored.iter().filter_map(|(d, _, f)| f.map(|f| (d.id.as_str(), f))).collect();
+        if let (Some((store, _)), false) = (&self.store, fresh.is_empty()) {
+            // A score that can't be kept is just worked out again next time.
+            let _ = store.db().put_scores(&fresh);
+        }
+        for (deck, s, _) in scored {
             self.push(deck, s);
         }
+    }
+
+    /// The scores the deck database has for these decks, in order.
+    fn kept_scores(&self, decks: &[Deck]) -> Vec<Option<StoredScore>> {
+        let none = || vec![None; decks.len()];
+        let Some((store, _)) = &self.store else { return none() };
+        let ids: Vec<&str> = decks.iter().map(|d| d.id.as_str()).collect();
+        store.db().scores(&ids).unwrap_or_else(|_| none())
     }
 
     fn push(&mut self, deck: Deck, scored: Scored) {
@@ -482,13 +515,38 @@ impl<'a> Pool<'a> {
         }
     }
 
-    /// The deck's score and filter counts, or `None` if a card filter rejects it.
-    fn score(&self, deck: &Deck) -> Scored {
+    /// The deck's score and filter counts, or `None` if a card filter rejects it. `kept` is used
+    /// when it was scored against the same inputs; otherwise the score is worked out and also
+    /// returned as what to keep.
+    fn score(&self, deck: &Deck, kept: Option<StoredScore>) -> (Scored, Fresh) {
         let matches: Vec<Matched> = self.filters.iter().map(|f| f.count(deck, self.cards)).collect();
         if matches.iter().any(|m| !m.passes) {
-            return None;
+            return (None, None);
         }
-        Some((Score::of(&analyze(deck, &self.context(deck))), matches))
+        let synergy_src = self.synergy_src(deck);
+        let epoch = self.store.as_ref().map(|(_, e)| *e);
+        if let Some(k) = kept.filter(|k| Some(k.epoch) == epoch && k.synergy_src == synergy_src) {
+            let s = Score {
+                power: k.power,
+                bracket: k.bracket,
+                floor: k.floor,
+                structure: k.structure,
+                synergy: k.synergy,
+                salt: deck.meta.salt,
+            };
+            return (Some((s, matches)), None);
+        }
+        let s = Score::of(&analyze(deck, &self.context(deck)));
+        let fresh = epoch.map(|epoch| StoredScore {
+            epoch,
+            synergy_src,
+            power: s.power,
+            bracket: s.bracket,
+            floor: s.floor,
+            structure: s.structure,
+            synergy: s.synergy,
+        });
+        (Some((s, matches)), fresh)
     }
 
     /// The full analysis of the pool's deck `i` (bracket reasons, card lists, combos, the cards
@@ -505,10 +563,19 @@ impl<'a> Pool<'a> {
         self.decks.iter().map(|e| &e.score).collect()
     }
 
+    /// The slug whose data `deck` is scored against: its own commander's, or the fallback's.
+    fn sources_slug(&self, deck: &Deck) -> Option<String> {
+        let key = commander_slug(&deck.commanders);
+        if self.commanders.contains_key(&key) { Some(key) } else { self.fallback.clone() }
+    }
+
+    fn synergy_src(&self, deck: &Deck) -> i64 {
+        self.sources_slug(deck).and_then(|s| self.synergy_sources.get(&s).copied()).unwrap_or(0)
+    }
+
     /// What analysing `deck` needs: its own commander's data, or the fallback's.
     fn context(&self, deck: &Deck) -> Context<'_> {
-        let key = commander_slug(&deck.commanders);
-        let sources = self.commanders.get(&key).or_else(|| self.fallback.as_ref().and_then(|f| self.commanders.get(f)));
+        let sources = self.sources_slug(deck).and_then(|s| self.commanders.get(&s));
         Context {
             cards: self.cards,
             combos: self.combos,
@@ -640,6 +707,49 @@ mod tests {
         pool.add(deck("Unknown Gamma")); // falls back to the first commander registered
         let syn: Vec<f64> = pool.decks.iter().map(|e| e.score.synergy.unwrap()).collect();
         assert_eq!(syn, vec![0.5, 0.1, 0.5]);
+    }
+
+    #[test]
+    fn scores_are_remembered_and_worked_out_again_when_their_inputs_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = DeckStore::open(&dir.path().join("decks.sqlite"), dir.path().join("pages")).unwrap();
+        let cards = CardDb::new(vec![creature("Alpha One"), creature("Grizzly Bears")]);
+        let combos = ComboDb::empty();
+        let deck = Deck {
+            id: "abc".into(),
+            commanders: vec!["Alpha One".into()],
+            cards: [("Grizzly Bears".to_string(), 1)].into(),
+            ..Default::default()
+        };
+        let pool = |epoch: i64, synergy: Option<f64>| {
+            let mut p =
+                Pool::new(&cards, &combos, HashMap::new(), PoolStats::default()).with_store(store.clone(), epoch);
+            if let Some(syn) = synergy {
+                let page = CommanderPage {
+                    cards: HashMap::from([(
+                        "Grizzly Bears".to_string(),
+                        CardStat { synergy: syn, ..Default::default() },
+                    )]),
+                    ..Default::default()
+                };
+                p.add_commander("alpha-one", CommanderSources { page: Some(page), combos: vec![] });
+            }
+            p.add(deck.clone());
+            p.decks[0].score
+        };
+        let first = pool(1, None);
+        let kept = store.db().scores(&["abc"]).unwrap()[0].unwrap();
+        assert_eq!((kept.epoch, kept.power), (1, first.power));
+        // Plant a marker to tell a remembered score from a recomputed one.
+        store.db().put_scores(&[("abc", StoredScore { power: 9.99, ..kept })]).unwrap();
+        assert_eq!(pool(1, None).power, 9.99);
+        // A new epoch (a card database update, a scorer change) works it out again, and keeps it.
+        assert_eq!(pool(2, None).power, first.power);
+        assert_eq!(store.db().scores(&["abc"]).unwrap()[0].unwrap().epoch, 2);
+        // So does new commander data, which synergy depends on.
+        store.db().put_scores(&[("abc", StoredScore { power: 9.99, epoch: 2, ..kept })]).unwrap();
+        let with_page = pool(2, Some(0.4));
+        assert_eq!((with_page.power, with_page.synergy), (first.power, Some(0.4)));
     }
 
     #[test]
