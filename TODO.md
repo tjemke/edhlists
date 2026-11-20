@@ -24,6 +24,14 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   digits of the visible list's length. *Small.*
 - [ ] **Browser header overflow.** Long filter descriptions push the run summary off the header
   ("5 didn't m" at 200 columns); shorten or wrap it in `tui.rs` `draw_header`. *Small.*
+- [ ] **Keep a commander's favorites past the deck-table checks.** A favorite only shows up in
+  `scout` while `select` (`select.rs`) still finds it eligible, and some of that isn't up to the
+  user: the salt ceiling is recalibrated from the deck table on every run, the duplicate check
+  keeps whichever copy EDHREC lists first, and owners delete decks. Pass the favorite ids to
+  `select` and exempt them from the ceiling and the duplicate check (not from the user's own
+  `--max-salt`, `-t`, `-T`, …); a deck EDHREC no longer lists could come from the deck database
+  by slug in `start_single` (`main.rs`). `edh-scout favorites` covers it meanwhile. *Small–medium.*
+
 - [ ] **Pick and weight commanders by their expected count** when searching across commanders.
   A commander page's inclusion rates give each commander's expected count of a filter's cards
   (sum over listed matching cards); use it to (1) weight the fetch budget by √eligible × P(pass)
@@ -93,6 +101,10 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   those fields on `Card` and a `CARDS_SCHEMA` bump (rebuilds from the raw file, no download).
   *Small; only if wanted.*
 
+- [ ] **`-T` for `edh-scout favorites`.** Decklist filters would just work (the pool applies
+  them); EDHREC's own counts (`creatures=..5`) need the deck-table row, which isn't stored, so
+  they'd be an error as in `check`, or counted from the type line. Touches `run_favorites` in
+  `main.rs`. *Small.*
 - [ ] **Keep the favorites somewhere deleting the deck database can't reach.** They're a table in
   `decks.sqlite` (schema 3), the one file the README says can be deleted and rebuilt; deleting it
   now loses them. A plain `favorites.txt` of ids in the state dir would survive that and is easy

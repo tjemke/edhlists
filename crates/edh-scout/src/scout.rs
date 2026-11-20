@@ -272,6 +272,23 @@ impl Fetcher {
         Self::start(move |w| search(w, &http, &store, candidates, &opts, keep_going))
     }
 
+    /// Pass on decks already in the deck store, grouped by commander (its slug first): each
+    /// commander's side data is loaded first (2 requests, cached for a week), so the decks show up
+    /// as soon as their own commander's data is in rather than after every commander's.
+    pub fn spawn_stored(http: Arc<Http>, groups: Vec<(String, Vec<Deck>)>) -> Self {
+        Self::start(move |w| {
+            for (slug, decks) in groups {
+                let sources = load_commander_sources(&http, &slug);
+                let ok = w.send(FetchEvent::Table { slug: slug.clone(), listed: 0, eligible: decks.len() })
+                    && w.send(FetchEvent::Commander { slug, sources: Box::new(sources) })
+                    && decks.into_iter().all(|d| w.send(FetchEvent::StoredDeck(Box::new(d))));
+                if !ok {
+                    return;
+                }
+            }
+        })
+    }
+
     /// The next event if one is waiting.
     pub fn try_next(&self) -> Option<FetchEvent> {
         self.rx.try_recv().ok()
@@ -1152,6 +1169,43 @@ mod tests {
         // A local list has nowhere to keep the mark.
         let mut p = pool(None);
         assert!(!p.keeps_favorites() && p.toggle_favorite(0).is_err());
+    }
+
+    #[test]
+    fn stored_decks_come_after_their_commanders_data() {
+        let cards = CardDb::new(vec![creature("Alpha One"), creature("Grizzly Bears")]);
+        let combos = ComboDb::empty();
+        let dir = tempfile::tempdir().unwrap();
+        let http = Arc::new(Http::new(dir.path().join("http"), true));
+        let mut ds = decks(3);
+        let other = ds.split_off(2);
+        let groups = vec![("alpha-one".to_string(), ds), ("beta-two".to_string(), other)];
+        let fetcher = Fetcher::spawn_stored(http, groups);
+        let mut seen = Vec::new();
+        while let Some(e) = fetcher.next() {
+            seen.push(match e {
+                FetchEvent::Table { slug, eligible, .. } => format!("table {slug} {eligible}"),
+                FetchEvent::Commander { slug, .. } => format!("data {slug}"),
+                FetchEvent::StoredDeck(d) => d.id,
+                FetchEvent::Done => "done".into(),
+                _ => "other".into(),
+            });
+        }
+        assert_eq!(
+            seen,
+            vec!["table alpha-one 2", "data alpha-one", "d0", "d1", "table beta-two 1", "data beta-two", "d2", "done"]
+        );
+        let mut pool =
+            Pool::new(&cards, &combos, HashMap::new(), PoolStats { commanders_total: 2, ..Default::default() });
+        let fetcher = Fetcher::spawn_stored(
+            Arc::new(Http::new(dir.path().join("http"), true)),
+            vec![("alpha-one".to_string(), decks(2))],
+        );
+        std::thread::scope(|s| {
+            let feed = Feed::start(s, pool.scorer(), vec![], Some(fetcher));
+            pool.drain(feed);
+        });
+        assert_eq!((pool.decks.len(), pool.stats.cached, pool.stats.listed), (2, 2, 0));
     }
 
     #[test]

@@ -53,6 +53,9 @@ pub struct Settings {
     pub count_columns: Vec<CountColumn>,
     /// Deck list beside the details, or above them.
     pub layout: PaneLayout,
+    /// What the header says about where the decks came from, instead of the EDHREC counts (a
+    /// local list, the favorites).
+    pub source: Option<String>,
 }
 
 pub struct App<'a> {
@@ -162,7 +165,8 @@ impl<'a> App<'a> {
         if finished {
             self.feed = None;
             if self.status.is_none() {
-                self.status = Some((format!("done: {}", self.pool.stats.summary()), false));
+                let summary = self.settings.source.clone().unwrap_or_else(|| self.pool.stats.summary());
+                self.status = Some((format!("done: {summary}"), false));
             }
         }
         if arrived {
@@ -389,7 +393,7 @@ impl<'a> App<'a> {
     fn draw_header(&self, frame: &mut Frame, area: Rect) {
         let fits = self.ranking.iter().filter(|r| r.fits).count();
         let st = &self.pool.stats;
-        let summary = if st.listed == 0 { "local decklist".to_string() } else { st.summary() };
+        let summary = self.settings.source.clone().unwrap_or_else(|| st.summary());
         let mut spans = vec![
             Span::styled(" edh-scout ", Style::new().reversed().bold().fg(ACCENT)),
             Span::styled(format!(" {} ", self.settings.title), Style::new().bold()),
@@ -404,7 +408,9 @@ impl<'a> App<'a> {
             let progress = if st.scoring > 0 {
                 format!(" {spin} scoring {} more stored decks ", st.scoring)
             } else if st.scanning() {
-                format!(" {spin} scanning commanders {}/{} ", st.commanders_scanned, st.commanders_total)
+                // Without deck tables (the favorites), what loads is each commander's own data.
+                let what = if self.settings.source.is_some() { "loading" } else { "scanning" };
+                format!(" {spin} {what} commanders {}/{} ", st.commanders_scanned, st.commanders_total)
             } else {
                 format!(" {spin} fetching {}/{} ", st.fetched + st.failed, st.queued)
             };

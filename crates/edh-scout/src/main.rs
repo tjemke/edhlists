@@ -56,6 +56,8 @@ struct Cli {
 enum Command {
     /// Pull EDHREC decklists for a commander and rank them for your table.
     Scout(ScoutArgs),
+    /// Browse the decks you marked as favorites (`*` in the browser), across commanders.
+    Favorites(FavoritesArgs),
     /// Score a local decklist file.
     Check(CheckArgs),
     /// Download/refresh the card (Scryfall) and combo (Commander Spellbook) databases.
@@ -152,6 +154,24 @@ struct OutputArgs {
     /// a deck's price is usually one or two cards and says little about how it plays.
     #[arg(long)]
     price: bool,
+}
+
+#[derive(Args)]
+struct FavoritesArgs {
+    #[command(flatten)]
+    target: TargetArgs,
+    /// How to rank decks.
+    #[arg(short, long, value_enum, default_value_t = RankMode::Fit)]
+    rank: RankMode,
+    /// Interleave commanders so one with many favorites doesn't fill the list (`m` toggles this
+    /// in the browser).
+    #[arg(long)]
+    mix: bool,
+    /// Weights for --rank combined.
+    #[arg(long, default_value = "fit=0.5,salt=0.2,structure=0.15,synergy=0.15")]
+    weights: String,
+    #[command(flatten)]
+    output: OutputArgs,
 }
 
 #[derive(Args)]
@@ -259,6 +279,18 @@ struct Session<'a> {
     show_commander: bool,
     /// Columns for the `-T` card filters' counts.
     count_columns: Vec<CountColumn>,
+    /// Where the decks came from, when that's not EDHREC's deck tables (see `tui::Settings`).
+    source: Option<String>,
+}
+
+/// How a session is ranked and shown: what `scout` and `favorites` share.
+struct Show<'a> {
+    rank: RankMode,
+    weights: Weights,
+    /// Interleave commanders (when there are several).
+    mix: bool,
+    output: &'a OutputArgs,
+    layout: PaneLayout,
 }
 
 fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) -> Result<()> {
@@ -324,7 +356,8 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
         )?,
     };
     drop(status);
-    finish(http, session, &args, target, weights, config.tui.layout)
+    let show = Show { rank: args.rank, weights, mix: !args.no_mix, output: &args.output, layout: config.tui.layout };
+    finish(http, session, &show, target)
 }
 
 /// The deck database. On the first run after upgrading, the deck pages kept in the state
@@ -482,7 +515,7 @@ fn start_single<'a>(
     }
     let fetcher = (!to_fetch.is_empty())
         .then(|| Fetcher::spawn(Arc::clone(http), store.clone(), to_fetch, opts.commanders.clone()));
-    Ok(Session { title, name: slug, pool, fetcher, backlog, show_commander: false, count_columns })
+    Ok(Session { title, name: slug, pool, fetcher, backlog, show_commander: false, count_columns, source: None })
 }
 
 /// No commander: find decks matching the `-T` filters across the commanders EDHREC lists for the
@@ -576,39 +609,86 @@ fn start_search<'a>(
         backlog: Vec::new(),
         show_commander: true,
         count_columns,
+        source: None,
     })
 }
 
+/// The favorites, whatever their commander: stored decks only, no deck tables and no fetching.
+/// Each commander's synergy and combo votes load in the background (cached for a week).
+fn run_favorites(http: &Arc<Http>, paths: &Paths, config: &Config, args: FavoritesArgs) -> Result<()> {
+    let target = target_from(&args.target)?;
+    let weights: Weights = args.weights.parse().context("--weights")?;
+    let status = Status::new(Some(http));
+    let (cards, combos) = ensure_databases(http, paths, &status)?;
+    let store = open_store(paths, &status)?;
+    let ids = store.db().favorites().context("reading the favorites")?;
+    if ids.is_empty() {
+        bail!("no favorites yet: press * on a deck in the `scout` browser to mark it");
+    }
+    let found = store.get_many(&ids.iter().map(String::as_str).collect::<Vec<_>>())?;
+    let missing = found.iter().filter(|d| d.is_none()).count();
+    if missing > 0 {
+        status.note(&format!("  note: {missing} favorite(s) are no longer in the deck database"));
+    }
+    // By commander, in the order each was first marked.
+    let mut groups: Vec<(String, Vec<Deck>)> = Vec::new();
+    for deck in found.into_iter().flatten() {
+        let slug = commander_slug(&deck.commanders);
+        match groups.iter_mut().find(|(s, _)| *s == slug) {
+            Some((_, decks)) => decks.push(deck),
+            None => groups.push((slug, vec![deck])),
+        }
+    }
+    if groups.is_empty() {
+        bail!("none of the favorites is in the deck database any more");
+    }
+    status.step("loading EDHREC's salt scores");
+    let salt = load_salt(http);
+    let stats = PoolStats { commanders_total: groups.len(), ..Default::default() };
+    let pool = Pool::new(&cards, &combos, salt, stats)
+        .with_store(store.clone(), score_epoch(&cards, &combos))
+        .with_favorites(ids);
+    let commanders = groups.len();
+    let session = Session {
+        title: "favorite decks".into(),
+        name: "favorites".into(),
+        pool,
+        fetcher: Some(Fetcher::spawn_stored(Arc::clone(http), groups)),
+        backlog: Vec::new(),
+        show_commander: true,
+        count_columns: Vec::new(),
+        source: Some(format!("favorites across {commanders} commander{}", if commanders == 1 { "" } else { "s" })),
+    };
+    drop(status);
+    let show = Show { rank: args.rank, weights, mix: args.mix, output: &args.output, layout: config.tui.layout };
+    finish(http, session, &show, target)
+}
+
 /// Browse (or print) the session, then report what it cost.
-fn finish(
-    http: &Arc<Http>,
-    session: Session,
-    args: &ScoutArgs,
-    target: Target,
-    weights: Weights,
-    layout: PaneLayout,
-) -> Result<()> {
-    let Session { title, name, mut pool, fetcher, backlog, show_commander, count_columns } = session;
-    let export_dir = args.output.export.clone().unwrap_or_else(|| PathBuf::from(format!("edh-scout-{name}")));
+fn finish(http: &Arc<Http>, session: Session, show: &Show, target: Target) -> Result<()> {
+    let Session { title, name, mut pool, fetcher, backlog, show_commander, count_columns, source } = session;
+    let output = show.output;
+    let export_dir = output.export.clone().unwrap_or_else(|| PathBuf::from(format!("edh-scout-{name}")));
     let scorer = pool.scorer();
     // Decks are scored on a thread of their own (in this scope, so it can borrow the databases),
     // and the browser or the plain table only takes in finished results.
     std::thread::scope(|scope| -> Result<()> {
         let feed = (fetcher.is_some() || !backlog.is_empty()).then(|| Feed::start(scope, scorer, backlog, fetcher));
-        if interactive(args.output.plain) {
+        if interactive(output.plain) {
             let settings = tui::Settings {
                 title,
                 target,
-                mode: args.rank,
-                weights,
+                mode: show.rank,
+                weights: show.weights,
                 export_dir,
-                format: args.output.format,
-                report_top: args.output.top,
-                show_price: args.output.price,
+                format: output.format,
+                report_top: output.top,
+                show_price: output.price,
                 show_commander,
-                mix: !args.no_mix,
+                mix: show.mix,
                 count_columns,
-                layout,
+                layout: show.layout,
+                source: source.clone(),
             };
             let mut app = tui::App::new(settings, pool, feed, Some(http));
             tui::run(&mut app)?;
@@ -616,33 +696,37 @@ fn finish(
             if let Some(why) = &stats.stopped {
                 eprintln!("  stopped fetching early: {why}");
             }
-            eprintln!("  {} · {}", stats.summary(), summarize_counts(&http.request_counts()));
+            let summary = source.unwrap_or_else(|| stats.summary());
+            eprintln!("  {summary} · {}", summarize_counts(&http.request_counts()));
             return Ok(());
         }
         if let Some(f) = feed {
             pool.drain(f);
         }
-        print_plain(http, &pool, args, &title, &target, &weights, show_commander, &count_columns, &export_dir)
+        let columns = plain::Columns { price: output.price, commander: show_commander, counts: count_columns };
+        print_plain(http, &pool, show, &title, &target, &columns, source.as_deref(), &export_dir)
     })
 }
 
-/// The plain table (and with `--export`, the report) for a finished session.
+/// The plain table (and with `--export`, the report) for a finished session. `source` says where
+/// the decks came from, instead of the EDHREC counts.
 #[allow(clippy::too_many_arguments)]
 fn print_plain(
     http: &Http,
     pool: &Pool,
-    args: &ScoutArgs,
+    show: &Show,
     title: &str,
     target: &Target,
-    weights: &Weights,
-    show_commander: bool,
-    count_columns: &[CountColumn],
+    columns: &plain::Columns,
+    source: Option<&str>,
     export_dir: &std::path::Path,
 ) -> Result<()> {
+    let output = show.output;
     if let Some(why) = &pool.stats.stopped {
         eprintln!("  stopped fetching early: {why}");
     }
-    eprintln!("  {} · {}", pool.stats.summary(), summarize_counts(&http.request_counts()));
+    let summary = source.map_or_else(|| pool.stats.summary(), String::from);
+    eprintln!("  {summary} · {}", summarize_counts(&http.request_counts()));
     let checked_after = "-T card filters are checked once a deck is fetched; run again to look at more decks \
                          (decks already fetched cost nothing)";
     if pool.decks.is_empty() {
@@ -651,39 +735,34 @@ fn print_plain(
         }
         bail!("no decks matched");
     }
-    if pool.stats.unmatched > 0 && pool.decks.len() < args.output.top {
+    if pool.stats.unmatched > 0 && pool.decks.len() < output.top {
         eprintln!("  {checked_after}");
     }
-    let mut ranking = rank(&pool.scores(), target, args.rank, weights);
-    if show_commander && !args.no_mix {
+    let mut ranking = rank(&pool.scores(), target, show.rank, &show.weights);
+    if columns.commander && show.mix {
         let (group, weights) = pool.commander_groups();
         ranking = mix(ranking, &group, &weights);
     }
     let ranking = hoist(ranking, |i| pool.is_favorite(i));
     let favorites = pool.favorites();
-    let columns =
-        plain::Columns { price: args.output.price, commander: show_commander, counts: count_columns.to_vec() };
-    println!(
-        "{}",
-        plain::ranked_table(&pool.decks, pool.cards(), &ranking, favorites, target, args.output.top, &columns)
-    );
-    println!("{}", plain::legend(target, args.rank));
-    if args.output.export.is_some() {
+    println!("{}", plain::ranked_table(&pool.decks, pool.cards(), &ranking, favorites, target, output.top, columns));
+    println!("{}", plain::legend(target, show.rank));
+    if output.export.is_some() {
         let input = ReportInput {
             title,
             target,
-            mode: args.rank,
+            mode: show.rank,
             decks: &pool.decks,
             analyze: &|i| pool.details(i),
             ranking: &ranking,
             favorites,
-            limit: args.output.top,
-            format: args.output.format,
-            show_price: args.output.price,
-            count_columns,
+            limit: output.top,
+            format: output.format,
+            show_price: output.price,
+            count_columns: &columns.counts,
         };
         let path = export::write_report(export_dir, &input)?;
-        eprintln!("wrote {} and the top {} decklists", path.display(), args.output.top.min(ranking.len()));
+        eprintln!("wrote {} and the top {} decklists", path.display(), output.top.min(ranking.len()));
     }
     Ok(())
 }
@@ -739,6 +818,7 @@ fn run_check(http: &Http, paths: &Paths, config: &Config, args: CheckArgs) -> Re
             mix: false,
             count_columns: filters::count_columns(&card_filters),
             layout: config.tui.layout,
+            source: Some("local decklist".into()),
         };
         tui::run(&mut tui::App::new(settings, pool, None, None))?;
     } else {
@@ -774,6 +854,7 @@ fn main() -> ExitCode {
         let http = Arc::new(Http::new(paths.http(), cli.offline));
         match cli.command {
             Command::Scout(args) => run_scout(&http, &paths, &load_config(cli.config.clone())?, args),
+            Command::Favorites(args) => run_favorites(&http, &paths, &load_config(cli.config.clone())?, args),
             Command::Check(args) => run_check(&http, &paths, &load_config(cli.config.clone())?, args),
             Command::Sync(args) => {
                 let both = !args.cards && !args.combos;

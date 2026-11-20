@@ -53,6 +53,7 @@ edh-scout scout krenko -p 5.5-7                      # explicit EDHPowerLevel ba
 edh-scout scout krenko --rank combined --weights fit=0.4,salt=0.4,structure=0.2
 edh-scout scout krenko -t Tokens -t Goblins          # only decks EDHREC tagged with a theme
 edh-scout scout krenko --plain --top 15 --export out # table on stdout + report.md + decklists
+edh-scout favorites                                  # the decks you starred (* in the browser)
 edh-scout check mydeck.txt                           # score a local list (any common export format)
 edh-scout check mydeck.txt -T equipment -T ramp=10+  # ... and count what it runs
 edh-scout sync                                       # refresh prices / Game Changers / combos
@@ -168,7 +169,11 @@ order, ahead even of decks in the target (one outside it stays grey); the plain 
 and exports mark them with ★ too. `F` narrows the list to them (`f` and `F` combine).
 
 A favorite only shows up in a scout whose decks it's among: the same commander, passing the `-T`
-filters and the deck-table checks (bracket, salt ceiling, `--max-price`, …).
+filters and the deck-table checks (bracket, salt ceiling, `--max-price`, …). `edh-scout favorites`
+lists every favorite whatever its commander, with the same ranking options, `--plain`, `--top` and
+`--export`, and no deck fetching: just each commander's synergy and combo votes, two requests
+(cached for a week) per commander. It ranks by score alone; `--mix` (or `m`) interleaves
+commanders.
 
 ### Config file
 
