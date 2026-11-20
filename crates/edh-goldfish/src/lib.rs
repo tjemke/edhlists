@@ -17,6 +17,7 @@ mod pay;
 mod profile;
 
 use edh_data::cards::Card;
+use edh_data::tags::Role;
 use rayon::prelude::*;
 
 /// One line of a decklist.
@@ -52,6 +53,10 @@ pub struct ManaReport {
     /// Cards that sat in hand (or the command zone) with enough mana but the wrong colours to cast
     /// them, with the share of games it happened in by turn 8; most often first.
     pub stuck: Vec<(String, f64)>,
+    /// Ramp and draw in the deck the goldfish doesn't play, by Scryfall Tagger's roles (ramp that
+    /// isn't a land, rock or land search, like Crypt Ghast or Dark Ritual; draw it reads as a
+    /// plain spell), ramp first: its numbers leave them out.
+    pub unplayed: Vec<(String, Role)>,
 }
 
 impl ManaReport {

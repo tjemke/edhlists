@@ -638,6 +638,39 @@ fn draws_that_wait_for_opponents_treasure_or_combat_dont_repeat() {
     assert_eq!(effect(&loran), Effect::Engine, "draws for us too, every turn");
 }
 
+#[test]
+fn ramp_and_draw_it_cant_play_are_marked_as_not_played() {
+    let tagged = |c: Card, r: Role| Card { tagged: true, roles: r.into(), ..c };
+    let ghast = tagged(
+        card(
+            "Crypt Ghast",
+            "Creature — Spirit",
+            "{3}{B}",
+            "B",
+            "Whenever you tap a Swamp for mana, add an additional {B}.",
+        ),
+        Role::Ramp,
+    );
+    assert_eq!(profile(&ghast, "B").unplayed, Some(Role::Ramp));
+    let sol = tagged(card("Sol Ring", "Artifact", "{1}", "C", "{T}: Add {C}{C}."), Role::Ramp);
+    assert_eq!(profile(&sol, "B").unplayed, None, "a rock is played");
+    let clamp = tagged(
+        card(
+            "Skullclamp",
+            "Artifact — Equipment",
+            "{1}",
+            "",
+            "Whenever equipped creature dies, draw two cards.\nEquip {1}",
+        ),
+        Role::Draw,
+    );
+    assert_eq!(profile(&clamp, "B").unplayed, Some(Role::Draw));
+    let cmd = [commander("Big", "{20}", "B")];
+    let cards = [(ghast, 1), (clamp, 1), (sol, 1), (basic("Swamp", "B"), 40), (filler("{9}"), 56)];
+    let r = run(&deck(&cmd, &cards), 10, 1);
+    assert_eq!(r.unplayed, [("Crypt Ghast".to_string(), Role::Ramp), ("Skullclamp".to_string(), Role::Draw)]);
+}
+
 // --- whole games ----------------------------------------------------------------------------------
 
 #[test]

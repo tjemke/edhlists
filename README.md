@@ -246,7 +246,9 @@ then its biggest spells, paying coloured costs from the lands and rocks that mak
 (check, snarl, fast, slow and shock lands, fetches, bounce lands and modal double-faced cards
 included). It reports how often the commander is out by turn 4, the mana on turn 4 against a land
 a turn, how often colours held the commander up, and the cards most often stuck on colours (more
-than 0.5% of games). It doesn't measure strength: opponents, combat and tutors aren't in it.
+than 0.5% of games). It sticks to mana: ramp and draw it doesn't play (Swamp doublers, cost
+reducers, Treasure, draws that need combat or an opponent) are named as not counted. It doesn't
+measure strength: opponents, combat and tutors aren't in it.
 
 **Target.** `-b 2-3` (default) means "EDHPowerLevel would call it bracket 2 or 3", i.e. power
 4.7–7.7 using the site's own power→bracket curve, with no rule pushing it higher. `-p` sets an

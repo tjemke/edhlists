@@ -2,6 +2,7 @@
 
 use edh_data::flags::EnumSet;
 use edh_data::mana::{ColorSet, Mana, ManaSet, Pip};
+use edh_data::tags::Role;
 use edh_data::types::BasicLandType;
 
 use crate::pay::pay;
@@ -681,6 +682,13 @@ impl Totals {
             capacity: self.capacity.map(|c| c as f64 / n),
             spent_by_t8: self.spent_by_t8 as f64 / n,
             stuck,
+            unplayed: {
+                let mut v: Vec<(String, Role)> =
+                    deck.profiles.iter().filter_map(|p| p.unplayed.map(|r| (p.name.clone(), r))).collect();
+                v.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+                v.dedup();
+                v
+            },
         }
     }
 }

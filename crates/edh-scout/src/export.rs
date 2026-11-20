@@ -209,7 +209,10 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
             let (summary, stuck) = crate::view::mana_summary(&m);
             let stuck =
                 if stuck.is_empty() { String::new() } else { format!(" — stuck on colours: {}", stuck.join(", ")) };
-            writeln!(md, "- Mana ({} solitaire games): {summary}{stuck}", m.games)?;
+            let left_out = crate::view::mana_left_out(&m)
+                .map(|l| format!(" — not played, so not counted: {l}"))
+                .unwrap_or_default();
+            writeln!(md, "- Mana ({} solitaire games): {summary}{stuck}{left_out}", m.games)?;
         }
         if let Some(syn) = &a.synergy {
             let sig: Vec<String> =

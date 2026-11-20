@@ -23,6 +23,9 @@ pub struct Profile {
     pub type_words: String,
     pub lands: Vec<LandFace>,
     pub spell: Option<Spell>,
+    /// What Scryfall Tagger says it does that the goldfish doesn't play: ramp that isn't a land,
+    /// rock or land search (Crypt Ghast, Dark Ritual), or draw it reads as a plain spell.
+    pub unplayed: Option<Role>,
 }
 
 #[derive(Clone, Debug)]
@@ -280,7 +283,14 @@ impl Profile {
                 .flatten()
                 .map(|cost| Spell::new(cost, effect(card, &faces[0], allowed), &text(card, 0)))
         };
-        Profile { name: card.name.clone(), type_words: card.front_type_line().to_lowercase(), lands, spell }
+        let effect = spell.as_ref().map(|s| &s.effect);
+        let played_as = |r: Role| match r {
+            Role::Ramp => !lands.is_empty() || matches!(effect, Some(Effect::Rock { .. } | Effect::LandRamp { .. })),
+            _ => !matches!(effect, Some(Effect::Other)),
+        };
+        let unplayed =
+            [Role::Ramp, Role::Draw].into_iter().find(|&r| card.tagged && card.roles.contains(r) && !played_as(r));
+        Profile { name: card.name.clone(), type_words: card.front_type_line().to_lowercase(), lands, spell, unplayed }
     }
 }
 

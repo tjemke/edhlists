@@ -338,6 +338,22 @@ pub fn mana_summary(m: &ManaReport) -> (String, Vec<String>) {
     (parts.join(" · "), stuck)
 }
 
+/// What the goldfish left out, if anything: "3 ramp (Crypt Ghast, Nirkana Revenant, Bubbling
+/// Muck), 6 draw". Shared with the report.
+pub fn mana_left_out(m: &ManaReport) -> Option<String> {
+    let ramp: Vec<&str> = m.unplayed.iter().filter(|(_, r)| *r == Role::Ramp).map(|(n, _)| front_face(n)).collect();
+    let draw = m.unplayed.iter().filter(|(_, r)| *r == Role::Draw).count();
+    let mut parts = Vec::new();
+    if !ramp.is_empty() {
+        let more = if ramp.len() > 3 { ", …" } else { "" };
+        parts.push(format!("{} ramp ({}{more})", ramp.len(), ramp[..ramp.len().min(3)].join(", ")));
+    }
+    if draw > 0 {
+        parts.push(format!("{draw} draw"));
+    }
+    (!parts.is_empty()).then(|| parts.join(", "))
+}
+
 fn mana_lines(mana: ManaView) -> Vec<Line<'static>> {
     match mana {
         ManaView::Off => vec![],
@@ -352,6 +368,12 @@ fn mana_lines(mana: ManaView) -> Vec<Line<'static>> {
                     label(""),
                     Span::styled("stuck on colours: ", Style::new().fg(DIM)),
                     Span::styled(stuck.join(", "), Style::new().fg(OK)),
+                ]));
+            }
+            if let Some(left_out) = mana_left_out(m) {
+                out.push(Line::from(vec![
+                    label(""),
+                    Span::styled(format!("not played, so not counted: {left_out}"), Style::new().fg(DIM)),
                 ]));
             }
             out
@@ -581,6 +603,7 @@ mod tests {
             capacity: [1.0, 2.1, 3.2, 5.3, 6.0, 7.0, 8.0, 9.0],
             spent_by_t8: 30.0,
             stuck: vec![("Reanimate".into(), 0.032), ("Entomb".into(), 0.006), ("Careful Study".into(), 0.005)],
+            unplayed: vec![],
         };
         let (summary, stuck) = mana_summary(&report);
         assert_eq!(summary, "commander by T4 80% · 5.3 mana on T4, +1.3 over a land a turn");
@@ -591,6 +614,30 @@ mod tests {
         assert!(stuck.is_empty());
         assert!(text(&mana_lines(ManaView::Ready(&held_up))).len() == 1, "no stuck line without stuck cards");
         assert!(mana_lines(ManaView::Off).is_empty());
+    }
+
+    #[test]
+    fn mana_names_the_ramp_it_leaves_out_and_counts_the_draw() {
+        let report = |unplayed: Vec<(&str, Role)>| ManaReport {
+            games: 1,
+            mulligan: 0.0,
+            commander_by_t4: None,
+            colour_delayed: None,
+            capacity: [0.0; 8],
+            spent_by_t8: 0.0,
+            stuck: vec![],
+            unplayed: unplayed.into_iter().map(|(n, r)| (n.to_string(), r)).collect(),
+        };
+        assert_eq!(mana_left_out(&report(vec![])), None);
+        let ghast = report(vec![
+            ("Bubbling Muck", Role::Ramp),
+            ("Crypt Ghast", Role::Ramp),
+            ("Dark Ritual", Role::Ramp),
+            ("Nirkana Revenant", Role::Ramp),
+            ("Skullclamp", Role::Draw),
+        ]);
+        assert_eq!(mana_left_out(&ghast).unwrap(), "4 ramp (Bubbling Muck, Crypt Ghast, Dark Ritual, …), 1 draw");
+        assert_eq!(text(&mana_lines(ManaView::Ready(&ghast))).len(), 2, "a line for what's left out");
     }
 
     #[test]
