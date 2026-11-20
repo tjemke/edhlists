@@ -9,14 +9,18 @@
 //! never drops the mark.
 //!
 //! One writer at a time, readers alongside it (WAL); two runs at once wait for each other briefly
-//! rather than fail. The connection sits behind a mutex, so one [`DeckDb`] can be shared between
+//! rather than fail. Every write is one transaction, which takes the write lock as it begins (so
+//! it waits for another run's write rather than failing partway), and changes rows, never a copy
+//! of them read earlier, so runs writing at once never lose each other's work. Several runs may
+//! also create or upgrade the database at once: whichever is first does it, the others wait and
+//! find it done. The connection sits behind a mutex, so one [`DeckDb`] can be shared between
 //! threads.
 
 use std::collections::{BTreeMap, HashSet};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use edh_data::deck::{Deck, DeckMeta};
@@ -25,7 +29,7 @@ use edh_data::text::commander_slug;
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, ErrorCode, OptionalExtension, TransactionBehavior, params};
 
 mod store;
 pub use store::{DeckStore, Imported, Retired};
@@ -70,6 +74,13 @@ const MIGRATIONS: &[&str] = &[
     ) WITHOUT ROWID;
 ",
 ];
+
+/// How long a run waits for another one's write before giving up.
+const BUSY: Duration = Duration::from_secs(10);
+
+fn is_busy(e: &rusqlite::Error) -> bool {
+    matches!(e.sqlite_error_code(), Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked))
+}
 
 /// A deck's score as the database keeps it, with what it was scored against: an `epoch` for the
 /// scorer and the card and combo databases, and a fingerprint of the commander data synergy was
@@ -161,6 +172,28 @@ fn decode(id: String, commanders: &str, cards: &str, tags: &str, mut meta: DeckM
     })
 }
 
+/// The database's schema version, refusing one newer than this code reads.
+fn schema(conn: &Connection) -> Result<i64> {
+    let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    if version > SCHEMA {
+        bail!("the deck database was written by a newer edh-scout (schema {version}, this one reads {SCHEMA})");
+    }
+    Ok(version)
+}
+
+/// Switch the database to WAL (which sticks to the file). SQLite doesn't wait out a busy database
+/// for this, as it does for other statements: when several runs create the database at once, try
+/// again until the others are done.
+fn use_wal(conn: &Connection) -> Result<()> {
+    let deadline = Instant::now() + BUSY;
+    loop {
+        match conn.pragma_update(None, "journal_mode", "WAL") {
+            Err(e) if is_busy(&e) && Instant::now() < deadline => std::thread::sleep(Duration::from_millis(5)),
+            r => return Ok(r?),
+        }
+    }
+}
+
 impl DeckDb {
     /// Open (or create) the database at `path`, bringing its schema up to date.
     pub fn open(path: &Path) -> Result<Self> {
@@ -172,17 +205,17 @@ impl DeckDb {
     }
 
     fn with(mut conn: Connection) -> Result<Self> {
-        conn.busy_timeout(Duration::from_secs(10))?;
-        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.busy_timeout(BUSY)?;
+        use_wal(&conn)?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
-        let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version > SCHEMA {
-            bail!("the deck database was written by a newer edh-scout (schema {version}, this one reads {SCHEMA})");
-        }
-        for (i, step) in MIGRATIONS.iter().enumerate().skip(version as usize) {
-            let tx = conn.transaction()?;
-            tx.execute_batch(step)?;
-            tx.pragma_update(None, "user_version", i as i64 + 1)?;
+        if schema(&conn)? != SCHEMA {
+            // Another run may be bringing it up to date too: with the write lock held, look again.
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let version = schema(&tx)?;
+            for (i, step) in MIGRATIONS.iter().enumerate().skip(version as usize) {
+                tx.execute_batch(step)?;
+                tx.pragma_update(None, "user_version", i as i64 + 1)?;
+            }
             tx.commit()?;
         }
         let ids = {
@@ -219,7 +252,7 @@ impl DeckDb {
     pub fn put_many(&self, decks: &[(&Deck, &str)], parser: u32) -> Result<()> {
         let rows: Vec<Row> = decks.iter().map(|(d, s)| Row::of(d, s)).collect::<Result<_>>()?;
         let mut conn = lock(&self.conn);
-        let tx = conn.transaction()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         {
             let mut ins = tx.prepare_cached(
                 "INSERT OR REPLACE INTO deck
@@ -291,7 +324,7 @@ impl DeckDb {
     /// Keep these decks' scores (replacing earlier ones), in one transaction.
     pub fn put_scores(&self, scores: &[(&str, StoredScore)]) -> Result<()> {
         let mut conn = lock(&self.conn);
-        let tx = conn.transaction()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         {
             let mut ins = tx.prepare_cached(
                 "INSERT OR REPLACE INTO score (id, epoch, synergy_src, power, bracket, floor, structure, synergy)
@@ -501,6 +534,68 @@ mod tests {
         assert_eq!(db.favorites().unwrap(), vec!["aaa"]);
         let conn = Connection::open(&path).unwrap();
         assert_eq!(conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(), SCHEMA);
+    }
+
+    /// Open the database at `path` from `runs` threads at once, each with its own connection
+    /// (as separate edh-scout processes would have), and run `each` on each.
+    fn at_once(path: &Path, runs: usize, each: impl Fn(usize, DeckDb) + Sync) {
+        let start = std::sync::Barrier::new(runs);
+        std::thread::scope(|s| {
+            for i in 0..runs {
+                let (start, each) = (&start, &each);
+                s.spawn(move || {
+                    start.wait();
+                    let db = DeckDb::open(path).unwrap_or_else(|e| panic!("run {i} couldn't open the database: {e:#}"));
+                    each(i, db);
+                });
+            }
+        });
+    }
+
+    #[test]
+    fn several_runs_can_create_the_database_at_once() {
+        for round in 0..20 {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("d.sqlite");
+            at_once(&path, 6, |_, db| assert!(db.is_empty(), "round {round}: a new database has decks"));
+            let conn = Connection::open(&path).unwrap();
+            let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+            assert_eq!(version, SCHEMA, "round {round}: the schema wasn't brought up to date once");
+        }
+    }
+
+    #[test]
+    fn several_runs_writing_at_once_lose_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.sqlite");
+        DeckDb::open(&path).unwrap();
+        let (runs, decks) = (4, 60);
+        let s =
+            StoredScore { epoch: 1, synergy_src: 1, power: 5.0, bracket: 3, floor: 2, structure: 0.5, synergy: None };
+        at_once(&path, runs, |run, db| {
+            for n in 0..decks {
+                let id = format!("r{run}d{n}");
+                let d = deck(&id, "Jodah, the Unifier", "Bonesplitter");
+                if n % 2 == 0 {
+                    db.put(&d, "{}", 1).unwrap();
+                } else {
+                    db.put_many(&[(&d, "{}")], 1).unwrap();
+                }
+                db.put_scores(&[(id.as_str(), StoredScore { power: n as f64, ..s })]).unwrap();
+                if n % 3 == 0 {
+                    db.set_favorite(&id, true).unwrap();
+                }
+                // Reads from each run go on alongside the others' writes.
+                assert_eq!(db.get_many(&[id.as_str()]).unwrap()[0].as_ref().map(|d| d.id.as_str()), Some(id.as_str()));
+            }
+        });
+        let db = DeckDb::open(&path).unwrap();
+        assert_eq!(db.len(), runs * decks, "decks were lost");
+        let ids: Vec<String> = (0..runs).flat_map(|r| (0..decks).map(move |n| format!("r{r}d{n}"))).collect();
+        let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let lost = db.scores(&ids).unwrap().iter().filter(|s| s.is_none()).count();
+        assert_eq!(lost, 0, "{lost} scores were lost");
+        assert_eq!(db.favorites().unwrap().len(), runs * decks.div_ceil(3), "favorites were lost");
     }
 
     #[test]

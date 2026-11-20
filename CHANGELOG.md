@@ -8,6 +8,8 @@ What changed in each version, newest first. How versions are numbered: see *Vers
 - Two runs saving the same file at once (the card or combo database during a `sync`, a cached
   page, a download) no longer leave it with both runs' bytes mixed together, or fail: each writes
   a temporary file of its own, and the last to finish replaces the file whole.
+- Several runs creating or upgrading the deck database at once no longer fail with "database is
+  locked" or "table deck already exists": the first does it and the others wait for it.
 
 ## 0.3.2
 
