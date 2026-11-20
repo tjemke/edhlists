@@ -91,7 +91,7 @@ fn sol_ring_makes_two_colourless_and_dorks_wait_a_turn() {
     let birds = card("Birds of Paradise", "Creature — Bird", "{G}", "WUBRG", "Flying\n{T}: Add one mana of any color.");
     let p = profile(&birds, "BG");
     assert_eq!(rock_units(&p), ["BG"], "any colour means any of the deck's");
-    assert!(matches!(p.spell.unwrap().effect, Effect::Rock { summoning_sick: true, .. }));
+    assert!(matches!(p.spell.unwrap().effect, Effect::Rock { next_turn: true, .. }));
 }
 
 #[test]
@@ -129,6 +129,102 @@ fn a_rock_with_x_in_its_cost_is_cast_with_x_as_one() {
     let rocks = [(basic("Island", "U"), 38), (cornucopia, 20), (filler("{6}"), 41)];
     let (a, b) = (run(&deck(&cmd, &plain), 1000, 1), run(&deck(&cmd, &rocks), 1000, 1));
     assert!(b.capacity[5] > a.capacity[5] + 0.5, "cast as rocks: {} vs {}", b.capacity[5], a.capacity[5]);
+}
+
+#[test]
+fn mana_an_ability_takes_in_comes_off_what_it_makes() {
+    let celebrant = card(
+        "Blood Celebrant",
+        "Creature — Human Cleric",
+        "{B}",
+        "WUBRG",
+        "{B}, Pay 1 life: Add one mana of any color.",
+    );
+    assert_eq!(profile(&celebrant, "B").spell.unwrap().effect, Effect::Other, "{{B}} in, one mana out: no ramp");
+    let bluffs = card("Cascade Bluffs", "Land", "", "URC", "{T}: Add {C}.\n{U/R}, {T}: Add {U}{U}, {U}{R}, or {R}{R}.");
+    let bluffs_units = land(&profile(&bluffs, "UR")).units.iter().map(|u| u.to_string()).collect::<Vec<_>>();
+    assert_eq!(bluffs_units, ["URC"], "a filter land is one mana a turn, of its colours or colourless");
+    let shores = card("Unknown Shores", "Land", "", "WUBRGC", "{T}: Add {C}.\n{1}, {T}: Add one mana of any color.");
+    let shores_units = land(&profile(&shores, "BG")).units.iter().map(|u| u.to_string()).collect::<Vec<_>>();
+    assert_eq!(shores_units, ["BGC"], "{{1}} for any colour: no more mana, but it fixes");
+    let selvala = card(
+        "Selvala, Heart of the Wilds",
+        "Legendary Creature — Elf Scout",
+        "{1}{G}{G}",
+        "WUBRG",
+        "{G}, {T}: Add X mana in any combination of colors, where X is the greatest power among creatures you control.",
+    );
+    assert_eq!(rock_units(&profile(&selvala, "WG")).len(), 1, "X taken as 2, less the {{G}} it takes in");
+    let pain = card("Llanowar Wastes", "Land", "", "BGC", "{T}: Add {C}.\n{T}, Pay 1 life: Add {B} or {G}.");
+    assert_eq!(
+        land(&profile(&pain, "BG")).units.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
+        ["BGC"],
+        "tapping isn't mana taken in: a pain land makes its colours"
+    );
+}
+
+#[test]
+fn some_land_mana_waits_for_enough_lands_and_max_speed_never_comes() {
+    let temple = card(
+        "Temple of the False God",
+        "Land",
+        "",
+        "C",
+        "{T}: Add {C}{C}. Activate only if you control five or more lands.",
+    );
+    let t = profile(&temple, "");
+    assert!(land(&t).units.is_empty(), "nothing before five lands");
+    assert_eq!(land(&t).with_lands.as_ref().map(|(n, u)| (*n, u.len())), Some((5, 2)));
+    let shrine = card(
+        "Shrine of the Forsaken Gods",
+        "Land",
+        "",
+        "C",
+        "{T}: Add {C}.\n{T}: Add {C}{C}. Spend this mana only to cast colorless spells. Activate only if you control seven or more lands.",
+    );
+    let sh = profile(&shrine, "");
+    assert_eq!((land(&sh).units.len(), land(&sh).with_lands.as_ref().map(|(n, u)| (*n, u.len()))), (1, Some((7, 2))));
+    let raceway =
+        card("Muraganda Raceway", "Land", "", "C", "Start your engines!\n{T}: Add {C}.\nMax speed — {T}: Add {C}{C}.");
+    let r = profile(&raceway, "");
+    assert_eq!((land(&r).units.len(), land(&r).with_lands.is_none()), (1, true));
+    // Played out: the Temple adds nothing on turn 4 with four lands, and two once five are out.
+    let cmd = [commander("Big", "{20}", "")];
+    let wastes = card("Wastes", "Basic Land", "", "C", "{T}: Add {C}.");
+    let only_temples = [(temple, 40), (filler("{9}"), 59)];
+    let rep = run(&deck(&cmd, &only_temples), 200, 1);
+    assert_eq!(rep.capacity[3], 0.0, "four Temples make nothing");
+    let mixed = [(wastes, 40), (filler("{9}"), 59)];
+    assert!(run(&deck(&cmd, &mixed), 200, 1).capacity[3] > 3.0);
+}
+
+#[test]
+fn rocks_that_enter_tapped_or_dont_untap_or_need_kicking_cost_what_they_do() {
+    let diamond = card("Charcoal Diamond", "Artifact", "{2}", "B", "This artifact enters tapped.\n{T}: Add {B}.");
+    assert!(matches!(profile(&diamond, "B").spell.unwrap().effect, Effect::Rock { next_turn: true, once: false, .. }));
+    let grim = card(
+        "Grim Monolith",
+        "Artifact",
+        "{2}",
+        "C",
+        "This artifact doesn't untap during your untap step.\n{T}: Add {C}{C}{C}.\n{4}: Untap this artifact.",
+    );
+    assert!(matches!(profile(&grim, "B").spell.unwrap().effect, Effect::Rock { once: true, .. }));
+    let chalice = card(
+        "Everflowing Chalice",
+        "Artifact",
+        "{0}",
+        "C",
+        "Multikicker {2}\nThis artifact enters with a charge counter on it for each time it was kicked.\n{T}: Add {C} for each charge counter on this artifact.",
+    );
+    assert_eq!(profile(&chalice, "B").spell.unwrap().extra(), 2, "kicked once: {{2}} for one mana");
+    // A deck of Grim Monoliths gets nothing lasting from them.
+    let cmd = [commander("Big", "{20}", "")];
+    let wastes = card("Wastes", "Basic Land", "", "C", "{T}: Add {C}.");
+    let monoliths = [(wastes.clone(), 38), (grim, 30), (filler("{9}"), 31)];
+    let plain = [(wastes, 38), (filler("{9}"), 61)];
+    let (a, b) = (run(&deck(&cmd, &monoliths), 500, 1), run(&deck(&cmd, &plain), 500, 1));
+    assert!((a.capacity[5] - b.capacity[5]).abs() < 0.3, "{} vs {}", a.capacity[5], b.capacity[5]);
 }
 
 #[test]
@@ -347,6 +443,90 @@ fn planeswalkers_draw_every_turn_only_from_a_plus_or_zero_ability() {
     assert_eq!(effect(&ugin), Effect::Other, "the −10 is a long way off, and draws once");
 }
 
+#[test]
+fn draws_that_need_a_death_an_attack_or_a_sacrifice_dont_repeat_in_a_goldfish() {
+    let tagged = |c: Card| Card { tagged: true, roles: Role::Draw.into(), ..c };
+    let effect = |c: &Card| profile(c, "UB").spell.unwrap().effect;
+    let lantern = tagged(card(
+        "Soul-Guide Lantern",
+        "Artifact",
+        "{1}",
+        "",
+        "When this artifact enters, exile target card from a graveyard.\n{T}, Sacrifice this artifact: Exile each opponent's graveyard.\n{1}, {T}, Sacrifice this artifact: Draw a card.",
+    ));
+    assert_eq!(effect(&lantern), Effect::Draw { cards: 1 }, "sacrificed for a card, once");
+    let bauble = tagged(card(
+        "Mishra's Bauble",
+        "Artifact",
+        "{0}",
+        "",
+        "{T}, Sacrifice this artifact: Look at the top card of target player's library. Draw a card at the beginning of the next turn's upkeep.",
+    ));
+    assert_eq!(effect(&bauble), Effect::Draw { cards: 1 });
+    let post = tagged(card("Trading Post", "Artifact", "{4}", "", "{1}, {T}, Sacrifice an artifact: Draw a card."));
+    assert_eq!(effect(&post), Effect::Other, "needs another artifact to sacrifice");
+    let clamp = tagged(card(
+        "Skullclamp",
+        "Artifact — Equipment",
+        "{1}",
+        "",
+        "Equipped creature gets +1/-1.\nWhenever equipped creature dies, draw two cards.\nEquip {1}",
+    ));
+    assert_eq!(effect(&clamp), Effect::Other);
+    let greed = tagged(card("Greed", "Enchantment", "{3}{B}", "", "{B}, Pay 2 life: Draw a card."));
+    assert_eq!(effect(&greed), Effect::Engine, "can be used every turn");
+    let monitor = tagged(card(
+        "Thought Monitor",
+        "Artifact Creature — Construct",
+        "{6}{U}",
+        "",
+        "Affinity for artifacts\nFlying\nWhen this creature enters, draw two cards.",
+    ));
+    assert_eq!(effect(&monitor), Effect::Draw { cards: 2 });
+}
+
+#[test]
+fn cards_into_hand_count_however_the_text_says_it() {
+    let tagged = |c: Card| Card { tagged: true, roles: Role::Draw.into(), ..c };
+    let effect = |c: &Card| profile(c, "UB").spell.unwrap().effect;
+    let stock = tagged(card(
+        "Stock Up",
+        "Sorcery",
+        "{2}{U}",
+        "",
+        "Look at the top five cards of your library. Put two of them into your hand and the rest on the bottom of your library in any order.",
+    ));
+    assert_eq!(effect(&stock), Effect::Draw { cards: 2 });
+    let peer = tagged(card(
+        "Peer into the Abyss",
+        "Sorcery",
+        "{4}{B}{B}{B}",
+        "",
+        "Target player draws cards equal to half the number of cards in their library and loses half their life. Round up each time.",
+    ));
+    assert_eq!(effect(&peer), Effect::Draw { cards: 3 });
+    let reclamation = tagged(card(
+        "Phyrexian Reclamation",
+        "Enchantment",
+        "{B}",
+        "",
+        "{1}{B}, Pay 2 life: Return target creature card from your graveyard to your hand.",
+    ));
+    assert_eq!(effect(&reclamation), Effect::Other, "nothing in a goldfish's graveyard");
+}
+
+#[test]
+fn ramp_that_waits_for_an_attack_isnt_ramp() {
+    let bitterthorn = card(
+        "Bitterthorn, Nissa's Animus",
+        "Legendary Artifact — Equipment",
+        "{3}",
+        "",
+        "Living weapon\nEquipped creature gets +1/+1.\nWhenever equipped creature attacks, you may search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\nEquip {4}",
+    );
+    assert_eq!(profile(&bitterthorn, "G").spell.unwrap().effect, Effect::Other);
+}
+
 // --- whole games ----------------------------------------------------------------------------------
 
 #[test]
@@ -405,6 +585,26 @@ fn rocks_put_a_deck_ahead_of_a_land_a_turn() {
     let (a, b) = (run(&deck(&cmd, &plain), 1000, 1), run(&deck(&cmd, &rocks), 1000, 1));
     assert!(a.ahead_on_t4().abs() < 0.6, "lands alone stay near a land a turn: {}", a.ahead_on_t4());
     assert!(b.ahead_on_t4() > a.ahead_on_t4() + 1.0, "rocks: {} vs {}", b.ahead_on_t4(), a.ahead_on_t4());
+}
+
+#[test]
+fn a_phyrexian_commander_comes_down_for_life() {
+    let cmd = [commander("K'rrik", "{4}{B/P}{B/P}{B/P}", "B")];
+    let cards = [(basic("Swamp", "B"), 40), (filler("{6}"), 59)];
+    let r = run(&deck(&cmd, &cards), 1000, 1);
+    assert!(r.commander_by_t4.unwrap() > 0.8, "four mana and 6 life: {:?}", r.commander_by_t4);
+}
+
+#[test]
+fn colourless_mana_left_over_isnt_a_colour_problem() {
+    // Mono-blue with Sol Rings: blue spells cast with the Islands aren't stuck because the
+    // turn ends with only colourless mana left.
+    let cmd = [commander("Blue", "{U}", "U")];
+    let sol = card("Sol Ring", "Artifact", "{1}", "C", "{T}: Add {C}{C}.");
+    let cards = [(basic("Island", "U"), 36), (sol, 15), (card("Counterspell", "Instant", "{U}{U}", "", ""), 48)];
+    let r = run(&deck(&cmd, &cards), 1000, 1);
+    let counterspell = r.stuck.iter().find(|(n, _)| n == "Counterspell").map_or(0.0, |(_, s)| *s);
+    assert!(counterspell < 0.02, "stuck in {counterspell} of games");
 }
 
 #[test]

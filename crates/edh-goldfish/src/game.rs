@@ -94,6 +94,7 @@ pub struct Record {
 
 struct OnBattlefield {
     units: Vec<Unit>,
+    with_lands: Option<(usize, Vec<Unit>)>,
     basic: bool,
     land_types: EnumSet<BasicLandType>,
     tapped: bool,
@@ -178,14 +179,15 @@ impl<'d> Game<'d> {
             }
             self.draw(self.engines as usize);
             let bounce = self.land_drop();
-            let (spent, cast_commander, left) = self.spend();
+            let mana = self.units();
+            let (spent, cast_commander) = self.spend();
             if cast_commander && rec.commander_turn.is_none() {
                 rec.commander_turn = Some(turn);
             }
             if let Some(bounce_land) = bounce {
                 self.bounce(bounce_land);
             }
-            for c in self.stuck(&left) {
+            for c in self.stuck(&mana) {
                 if self.deck.commanders.contains(&c) && rec.commander_turn.is_none() {
                     rec.colour_delayed = true;
                 }
@@ -215,14 +217,16 @@ impl<'d> Game<'d> {
 
     /// The mana available now: untapped lands and rocks that can tap.
     fn units(&self) -> Vec<Unit> {
-        let lands = self.lands.iter().filter(|l| !l.tapped).flat_map(|l| l.units.iter().copied());
-        lands.chain(self.rocks.iter().filter(|r| !r.sick).flat_map(|r| r.units.iter().copied())).collect()
+        let n = self.lands.len();
+        let lands = self.lands.iter().filter(|l| !l.tapped).flat_map(|l| land_units(&l.units, &l.with_lands, n));
+        lands.chain(self.rocks.iter().filter(|r| !r.sick).flat_map(|r| r.units.iter())).copied().collect()
     }
 
     /// Every land's and rock's mana, tapped or not.
     fn capacity(&self) -> u32 {
-        (self.lands.iter().map(|l| l.units.len()).sum::<usize>()
-            + self.rocks.iter().map(|r| r.units.len()).sum::<usize>()) as u32
+        let n = self.lands.len();
+        let lands: usize = self.lands.iter().map(|l| land_units(&l.units, &l.with_lands, n).len()).sum();
+        (lands + self.rocks.iter().map(|r| r.units.len()).sum::<usize>()) as u32
     }
 
     /// Kinds of mana the hand and command zone ask for that nothing out makes yet; the deck's
@@ -292,6 +296,7 @@ impl<'d> Game<'d> {
     fn put(&mut self, land: &Land, card: usize, tapped: bool) {
         self.lands.push(OnBattlefield {
             units: land.units.clone(),
+            with_lands: land.with_lands.clone(),
             basic: land.basic,
             land_types: land.land_types,
             tapped,
@@ -313,12 +318,14 @@ impl<'d> Game<'d> {
                 continue; // another copy, already weighed
             }
             for (face_i, face) in self.profile(c).lands.iter().enumerate() {
+                let out = self.lands.len() + 1;
+                let makes = |land: &Land| land_units(&land.units, &land.with_lands, out).to_vec();
                 let (tapped, new) = match &face.kind {
                     // With no other land out, a bounce land would return itself.
                     LandKind::Mana(land) if land.bounce && self.lands.is_empty() => continue,
-                    LandKind::Mana(land) => (self.enters_tapped(land, c), land.units.clone()),
+                    LandKind::Mana(land) => (self.enters_tapped(land, c), makes(land)),
                     LandKind::Fetch { finds, tapped } => match self.best_in_library(*finds) {
-                        Some((_, land)) => (*tapped || self.enters_tapped(land, c), land.units.clone()),
+                        Some((_, land)) => (*tapped || self.enters_tapped(land, c), makes(land)),
                         None => (true, vec![]),
                     },
                 };
@@ -424,7 +431,7 @@ impl<'d> Game<'d> {
             units = left;
             let s = self.profile(c).spell.as_ref().expect("cast");
             spent += s.mana_value() + s.extra();
-            if let Effect::Rock { units: made, summoning_sick: false } = &s.effect {
+            if let Effect::Rock { units: made, next_turn: false, .. } = &s.effect {
                 units.extend(made);
             }
         }
@@ -432,8 +439,8 @@ impl<'d> Game<'d> {
     }
 
     /// Cast what can be cast, one spell at a time, each taking effect before the next. Returns
-    /// the mana value cast, whether a commander was, and the units left.
-    fn spend(&mut self) -> (u32, bool, Vec<Unit>) {
+    /// the mana value cast and whether a commander was.
+    fn spend(&mut self) -> (u32, bool) {
         let mut units = self.units();
         let mut spent = 0;
         let mut commander = false;
@@ -449,9 +456,11 @@ impl<'d> Game<'d> {
             let s = self.profile(c).spell.as_ref().expect("cast");
             spent += s.mana_value() + s.extra();
             match &s.effect {
-                Effect::Rock { units: made, summoning_sick } => {
-                    self.rocks.push(Rock { units: made.clone(), sick: *summoning_sick });
-                    if !summoning_sick {
+                Effect::Rock { units: made, next_turn, once } => {
+                    if !once {
+                        self.rocks.push(Rock { units: made.clone(), sick: *next_turn });
+                    }
+                    if !next_turn {
                         units.extend(made);
                     }
                 }
@@ -478,12 +487,13 @@ impl<'d> Game<'d> {
         if let Some((pos, n)) = soak(self.deck, &self.hand, &units) {
             self.hand.remove(pos);
             spent += n;
-            units.clear();
         }
-        (spent, commander, units)
+        (spent, commander)
     }
 
-    /// Cards in hand or the command zone that there's enough mana for, but not the colours.
+    /// Cards still in hand or the command zone that the turn's mana was enough for, but not its
+    /// colours: judged on all of it, so mana spent on something else isn't taken for a colour
+    /// problem.
     fn stuck(&self, units: &[Unit]) -> Vec<usize> {
         let mut out = Vec::new();
         for &c in self.hand.iter().chain(&self.command) {
@@ -506,6 +516,14 @@ fn soak(deck: &Deck, hand: &[usize], units: &[Unit]) -> Option<(usize, u32)> {
     })
 }
 
+/// What a land makes with `lands` lands out.
+fn land_units<'a>(units: &'a [Unit], with_lands: &'a Option<(usize, Vec<Unit>)>, lands: usize) -> &'a [Unit] {
+    match with_lands {
+        Some((n, more)) if lands >= *n => more,
+        _ => units,
+    }
+}
+
 fn is_land_card(deck: &Deck, c: usize) -> bool {
     !deck.profiles[c].lands.is_empty()
 }
@@ -515,14 +533,13 @@ fn mana_value(deck: &Deck, c: usize) -> u32 {
 }
 
 /// Worth keeping: three to five lands that make at least two of the deck's colours (or its one),
-/// or two lands and a cheap rock or ramp spell.
+/// or two lands and a cheap rock (one that keeps making mana) or ramp spell.
 fn keepable(deck: &Deck, hand: &[usize]) -> bool {
     let lands = hand.iter().filter(|&&c| is_land_card(deck, c)).count();
     let cheap_ramp = hand.iter().any(|&c| {
-        deck.profiles[c]
-            .spell
-            .as_ref()
-            .is_some_and(|s| matches!(s.effect, Effect::Rock { .. } | Effect::LandRamp { .. }) && s.mana_value() <= 2)
+        deck.profiles[c].spell.as_ref().is_some_and(|s| {
+            matches!(s.effect, Effect::Rock { once: false, .. } | Effect::LandRamp { .. }) && s.mana_value() <= 2
+        })
     });
     let mut kinds = ManaSet::empty();
     for &c in hand {

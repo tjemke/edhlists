@@ -6,7 +6,7 @@ use edh_data::cards::Card;
 use edh_data::flags::{EnumSet, Flag};
 use edh_data::mana::{ColorSet, Mana, ManaCost, ManaSet, Pip};
 use edh_data::tags::Role;
-use edh_data::text::strip_reminder;
+use edh_data::text::{front_face, strip_reminder};
 use edh_data::types::{BasicLandType, CardType, Layout, Supertype, Types};
 use regex::Regex;
 
@@ -45,7 +45,11 @@ pub enum LandKind {
 /// A land as it sits on the battlefield.
 #[derive(Clone, Debug)]
 pub struct Land {
+    /// What it makes from the start.
     pub units: Vec<Unit>,
+    /// What it makes instead once this many lands are out (Temple of the False God: nothing
+    /// before five).
+    pub with_lands: Option<(usize, Vec<Unit>)>,
     pub enters: Enters,
     /// Returns a land to its owner's hand as it enters (Simic Growth Chamber).
     pub bounce: bool,
@@ -90,6 +94,8 @@ impl LandFilter {
 pub struct Spell {
     pub cost: ManaCost,
     pub effect: Effect,
+    /// Generic mana paid on top of the cost as printed ([`Spell::extra`]).
+    extra: u32,
 }
 
 impl Spell {
@@ -104,23 +110,38 @@ impl Spell {
     pub fn x_rock(&self) -> bool {
         self.has_x() && matches!(self.effect, Effect::Rock { .. })
     }
-    /// Generic mana paid on top of the cost as printed: X = 1 for an X rock, and the activation of
-    /// a land-ramp artifact (Wayfarer's Bauble).
+    /// Generic mana paid on top of the cost as printed: X = 1 for an X rock, one kick of a
+    /// multikicker rock (Everflowing Chalice), and the activation of a land-ramp artifact
+    /// (Wayfarer's Bauble).
     pub fn extra(&self) -> u32 {
-        let x = if self.x_rock() { self.cost.pips.iter().filter(|p| **p == Pip::X).count() as u32 } else { 0 };
-        match self.effect {
-            Effect::LandRamp { activation, .. } => x + activation,
-            _ => x,
+        self.extra
+    }
+
+    fn new(cost: ManaCost, effect: Effect, text: &str) -> Spell {
+        let mut spell = Spell { cost, effect, extra: 0 };
+        if spell.x_rock() {
+            spell.extra += spell.cost.pips.iter().filter(|p| **p == Pip::X).count() as u32;
         }
+        if let Effect::Rock { .. } = spell.effect
+            && let Some(k) = MULTIKICKER.captures(text)
+        {
+            spell.extra += k[1].parse::<u32>().unwrap_or(0);
+        }
+        if let Effect::LandRamp { activation, .. } = spell.effect {
+            spell.extra += activation;
+        }
+        spell
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Effect {
-    /// A mana rock or dork: these units every turn, from the next one if it's a creature.
+    /// A mana rock or dork: these units every turn; from the next one if it's a creature or enters
+    /// tapped; only the turn it's cast if it doesn't untap by itself (Grim Monolith).
     Rock {
         units: Vec<Unit>,
-        summoning_sick: bool,
+        next_turn: bool,
+        once: bool,
     },
     /// Puts lands from the library onto the battlefield (and maybe into hand); `activation` is
     /// mana to pay on top of the cost (Wayfarer's Bauble).
@@ -144,10 +165,20 @@ fn re(s: &str) -> Regex {
     Regex::new(s).expect("a valid pattern")
 }
 
-/// A repeatable mana ability: tapping (with whatever else it costs), or life alone (Kozilek's
-/// Translator); the colour may be chosen first (Astral Cornucopia).
+/// A repeatable mana ability: the mana it takes in ("{1}, ", "{B}, ", "{U/R}, "; not {T}), then tapping
+/// (with whatever else it costs) or life alone (Kozilek's Translator), then what it adds; the
+/// colour may be chosen first (Astral Cornucopia).
 static TAP_FOR_MANA: LazyLock<Regex> =
-    LazyLock::new(|| re(r"(?:\{(\d+)\}, )?(\{t\}[^:.]*|pay \d+ life): (?:choose a color\. )?add ([^.]+)"));
+    LazyLock::new(|| re(r"((?:\{[^}t]+\}, )*)(\{t\}[^:.]*|pay \d+ life): (?:choose a color\. )?add ([^.]+)"));
+/// A mana ability that waits for enough lands (Temple of the False God, Shrine of the Forsaken Gods).
+static ONLY_WITH_LANDS: LazyLock<Regex> = LazyLock::new(|| re(r"activate only if you control (\w+) or more lands"));
+/// An amount of mana in words ("three mana", "X mana").
+static MANA_AMOUNT: LazyLock<Regex> = LazyLock::new(|| re(r"\b(two|three|four|five|x) mana\b"));
+static MULTIKICKER: LazyLock<Regex> = LazyLock::new(|| re(r"multikicker \{(\d+)\}"));
+/// A land search in a sentence that needs combat or a death first (Bitterthorn's "whenever
+/// equipped creature attacks").
+static NEEDS_COMBAT_OR_DEATH: LazyLock<Regex> =
+    LazyLock::new(|| re(r"attacks|combat damage|\bdies\b|put into a graveyard"));
 static FETCH: LazyLock<Regex> = LazyLock::new(|| {
     re(r"sacrifice [^:]*: search your library for an? ([^.]*?) card,? (?:and )?put it onto the battlefield( tapped)?")
 });
@@ -158,11 +189,24 @@ static RAMP_SEARCH: LazyLock<Regex> = LazyLock::new(|| {
 });
 static ACTIVATION: LazyLock<Regex> = LazyLock::new(|| re(r"\{(\d+)\}, \{t\}, sacrifice"));
 static DRAWS: LazyLock<Regex> = LazyLock::new(|| re(r"\bdraws? (an?|one|two|three|four|x) (?:additional )?cards?"));
+/// Cards put into hand without the word "draw" (Stock Up: "put two of them into your hand").
+static TO_HAND: LazyLock<Regex> = LazyLock::new(|| re(r"put (an?|one|two|three) of them into your hand"));
+/// A draw whose size depends on the game (Peer into the Abyss: "draws cards equal to half …").
+static DRAWS_SOME: LazyLock<Regex> = LazyLock::new(|| re(r"\bdraws? cards equal to"));
+/// Cards drawn for a variable count, as many as a typical one draws.
+const VARIABLE_DRAW: u8 = 3;
 static DISCARDS: LazyLock<Regex> = LazyLock::new(|| re(r"\bdiscards? (an?|one|two|three) cards?"));
-/// A card drawn again and again: a trigger that draws (in its own sentence or the next, "you may
-/// pay {1}. If you do, draw a card"), or a tap ability that does.
-static ENGINE: LazyLock<Regex> =
-    LazyLock::new(|| re(r"(?:at the beginning of|whenever)[^.]*(?:\. if you do,[^.]*)?\bdraw|\{t\}[^:]*:[^.]*\bdraw"));
+/// A trigger that draws, in its own sentence or the next ("you may pay {1}. If you do, draw a
+/// card"); group 1 is what it waits for.
+static DRAW_TRIGGER: LazyLock<Regex> =
+    LazyLock::new(|| re(r"(?:at the beginning of|whenever)([^.]*)(?:\. if you do,[^.]*)?\bdraw"));
+/// An activated ability that draws (tapping, mana or life); group 1 is its cost.
+static DRAW_ABILITY: LazyLock<Regex> = LazyLock::new(|| re(r"(?m)^((?:\{[^}]+\}|pay \d+ life)[^:\n]*): [^\n]*\bdraw"));
+/// A draw as the permanent enters (Thought Monitor).
+static DRAW_ON_ENTERING: LazyLock<Regex> = LazyLock::new(|| re(r"when [^.]*\benters\b[^.]*\bdraw"));
+/// Gets cards back from the graveyard, which a goldfish's is empty of early on (Phyrexian
+/// Reclamation): Tagger counts it as card advantage, not a draw.
+static REGROWTH: LazyLock<Regex> = LazyLock::new(|| re(r"from your graveyard to your hand"));
 /// A planeswalker ability that draws and can be used every turn: + or 0 loyalty.
 static LOYALTY_DRAW: LazyLock<Regex> = LazyLock::new(|| re(r"(?m)^(?:\+\d+|0): [^\n]*\bdraw"));
 static UNLESS_CONTROL: LazyLock<Regex> =
@@ -175,6 +219,10 @@ fn number(word: &str) -> u8 {
         "two" => 2,
         "three" => 3,
         "four" => 4,
+        "five" => 5,
+        "six" => 6,
+        "seven" => 7,
+        "eight" => 8,
         "x" => 2,
         _ => 1,
     }
@@ -213,7 +261,7 @@ impl Profile {
                 .first()
                 .cloned()
                 .flatten()
-                .map(|cost| Spell { cost, effect: effect(card, &faces[0], allowed) })
+                .map(|cost| Spell::new(cost, effect(card, &faces[0], allowed), &text(card, 0)))
         };
         Profile { name: card.name.clone(), type_words: card.front_type_line().to_lowercase(), lands, spell }
     }
@@ -221,8 +269,9 @@ impl Profile {
 
 fn land_kind(card: &Card, face: usize, types: &Types, allowed: ManaSet) -> LandKind {
     let t = text(card, face);
-    let units = mana_units(&t, card.produced, allowed);
-    if units.is_empty()
+    let makes = mana_units(&t, card.produced, allowed);
+    if makes.units.is_empty()
+        && makes.with_lands.is_none()
         && let Some(m) = FETCH.captures(&t)
     {
         let what = &m[1];
@@ -230,7 +279,8 @@ fn land_kind(card: &Card, face: usize, types: &Types, allowed: ManaSet) -> LandK
         return LandKind::Fetch { finds, tapped: m.get(2).is_some() };
     }
     LandKind::Mana(Land {
-        units,
+        units: makes.units,
+        with_lands: makes.with_lands,
         enters: enters(&t),
         bounce: t.contains("return a land you control to its owner's hand"),
         basic: types.supertypes.contains(Supertype::Basic),
@@ -238,35 +288,77 @@ fn land_kind(card: &Card, face: usize, types: &Types, allowed: ManaSet) -> LandK
     })
 }
 
-/// The mana one tap makes, from its "{T}: Add …" abilities (not ones that sacrifice it): the
-/// ability making the most mana, or, when each makes one, one unit of any of theirs (a
-/// Talisman: {C}, or {U} or {B} for 1 life). A card Scryfall says makes mana but whose ability
-/// doesn't read that way (a basic land, whose ability is reminder text) makes one of what it can.
-fn mana_units(text: &str, produced: ManaSet, allowed: ManaSet) -> Vec<Unit> {
+/// What a source's mana abilities make: from the start, and once enough lands are out.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Makes {
+    pub units: Vec<Unit>,
+    pub with_lands: Option<(usize, Vec<Unit>)>,
+}
+
+/// The mana one activation makes, from its mana abilities (not ones that sacrifice it, nor "max
+/// speed" ones a goldfish never reaches): the ability making the most mana, or, when each makes
+/// one, one unit of any of theirs (a Talisman: {C}, or {U} or {B} for 1 life). Mana an ability
+/// takes in comes off what it makes, so a filter (Blood Celebrant: {B} for any colour) makes
+/// none. Abilities that wait for enough lands make up `with_lands`. A card Scryfall says makes
+/// mana but whose ability doesn't read that way (a basic land, whose ability is reminder text)
+/// makes one of what it can. Mana only some spells may use counts like any other.
+fn mana_units(text: &str, produced: ManaSet, allowed: ManaSet) -> Makes {
     if produced.is_empty() {
-        return vec![];
+        return Makes::default();
     }
     let narrow = |u: Unit| if (u & allowed).is_empty() { u } else { u & allowed };
     let any = narrow(produced);
     let found: Vec<_> = TAP_FOR_MANA.captures_iter(text).collect();
     if found.is_empty() {
-        return vec![any];
+        return Makes { units: vec![any], with_lands: None };
     }
-    // Not one-shot mana (sacrificing it). Mana only some spells may use counts like any other.
-    let abilities: Vec<Vec<Unit>> = found
-        .iter()
-        .filter(|m| !m[2].contains("sacrifice"))
-        .map(|m| ability_units(m.get(1).and_then(|g| g.as_str().parse().ok()).unwrap_or(0), &m[3], any, &narrow))
-        .collect();
+    let (mut always, mut gated, mut gate, mut lent) = (Vec::new(), Vec::new(), 0, Unit::empty());
+    for m in &found {
+        let whole = m.get(0).expect("whole match");
+        let line_start = text[..whole.start()].rfind('\n').map_or(0, |i| i + 1);
+        let line_end = text[whole.end()..].find('\n').map_or(text.len(), |i| whole.end() + i);
+        let line = &text[line_start..line_end];
+        if m[2].contains("sacrifice") || line.starts_with("max speed") {
+            continue;
+        }
+        let (units, kinds) = ability_units(mana_in(&m[1]), &m[3], any, &narrow);
+        if units.is_empty() {
+            // It turns other mana into its colours (Unknown Shores: {1} for any colour): no more
+            // mana, but the land's own can be those colours.
+            lent |= kinds;
+            continue;
+        }
+        match ONLY_WITH_LANDS.captures(line) {
+            Some(g) => {
+                gate = gate.max(usize::from(number(&g[1])));
+                gated.push(units);
+            }
+            None => always.push(units),
+        }
+    }
+    let with_lands =
+        (!gated.is_empty()).then(|| (gate, strongest(always.iter().cloned().chain(gated).collect(), lent)));
+    Makes { units: strongest(always, lent), with_lands }
+}
+
+/// The ability making the most mana; if each makes one, one unit of any of theirs, or of the
+/// colours `lent` by abilities that only turn mana into others.
+fn strongest(abilities: Vec<Vec<Unit>>, lent: Unit) -> Vec<Unit> {
     match abilities.iter().map(Vec::len).max() {
-        None => vec![], // only one-shot mana (Lotus Petal)
-        Some(1) => vec![abilities.iter().flatten().fold(Unit::empty(), |a, u| a | *u)],
+        None => vec![],
+        Some(1) => vec![abilities.iter().flatten().fold(lent, |a, u| a | *u)],
         Some(n) => abilities.into_iter().find(|a| a.len() == n).expect("the longest"),
     }
 }
 
-/// The units one "Add …" makes; `filter` is generic mana it costs ({1}, {T}: Add {U}{B}).
-fn ability_units(filter: usize, what: &str, any: Unit, narrow: &impl Fn(Unit) -> Unit) -> Vec<Unit> {
+/// Mana a cost takes in: "{2}, " is 2, "{B}, " and "{U/R}, " 1 each.
+fn mana_in(costs: &str) -> usize {
+    costs.split('}').filter_map(|s| s.split('{').nth(1)).map(|sym| sym.parse::<usize>().unwrap_or(1)).sum()
+}
+
+/// The units one "Add …" makes, less `taken_in` mana the ability costs ({1}, {T}: Add {U}{B}),
+/// and every kind it can make.
+fn ability_units(taken_in: usize, what: &str, any: Unit, narrow: &impl Fn(Unit) -> Unit) -> (Vec<Unit>, Unit) {
     let symbols = |s: &str| -> Vec<Mana> {
         let mut v = Vec::new();
         let mut rest = s;
@@ -279,24 +371,25 @@ fn ability_units(filter: usize, what: &str, any: Unit, narrow: &impl Fn(Unit) ->
         }
         v
     };
-    let units: Vec<Unit> = if what.contains("three mana") {
-        vec![any; 3]
-    } else if what.contains("two mana") {
-        vec![any; 2]
+    let named: Unit = symbols(what).into_iter().collect();
+    let units: Vec<Unit> = if let Some(m) = MANA_AMOUNT.captures(what) {
+        // "three mana of any one color", "X mana in any combination of colors"
+        vec![if named.is_empty() { any } else { narrow(named) }; usize::from(number(&m[1]))]
     } else if what.contains(" or ") || what.contains("any") {
-        // A choice ("{U} or {B}", "one mana of any color"): one unit of whichever.
-        let named: Unit = symbols(what).into_iter().collect();
-        vec![if named.is_empty() { any } else { narrow(named) }]
+        // A choice: "{U} or {B}", "one mana of any color", "{U}{U}, {U}{R}, or {R}{R}" (two of them).
+        let most = what.split(" or ").flat_map(|a| a.split(", ")).map(|alt| symbols(alt).len()).max().unwrap_or(0);
+        vec![if named.is_empty() { any } else { narrow(named) }; most.max(1)]
     } else {
         let syms = symbols(what);
         if syms.is_empty() { vec![any] } else { syms.into_iter().map(|k| narrow(k.into())).collect() }
     };
-    if filter == 0 {
-        return units;
+    let kinds = units.iter().fold(Unit::empty(), |a, u| a | *u);
+    if taken_in == 0 {
+        return (units, kinds);
     }
-    // A filter ({1}, {T}: Add {U}{B}) turns one mana into its colours: a unit of them, less the input.
-    let union = units.iter().fold(Unit::empty(), |a, u| a | *u);
-    vec![union; units.len().saturating_sub(filter).max(1)]
+    // A filter ({1}, {T}: Add {U}{B}) turns mana into its colours: units of any of them, less
+    // what it takes in; none when it makes no more than it takes (Blood Celebrant).
+    (vec![kinds; units.len().saturating_sub(taken_in)], kinds)
 }
 
 fn enters(t: &str) -> Enters {
@@ -336,15 +429,21 @@ fn effect(card: &Card, types: &Types, allowed: ManaSet) -> Effect {
     let permanent = types.is_permanent();
     let can_tap = permanent && !types.is(CardType::Planeswalker);
     if can_tap && !card.produced.is_empty() && TAP_FOR_MANA.is_match(&t) {
-        let units = mana_units(&t, card.produced, allowed);
+        let units = mana_units(&t, card.produced, allowed).units;
         if !units.is_empty() {
-            return Effect::Rock { units, summoning_sick: types.is(CardType::Creature) };
+            return Effect::Rock {
+                units,
+                next_turn: types.is(CardType::Creature) || t.contains("enters tapped"),
+                once: t.contains("doesn't untap during your untap step"),
+            };
         }
     }
     if let Some(m) = RAMP_SEARCH.captures(&t) {
         let what = &m[2];
         let types_wanted = land_types_in(what);
-        if what.contains("land") || !types_wanted.is_empty() {
+        let start = t[..m.get(0).expect("whole match").start()].rfind(['.', '\n']).map_or(0, |i| i + 1);
+        let waits = NEEDS_COMBAT_OR_DEATH.is_match(&t[start..m.get(0).expect("whole match").start()]);
+        if (what.contains("land") || !types_wanted.is_empty()) && !waits {
             let n = number(&m[1]);
             let to_hand = u8::from(t.contains("other into your hand"));
             return Effect::LandRamp {
@@ -357,17 +456,47 @@ fn effect(card: &Card, types: &Types, allowed: ManaSet) -> Effect {
         }
     }
     let draws = if card.tagged { card.roles.contains(Role::Draw) } else { DRAWS.is_match(&t) };
-    if draws && types.is(CardType::Planeswalker) {
+    if !draws {
+        return Effect::Other;
+    }
+    if types.is(CardType::Planeswalker) {
         // A draw only in a minus ability (Ugin's −10) is a long way off.
         return if LOYALTY_DRAW.is_match(&t) { Effect::Engine } else { Effect::Other };
     }
-    if draws {
-        if permanent && ENGINE.is_match(&t) {
-            return Effect::Engine;
-        }
-        let drawn = DRAWS.captures_iter(&t).map(|c| number(&c[1])).max().unwrap_or(1);
-        let discarded = DISCARDS.captures_iter(&t).map(|c| number(&c[1])).max().unwrap_or(0);
-        return Effect::Draw { cards: drawn.saturating_sub(discarded) };
+    if permanent && draws_again(&t) {
+        return Effect::Engine;
     }
-    Effect::Other
+    let drawn = DRAWS
+        .captures_iter(&t)
+        .chain(TO_HAND.captures_iter(&t))
+        .map(|c| number(&c[1]))
+        .chain(DRAWS_SOME.is_match(&t).then_some(VARIABLE_DRAW))
+        .max();
+    let Some(drawn) = drawn else {
+        // Tagged as card advantage without drawing: getting cards back from an empty graveyard
+        // finds nothing; anything else is taken as a card.
+        return if REGROWTH.is_match(&t) || permanent { Effect::Other } else { Effect::Draw { cards: 1 } };
+    };
+    // A permanent draws once as it enters, or by sacrificing itself (Mishra's Bauble, Aether
+    // Spellbomb); its other draws need something that doesn't happen in a goldfish (a death, an
+    // attack, another permanent to sacrifice).
+    let name = card.name.to_lowercase();
+    let sacrifices_itself = DRAW_ABILITY
+        .captures_iter(&t)
+        .any(|c| c[1].contains("sacrifice this") || c[1].contains(&format!("sacrifice {}", front_face(&name))));
+    if permanent && !DRAW_ON_ENTERING.is_match(&t) && !sacrifices_itself {
+        return Effect::Other;
+    }
+    let discarded = DISCARDS.captures_iter(&t).map(|c| number(&c[1])).max().unwrap_or(0);
+    Effect::Draw { cards: drawn.saturating_sub(discarded) }
+}
+
+/// Does a permanent draw again and again: a trigger a goldfish sets off (not a death, an attack
+/// or combat damage), or an ability it can use every turn (not one that sacrifices, removes
+/// counters, discards or exiles something)?
+fn draws_again(t: &str) -> bool {
+    DRAW_TRIGGER.captures_iter(t).any(|c| !NEEDS_COMBAT_OR_DEATH.is_match(&c[1]))
+        || DRAW_ABILITY
+            .captures_iter(t)
+            .any(|c| !["sacrifice", "remove", "discard", "exile"].iter().any(|w| c[1].contains(w)))
 }

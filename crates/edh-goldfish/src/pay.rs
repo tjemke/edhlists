@@ -4,18 +4,17 @@ use edh_data::mana::{Mana, ManaCost, ManaSet, Pip};
 
 use crate::profile::Unit;
 
-/// What a pip will take: one unit of these kinds, or (if none is left) `fallback` generic mana
-/// or life.
+/// What a pip will take: one unit of these kinds, or (if none is left) `fallback` generic mana.
 struct Need {
     kinds: ManaSet,
     /// Generic mana it can be paid with instead ({2/W}), or `None` if it must be these kinds.
-    /// Phyrexian pips can always be paid with life, which costs no mana: `Some(0)`.
     fallback: Option<u32>,
 }
 
 /// Pay `cost` (X as 0) plus `extra` generic from `units`: the units left, or `None` if it can't
-/// be paid. Coloured pips go first, the hardest to pay first, each from the least flexible unit
-/// that can pay it; generic mana then takes the least flexible units left.
+/// be paid. Phyrexian pips are paid with life, which a goldfish always has to spare. Coloured
+/// pips go first, the hardest to pay first, each from the least flexible unit that can pay it;
+/// generic mana then takes the least flexible units left.
 pub fn pay(units: &[Unit], cost: &ManaCost, extra: u32) -> Option<Vec<Unit>> {
     let mut generic = cost.generic + extra;
     let mut needs = Vec::with_capacity(cost.pips.len());
@@ -25,8 +24,7 @@ pub fn pay(units: &[Unit], cost: &ManaCost, extra: u32) -> Option<Vec<Unit>> {
             Pip::One(m) => Need { kinds: one(m), fallback: None },
             Pip::Hybrid(a, b) => Need { kinds: one(a) | one(b), fallback: None },
             Pip::TwoOr(c) => Need { kinds: one(c.into()), fallback: Some(2) },
-            Pip::Phyrexian(c) => Need { kinds: one(c.into()), fallback: Some(0) },
-            Pip::PhyrexianHybrid(a, b) => Need { kinds: one(a.into()) | one(b.into()), fallback: Some(0) },
+            Pip::Phyrexian(_) | Pip::PhyrexianHybrid(..) => continue,
             Pip::Snow => {
                 generic += 1;
                 continue;
@@ -94,6 +92,13 @@ mod tests {
         assert!(pay(&units(&["C", "C"]), &cost("{2/G}"), 0).is_some(), "two generic for {{2/G}}");
         assert!(pay(&units(&["C"]), &cost("{2/G}"), 0).is_none());
         assert!(pay(&units(&[]), &cost("{G/P}"), 0).is_some(), "2 life for {{G/P}}");
+    }
+
+    #[test]
+    fn phyrexian_pips_leave_the_mana_for_the_rest_of_the_cost() {
+        // K'rrik: four mana and 6 life. Paying {B/P} with black would leave too little for {4}.
+        let left = pay(&units(&["B", "B", "B", "B"]), &cost("{4}{B/P}{B/P}{B/P}"), 0);
+        assert_eq!(left.map(|l| l.len()), Some(0));
     }
 
     #[test]

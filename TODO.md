@@ -88,20 +88,37 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
 
 - [ ] **Teach the mana goldfish more cards.** `crates/edh-goldfish/src/profile.rs` reads lands,
   rocks/dorks, land-ramp and draw; everything else is a spell of its cost. Left out, roughly by how
-  much they'd move the numbers: Treasure makers and rituals (one-shot mana: no ramp now), cost
-  reducers (Jodah, Goreclaw, Urza's Incubator), tutors for lands or rocks, Fabled Passage's untap
-  with four lands (counted tapped), Exotic Orchard and Fellwar Stone (taken to make any of the
-  deck's colours), and commanders cast again after dying. Each is a pattern in `profile.rs` plus an
-  `Effect` the game applies (`game.rs`), with a test. Also: counter mana (Pentad Prism,
-  Crystalline Crawler) isn't counted, and should be one-shot; mana only some spells may use counts
-  as any mana (Lord of the Forsaken: spells from the graveyard; Gwenna, Inga and Esika, Ixalli's
-  Lorekeeper, Haven of the Spirit Dragon: creatures, Dinosaurs, Dragons). Not counting it at all
-  was tried and was worse: the commander is often what it pays for (Pantlaza is a Dinosaur), and
-  commander-by-T4 fell 2-5 points in three of the nine decks. A unit that knows what it may pay
-  for would do it right. And ramp is cast before the commander whatever it costs: Lord of the
-  Forsaken (5) goes ahead of Kotis (3), 1.2 points of Sultai Arisen's commander-by-T4. Found by playing the nine sim decks 2,000,000 times against the Python prototype's
-  200,000 (2026-11-20), where each difference traced to cards one model reads better. *Small*
-  each.
+  much they'd move the numbers: Treasure makers and rituals (one-shot mana: no ramp now); counter
+  mana (Pentad Prism, Crystalline Crawler: not counted; Sphere of the Suns: three uses, counted as
+  a rock for good); tutors for lands or rocks; Fabled Passage's untap with four lands (counted
+  tapped); Exotic Orchard and Fellwar Stone (taken to make any of the deck's colours); commanders
+  cast again after dying. Mana only some spells may use counts as any mana (Lord of the Forsaken:
+  spells from the graveyard; Gwenna, Inga and Esika, Ixalli's Lorekeeper, Eldrazi Temple:
+  creatures, Dinosaurs, Eldrazi). Not counting it was tried and was worse: the commander is often
+  what it pays for (Pantlaza is a Dinosaur), and commander-by-T4 fell 2-5 points in three of the
+  nine decks; a unit that knows what it may pay for would do it right. Ramp is cast before the
+  commander whatever it costs: Lord of the Forsaken (5) goes ahead of Kotis (3), 1.2 points of
+  Sultai Arisen's commander-by-T4. Each is a pattern in `profile.rs` plus an `Effect` the game
+  applies (`game.rs`), with a test. Found by playing sim decks against the Python prototype at
+  2,000,000 games and reading every card of three EDHREC decks against its oracle text
+  (2026-11-20). *Small* each.
+
+- [ ] **Play the engines decks are built around in the mana goldfish.** Each deck tested had one the
+  goldfish can't see, so its mana is undercounted where it matters most: Swamp doublers (Crypt
+  Ghast, Nirkana Revenant, Bubbling Muck) and Forsaken Monument's {C}; cost reducers (Etherium
+  Sculptor, Foundry Inspector, Ugin the Ineffable, Goreclaw, Urza's Incubator) and affinity or
+  improvise (Thoughtcast, Thought Monitor, Kappa Cannoneer, Inspiring Statuary); Blinkmoth Urn;
+  extra land drops and lands from the library's top (Oracle of Mul Daya, Augur of Autumn);
+  commanders' own mana (Urza's "tap an artifact: add {U}", K'rrik's life for {B}). Needs a cost
+  step before `pay()` (`pay.rs`) and per-turn effects in `game.rs`, read from oracle text in
+  `profile.rs`. *Medium.*
+
+- [ ] **`check` finds no commander in edh-scout's own exported decklists.** The plain export writes
+  the commander first with no section (what MPCFill and proxy printers take), so `check` on it
+  leaves out everything that needs the commander (the goldfish's commander-by-T4, synergy, the
+  colour identity) unless `--commander` is given, and says so only in a warning. `check` could take
+  a first line that can lead a deck as the commander when nothing else names one, saying so
+  (`parse_decklist` in `edh-data/src/deck.rs`, `run_check` in `main.rs`). *Small.*
 
 - [ ] **Score each deck faster still.** Scoring takes ~150-180 µs a deck since combos are looked up
   under their rarest card (it was ~285-435 µs). `edhpl::bracket` lowercases and regex-matches every
