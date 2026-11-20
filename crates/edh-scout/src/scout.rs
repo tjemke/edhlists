@@ -27,8 +27,9 @@ use rayon::prelude::*;
 
 use crate::analysis::{Analysis, Context, Score, analyze, synergy_source};
 use crate::filters::{CompiledFilter, Matched};
+use crate::plan::{EXPAND_BY, SearchPlan};
 use crate::rank::Ranked;
-use crate::select::{Ceiling, SelectOptions, select, weighted_order_from};
+use crate::select::{Ceiling, SelectOptions, select};
 
 /// Per-commander side data: synergy and combo votes. Each piece is optional — a failure costs
 /// that signal, not the run.
@@ -174,6 +175,20 @@ pub fn prepare(http: &Http, store: &DeckStore, opts: &ScoutOptions, progress: &d
     Ok(Prepared { decks, sources, stats, to_fetch, more })
 }
 
+/// How a search across commanders goes about it, besides which decks are eligible.
+#[derive(Clone, Copy, Debug)]
+pub struct SearchOptions {
+    /// Commanders to scan first; the rest of the candidates wait in reserve.
+    pub scan: usize,
+    /// Decks failing the card filters, none passing, before a commander counts as a miss.
+    pub miss_after: usize,
+    /// Decks fetched between one widening and the next; 0 never widens.
+    pub widen_every: usize,
+    /// Carry on past the fetch budget until every eligible deck is fetched (or the fetcher is
+    /// dropped): the browser's `keep_fetching`.
+    pub keep_going: bool,
+}
+
 pub enum FetchEvent {
     Deck(Box<Deck>),
     /// A deck already on disk (no request was made for it).
@@ -192,6 +207,8 @@ pub enum FetchEvent {
     },
     /// This many decks are now queued for fetching.
     Queued(usize),
+    /// Searching across commanders, too few had matching decks: this many more tables to scan.
+    Expanded(usize),
     Failed {
         what: String,
         error: String,
@@ -206,12 +223,16 @@ pub enum FetchEvent {
 pub struct Fetcher {
     rx: Receiver<FetchEvent>,
     cancel: Arc<AtomicBool>,
+    /// Where [`Fetcher::report`] tells the worker how its decks did against the card filters.
+    outcomes: Sender<(String, bool)>,
 }
 
-/// What a worker thread gets: where to send events, and whether to stop.
+/// What a worker thread gets: where to send events, whether to stop, and how the decks it sent
+/// did against the card filters (deck id, passed), as they're scored.
 struct Worker {
     tx: Sender<FetchEvent>,
     stop: Arc<AtomicBool>,
+    outcomes: Receiver<(String, bool)>,
 }
 
 impl Worker {
@@ -239,13 +260,19 @@ impl Worker {
 impl Fetcher {
     fn start(work: impl FnOnce(&Worker) + Send + 'static) -> Self {
         let (tx, rx) = mpsc::channel();
+        let (outcomes, outcomes_rx) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
-        let worker = Worker { tx, stop: cancel.clone() };
+        let worker = Worker { tx, stop: cancel.clone(), outcomes: outcomes_rx };
         std::thread::spawn(move || {
             work(&worker);
             let _ = worker.tx.send(FetchEvent::Done);
         });
-        Self { rx, cancel }
+        Self { rx, cancel, outcomes }
+    }
+
+    /// Tell the worker whether the deck it sent with this id passed the card filters.
+    pub fn report(&self, id: &str, passed: bool) {
+        let _ = self.outcomes.send((id.to_string(), passed));
     }
 
     /// Fetch these decks of one commander.
@@ -259,17 +286,18 @@ impl Fetcher {
         })
     }
 
-    /// Search across `candidates`: scan each one's deck table (stored decks show up right away),
-    /// then spend the fetch budget across the commanders with matching decks. With `keep_going`,
-    /// carry on past the budget until every matching deck is fetched (or the fetcher is dropped).
+    /// Search across the first `how.scan` of `candidates`: scan each one's deck table (stored
+    /// decks show up right away), then spend the fetch budget across the commanders with
+    /// matching decks, by how their decks do (see [`crate::plan`]). When too few have matching
+    /// decks, scan more of the rest, a few at a time.
     pub fn spawn_search(
         http: Arc<Http>,
         store: DeckStore,
         candidates: Vec<ListedCommander>,
         opts: SelectOptions,
-        keep_going: bool,
+        how: SearchOptions,
     ) -> Self {
-        Self::start(move |w| search(w, &http, &store, candidates, &opts, keep_going))
+        Self::start(move |w| search(w, &http, &store, candidates, &opts, how))
     }
 
     /// Pass on decks already in the deck store, grouped by commander (its slug first): each
@@ -312,8 +340,9 @@ fn search(
     store: &DeckStore,
     candidates: Vec<ListedCommander>,
     opts: &SelectOptions,
-    keep_going: bool,
+    how: SearchOptions,
 ) {
+    let SearchOptions { scan, miss_after, widen_every, keep_going } = how;
     let mut with_sources: HashSet<String> = HashSet::new();
     let ensure_sources = |slug: &str, with_sources: &mut HashSet<String>| -> bool {
         if with_sources.insert(slug.to_string()) {
@@ -322,74 +351,116 @@ fn search(
         }
         true
     };
+    let mut reserve: VecDeque<ListedCommander> = candidates.into();
+    let first: Vec<ListedCommander> = reserve.drain(..scan.min(reserve.len())).collect();
+    let mut plan = SearchPlan::new(miss_after, widen_every);
+    // Per planned commander: its slug and the decks still to fetch.
+    let mut queues: Vec<(String, VecDeque<TableRow>)> = Vec::new();
+    // Which commander each deck sent on belongs to, for the outcomes that come back.
+    let mut owner: HashMap<String, usize> = HashMap::new();
 
-    // Phase 1: scan every candidate's deck table; stored matches appear immediately.
-    // (slug, weight, decks already stored, decks to fetch)
-    let mut fresh: Vec<(String, f64, usize, VecDeque<TableRow>)> = Vec::new();
-    for c in &candidates {
-        if w.stop.load(Ordering::Relaxed) {
-            return;
-        }
-        let table = match edhrec::deck_table(http, &c.slug) {
-            Ok(t) => t,
-            Err(e) if e.downcast_ref::<HostBlocked>().is_some() => {
-                w.send(FetchEvent::Stopped(e.to_string()));
-                return;
+    // Scan these commanders' deck tables: stored matches appear immediately, the rest queue up.
+    // False once the worker should stop.
+    let scan_tables = |batch: Vec<ListedCommander>,
+                       plan: &mut SearchPlan,
+                       queues: &mut Vec<(String, VecDeque<TableRow>)>,
+                       owner: &mut HashMap<String, usize>,
+                       with_sources: &mut HashSet<String>|
+     -> bool {
+        for c in batch {
+            if w.stop.load(Ordering::Relaxed) {
+                return false;
             }
-            Err(e) => {
-                if !w.send(FetchEvent::Failed { what: c.name.clone(), error: format!("{e:#}") })
-                    || !w.send(FetchEvent::Table { slug: String::new(), listed: 0, eligible: 0 })
-                {
-                    return;
+            let table = match edhrec::deck_table(http, &c.slug) {
+                Ok(t) => t,
+                Err(e) if e.downcast_ref::<HostBlocked>().is_some() => {
+                    w.send(FetchEvent::Stopped(e.to_string()));
+                    return false;
                 }
-                continue;
-            }
-        };
-        let sel = select(&table.table, opts, |h| store.contains(h));
-        if !w.send(FetchEvent::Table { slug: c.slug.clone(), listed: sel.total, eligible: sel.eligible }) {
-            return;
-        }
-        if !sel.cached.is_empty() {
-            if !ensure_sources(&c.slug, &mut with_sources) {
-                return;
-            }
-            let stored = match stored_decks(store, &sel.cached, &[]) {
-                Ok(decks) => decks,
                 Err(e) => {
-                    w.send(FetchEvent::Failed { what: format!("{}'s stored decks", c.name), error: format!("{e:#}") });
-                    Vec::new()
+                    if !w.send(FetchEvent::Failed { what: c.name.clone(), error: format!("{e:#}") })
+                        || !w.send(FetchEvent::Table { slug: String::new(), listed: 0, eligible: 0 })
+                    {
+                        return false;
+                    }
+                    continue;
                 }
             };
-            for d in stored {
-                if !w.send(FetchEvent::StoredDeck(Box::new(d))) {
-                    return;
+            let sel = select(&table.table, opts, |h| store.contains(h));
+            if !w.send(FetchEvent::Table { slug: c.slug.clone(), listed: sel.total, eligible: sel.eligible }) {
+                return false;
+            }
+            let rows: VecDeque<TableRow> = if http.offline() {
+                VecDeque::new()
+            } else {
+                sel.to_fetch.iter().chain(&sel.more).map(|r| (*r).clone()).collect()
+            };
+            let i = plan.add(sel.eligible, sel.cached.len(), rows.len());
+            queues.push((c.slug.clone(), rows));
+            if !sel.cached.is_empty() {
+                if !ensure_sources(&c.slug, with_sources) {
+                    return false;
+                }
+                let stored = match stored_decks(store, &sel.cached, &[]) {
+                    Ok(decks) => decks,
+                    Err(e) => {
+                        w.send(FetchEvent::Failed {
+                            what: format!("{}'s stored decks", c.name),
+                            error: format!("{e:#}"),
+                        });
+                        Vec::new()
+                    }
+                };
+                for d in stored {
+                    owner.insert(d.id.clone(), i);
+                    if !w.send(FetchEvent::StoredDeck(Box::new(d))) {
+                        return false;
+                    }
                 }
             }
         }
-        if !sel.to_fetch.is_empty() && !http.offline() {
-            let stored = sel.cached.len();
-            let rows = sel.to_fetch.into_iter().chain(sel.more).cloned().collect();
-            fresh.push((c.slug.clone(), (sel.eligible as f64).sqrt(), stored, rows));
-        }
-    }
-
-    // Phase 2: share the budget out by how many matching decks each commander has, interleaving
-    // the commanders so every one shows up early. Decks already stored count towards a
-    // commander's share, so commanders with few or none stored are fetched first instead of being
-    // drowned out by one with many. Past the budget, the same order continues.
-    let weights: Vec<f64> = fresh.iter().map(|f| f.1).collect();
-    let caps: Vec<usize> = fresh.iter().map(|f| f.3.len()).collect();
-    let had: Vec<usize> = fresh.iter().map(|f| f.2).collect();
-    let mut order = weighted_order_from(&weights, &caps, &had);
-    if !keep_going {
-        order.truncate(opts.budget);
-    }
-    if !w.send(FetchEvent::Queued(order.len())) {
+        true
+    };
+    if !scan_tables(first, &mut plan, &mut queues, &mut owner, &mut with_sources) {
         return;
     }
-    for i in order {
-        let (slug, _, _, rows) = &mut fresh[i];
-        let row = rows.pop_front().expect("weighted_order stays within each queue");
+
+    // Fetch by the plan, widening when too few commanders have matching decks. Offline, nothing is
+    // fetched and nothing more is scanned.
+    let mut fetched = 0;
+    let queued = |plan: &SearchPlan, fetched: usize| {
+        let all = fetched + plan.queued();
+        if keep_going { all } else { all.min(opts.budget) }
+    };
+    if !w.send(FetchEvent::Queued(queued(&plan, fetched))) {
+        return;
+    }
+    loop {
+        while let Ok((id, passed)) = w.outcomes.try_recv() {
+            if let Some(&i) = owner.get(&id) {
+                plan.judge(i, passed);
+            }
+        }
+        if !keep_going && fetched >= opts.budget {
+            return;
+        }
+        if !http.offline() && plan.should_expand(reserve.len()) {
+            let batch: Vec<ListedCommander> = reserve.drain(..EXPAND_BY.min(reserve.len())).collect();
+            plan.expanded();
+            if !w.send(FetchEvent::Expanded(batch.len()))
+                || !scan_tables(batch, &mut plan, &mut queues, &mut owner, &mut with_sources)
+                || !w.send(FetchEvent::Queued(queued(&plan, fetched)))
+            {
+                return;
+            }
+            continue;
+        }
+        let Some(i) = plan.next() else { return };
+        let (slug, rows) = &mut queues[i];
+        let row = rows.pop_front().expect("the plan only picks commanders with decks queued");
+        plan.took(i);
+        owner.insert(row.urlhash.clone(), i);
+        fetched += 1;
         if !ensure_sources(slug, &mut with_sources) || !w.fetch(http, store, &row, &[]) {
             return;
         }
@@ -778,6 +849,10 @@ impl<'a> Pool<'a> {
                 self.stats.queued = n;
                 None
             }
+            FetchEvent::Expanded(n) => {
+                self.stats.commanders_total += n;
+                None
+            }
             FetchEvent::Failed { what, error } => {
                 self.stats.failed += 1;
                 Some(format!("skipped {what}: {error}"))
@@ -880,15 +955,17 @@ impl Drop for Feed {
 }
 
 fn feed(scorer: &Scorer, backlog: Vec<Deck>, fetcher: Option<Fetcher>, tx: &Sender<FeedEvent>, stop: &AtomicBool) {
-    // Score a batch together, then pass each deck on; false once nobody is listening.
-    let pass_on = |batch: Vec<(Deck, Origin)>| -> bool {
+    // Score a batch together, tell the fetcher how its decks did against the card filters, then
+    // pass each deck on; false once nobody is listening.
+    let pass_on = |batch: Vec<(Deck, Origin)>, fetcher: Option<&Fetcher>| -> bool {
         let (decks, from): (Vec<Deck>, Vec<Origin>) = batch.into_iter().unzip();
         let scored = scorer.score_many(&decks);
-        decks
-            .into_iter()
-            .zip(scored)
-            .zip(from)
-            .all(|((deck, scored), from)| tx.send(FeedEvent::Scored { deck: Box::new(deck), scored, from }).is_ok())
+        decks.into_iter().zip(scored).zip(from).all(|((deck, scored), from)| {
+            if let Some(f) = fetcher {
+                f.report(&deck.id, scored.is_some());
+            }
+            tx.send(FeedEvent::Scored { deck: Box::new(deck), scored, from }).is_ok()
+        })
     };
     let mut backlog = backlog.into_iter();
     loop {
@@ -899,7 +976,7 @@ fn feed(scorer: &Scorer, backlog: Vec<Deck>, fetcher: Option<Fetcher>, tx: &Send
         if chunk.is_empty() {
             break;
         }
-        if !pass_on(chunk) {
+        if !pass_on(chunk, None) {
             return;
         }
     }
@@ -931,7 +1008,7 @@ fn feed(scorer: &Scorer, backlog: Vec<Deck>, fetcher: Option<Fetcher>, tx: &Send
                 FetchEvent::StoredDeck(d) => batch.push((*d, Origin::Stored)),
                 other => {
                     // In order: the decks before a commander's data arrived don't need it.
-                    if !pass_on(std::mem::take(&mut batch)) {
+                    if !pass_on(std::mem::take(&mut batch), Some(&fetcher)) {
                         return;
                     }
                     match other {
@@ -946,7 +1023,7 @@ fn feed(scorer: &Scorer, backlog: Vec<Deck>, fetcher: Option<Fetcher>, tx: &Send
                 }
             }
         }
-        if !pass_on(batch) {
+        if !pass_on(batch, Some(&fetcher)) {
             return;
         }
     }
@@ -1104,7 +1181,7 @@ mod tests {
         let combos = ComboDb::empty();
         let mut pool = Pool::new(&cards, &combos, HashMap::new(), PoolStats { scoring: 3, ..Default::default() });
         let (tx, rx) = mpsc::channel();
-        let fetcher = Fetcher { rx, cancel: Arc::new(AtomicBool::new(false)) };
+        let fetcher = Fetcher { rx, cancel: Arc::new(AtomicBool::new(false)), outcomes: mpsc::channel().0 };
         let mut fetched = decks(5).split_off(3);
         tx.send(FetchEvent::Deck(Box::new(fetched.remove(0)))).unwrap();
         tx.send(FetchEvent::StoredDeck(Box::new(fetched.remove(0)))).unwrap();
@@ -1118,7 +1195,7 @@ mod tests {
         assert_eq!((pool.stats.scoring, pool.stats.fetched, pool.stats.cached), (0, 1, 1));
         // Dropping a feed stops its thread even while the fetcher is still quiet.
         let (_tx, rx) = mpsc::channel();
-        let quiet = Fetcher { rx, cancel: Arc::new(AtomicBool::new(false)) };
+        let quiet = Fetcher { rx, cancel: Arc::new(AtomicBool::new(false)), outcomes: mpsc::channel().0 };
         std::thread::scope(|s| drop(Feed::start(s, pool.scorer(), vec![], Some(quiet))));
     }
 
@@ -1146,6 +1223,42 @@ mod tests {
         assert_eq!((details.matches[0].count, details.card_count), (1, 2));
         assert_eq!(pool.stats.unmatched, 1);
         assert!(pool.stats.summary().ends_with("1 didn't match"));
+    }
+
+    #[test]
+    fn the_fetcher_hears_how_its_decks_did_against_the_card_filters() {
+        let mut eq = creature("Bonesplitter");
+        eq.type_line = "Artifact — Equipment".into();
+        let cards = CardDb::new(vec![creature("Alpha One"), eq, creature("Grizzly Bears")]);
+        let combos = ComboDb::empty();
+        let filter = match "equipment=1+".parse::<crate::filters::Filter>().unwrap() {
+            crate::filters::Filter::Cards(c) => c.compile(&cards, None).unwrap(),
+            _ => unreachable!(),
+        };
+        let mut pool = Pool::new(&cards, &combos, HashMap::new(), PoolStats::default()).with_filters(vec![filter]);
+        let deck = |id: &str, card: &str| Deck {
+            id: id.into(),
+            commanders: vec!["Alpha One".into()],
+            cards: [(card.to_string(), 1)].into(),
+            ..Default::default()
+        };
+        let (heard_tx, heard) = mpsc::channel();
+        let (passes, fails) = (deck("passes", "Bonesplitter"), deck("fails", "Grizzly Bears"));
+        let fetcher = Fetcher::start(move |w| {
+            w.send(FetchEvent::StoredDeck(Box::new(passes)));
+            w.send(FetchEvent::StoredDeck(Box::new(fails)));
+            for _ in 0..2 {
+                let outcome = w.outcomes.recv_timeout(Duration::from_secs(10)).expect("no outcome came back");
+                heard_tx.send(outcome).unwrap();
+            }
+        });
+        std::thread::scope(|s| {
+            let feed = Feed::start(s, pool.scorer(), vec![], Some(fetcher));
+            pool.drain(feed);
+        });
+        let mut heard: Vec<(String, bool)> = heard.try_iter().collect();
+        heard.sort();
+        assert_eq!(heard, vec![("fails".into(), false), ("passes".into(), true)]);
     }
 
     #[test]

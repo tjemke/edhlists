@@ -41,8 +41,10 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   A commander page's inclusion rates give each commander's expected count of a filter's cards
   (sum over listed matching cards); use it to (1) weight the fetch budget by √eligible × P(pass)
   instead of √eligible, (2) update P(pass) from fetched decks (Beta prior worth ~6 decks; this
-  folds in "learn each commander's match rate"), and (3) widen the candidates when the outlook is
-  poor: matching cards that separate high- from low-fit commanders (Game Changers and >30%
+  folds in "learn each commander's match rate"; done in `plan.rs`, starting from every
+  commander's observed rate instead of a page's estimate), and (3) widen the candidates when the
+  outlook is poor (done for the candidates past `--commanders`, 5 at a time; not yet with new
+  sources): matching cards that separate high- from low-fit commanders (Game Changers and >30%
   staples left out) → their EDHREC card pages (`cards/<slug>.json`: top 24 + 5 new commanders
   with inclusion) → those commanders' pages → keep the good ones. Use the target brackets' pages
   (`commanders/<slug>/core.json` = B2, `upgraded.json` = B3) where possible.
@@ -79,7 +81,8 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   fetch budget, and it ranks by decks with the card, so smaller commanders that play it often
   are left off (Carth: 460 of 4,156 decks, 11%, below the 594 cutoff). With
   `-T planeswalkers=15+ -T equipment=10+ -T name:aetherspark=1` the 30 slots went to 24 card-page
-  commanders, most with no 15-walker decks, and dropped Bolas, Carth, Jace and Chandra.
+  commanders, most with no 15-walker decks; Bolas, Carth, Jace and Chandra now wait in reserve
+  and are scanned once the search widens.
 
 ## Maybe
 

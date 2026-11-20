@@ -8,6 +8,12 @@ What changed in each version, newest first. How versions are numbered: see *Vers
 - Searching across commanders with a `-T` that asks for one particular card
   (`-T name:aetherspark=1`) starts from EDHREC's page for that card: the commanders it lists as
   playing the card most come first, sharing the `--commanders` slots with the theme ones.
+- Searching across commanders widens when too few commanders have matching decks: the candidates
+  past `--commanders` wait in reserve and are scanned 5 at a time, and each commander's share of
+  the fetches follows how many of its decks pass the `-T` filters, not only its table. A commander
+  counts as a miss after 3 failing decks, none passing, and the search widens at most every 5
+  fetched decks: `--miss-after N` and `--widen-every N` (0: never), or `miss_after` and
+  `widen_every` in the config file's `[search]`, change them.
 - Colour searches take a number, as on Scryfall: `c=3` is exactly three colours, `c>=4` four or
   more, and `-T 'c>=wu c=3=5+'` asks for five three-colour cards with white and blue.
 - A colour search (`c=w`, `c=3`) takes a double-faced card as all its faces' colours together:

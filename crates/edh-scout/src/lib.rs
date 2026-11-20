@@ -10,6 +10,7 @@ pub mod export;
 pub mod filters;
 pub mod picker;
 pub mod plain;
+pub mod plan;
 pub mod rank;
 pub mod roles;
 pub mod scout;

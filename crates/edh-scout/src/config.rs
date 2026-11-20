@@ -8,6 +8,13 @@
 //! # Deck list beside the details ("side-by-side"), above them ("stacked"), or "auto".
 //! layout = "auto"
 //!
+//! [search]
+//! # Searching across commanders: decks failing the -T filters, none passing, before a commander
+//! # counts as a miss (and too many misses widen the search).
+//! miss_after = 3
+//! # Decks fetched between one widening and the next; 0 never widens.
+//! widen_every = 5
+//!
 //! [performance]
 //! # Threads for bulk work (reading, parsing and scoring stored decks); default: half the CPUs.
 //! threads = 4
@@ -22,7 +29,26 @@ use serde::Deserialize;
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub tui: TuiConfig,
+    pub search: SearchConfig,
     pub performance: PerformanceConfig,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct SearchConfig {
+    /// Searching across commanders: how many of a commander's decks may fail the `-T` filters,
+    /// none passing, before it counts as a miss (see [`crate::plan`]). `scout --miss-after`
+    /// overrides it.
+    pub miss_after: usize,
+    /// Searching across commanders: decks fetched between one widening of the search and the
+    /// next; 0 never widens. `scout --widen-every` overrides it.
+    pub widen_every: usize,
+}
+
+impl Default for SearchConfig {
+    fn default() -> Self {
+        Self { miss_after: crate::plan::MISS_AFTER, widen_every: crate::plan::WIDEN_EVERY }
+    }
 }
 
 #[derive(Debug, Default, Deserialize, PartialEq)]
@@ -117,6 +143,9 @@ impl Config {
         if config.performance.threads == Some(0) {
             anyhow::bail!("[performance] threads must be at least 1");
         }
+        if config.search.miss_after == 0 {
+            anyhow::bail!("[search] miss_after must be at least 1");
+        }
         Ok(config)
     }
 }
@@ -155,6 +184,20 @@ mod tests {
         assert_eq!(Config::parse("[performance]\nthreads = 3\n").unwrap().performance.threads(), 3);
         assert!(Config::parse("").unwrap().performance.threads() >= 1);
         assert!(Config::parse("[performance]\nthreads = 0\n").is_err());
+    }
+
+    #[test]
+    fn miss_after() {
+        assert_eq!(Config::parse("").unwrap().search.miss_after, crate::plan::MISS_AFTER);
+        assert_eq!(Config::parse("[search]\nmiss_after = 8\n").unwrap().search.miss_after, 8);
+        assert!(Config::parse("[search]\nmiss_after = 0\n").is_err(), "0 would make every commander a miss");
+    }
+
+    #[test]
+    fn widen_every() {
+        assert_eq!(Config::parse("").unwrap().search.widen_every, crate::plan::WIDEN_EVERY);
+        assert_eq!(Config::parse("[search]\nwiden_every = 20\n").unwrap().search.widen_every, 20);
+        assert_eq!(Config::parse("[search]\nwiden_every = 0\n").unwrap().search.widen_every, 0, "0 turns it off");
     }
 
     #[test]

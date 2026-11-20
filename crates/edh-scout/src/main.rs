@@ -21,7 +21,7 @@ use edh_scout::export::{self, ExportFormat, ReportInput};
 use edh_scout::filters::{self, CardFilter, CompiledFilter, CountColumn, Filter};
 use edh_scout::rank::{RankMode, Target, Weights, hoist, mix, parse_range, rank};
 use edh_scout::scout::{
-    Feed, Fetcher, Pool, PoolStats, Prepared, ScoutOptions, load_commander_sources, load_salt, prepare,
+    Feed, Fetcher, Pool, PoolStats, Prepared, ScoutOptions, SearchOptions, load_commander_sources, load_salt, prepare,
 };
 use edh_scout::select::SelectOptions;
 use edh_scout::status::Status;
@@ -96,9 +96,20 @@ struct ScoutArgs {
     /// it searches across commanders.
     #[arg(short = 'T', long = "type", value_name = "WHAT[=RANGE]")]
     types: Vec<String>,
-    /// Searching across commanders: how many commanders' deck tables to scan (1 request each).
+    /// Searching across commanders: how many commanders' deck tables to scan first (1 request
+    /// each). More are scanned, a few at a time, when too few of them have matching decks.
     #[arg(long, default_value_t = 30, value_name = "N")]
     commanders: usize,
+    /// Searching across commanders: how many of a commander's decks may fail the card filters,
+    /// none passing, before it counts as a miss; too many misses widen the search. Higher gives
+    /// each commander longer and widens later [default: 3, or the config's search.miss_after].
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
+    miss_after: Option<u32>,
+    /// Searching across commanders: how many decks to fetch between one widening of the search
+    /// and the next; higher widens more slowly, 0 never [default: 5, or the config's
+    /// search.widen_every].
+    #[arg(long, value_name = "N")]
+    widen_every: Option<usize>,
     #[command(flatten)]
     target: TargetArgs,
     /// How to rank decks.
@@ -353,11 +364,15 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
             &cards,
             &combos,
             salt,
-            &args,
             &target,
             select,
             card_filters,
-            keep_fetching,
+            SearchOptions {
+                scan: args.commanders.max(1),
+                miss_after: args.miss_after.map_or(config.search.miss_after, |n| n as usize),
+                widen_every: args.widen_every.unwrap_or(config.search.widen_every),
+                keep_going: keep_fetching,
+            },
             &status,
         )?,
     };
@@ -534,11 +549,10 @@ fn start_search<'a>(
     cards: &'a CardDb,
     combos: &'a ComboDb,
     salt: std::collections::HashMap<String, f64>,
-    args: &ScoutArgs,
     target: &Target,
     select: SelectOptions,
     card_filters: Vec<CompiledFilter>,
-    keep_fetching: bool,
+    how: SearchOptions,
     status: &Status,
 ) -> Result<Session<'a>> {
     if select.types.is_empty() && !card_filters.iter().any(|f| f.filter.has_range()) {
@@ -568,7 +582,7 @@ fn start_search<'a>(
             Err(e) => status.note(&format!("  note: couldn't load EDHREC's '{theme}' theme ({e:#})")),
         }
     }
-    let limit = args.commanders.max(1);
+    let limit = how.scan;
     let mut seen = std::collections::HashSet::new();
     suggested.retain(|c| seen.insert(c.slug.clone()));
     suggested.sort_by_key(|c| std::cmp::Reverse(c.num_decks));
@@ -576,7 +590,8 @@ fn start_search<'a>(
     // Then commanders whose own text mentions what the card filters count (free, from the card
     // database): they fill the slots the themes leave, and stand in for the most-built fallback.
     let mentions = filters::mention_texts(&card_filters);
-    let mentioning = filters::mentioning_commanders(&mentions, cards, limit);
+    // More than `limit`: the ones past it wait in reserve, in case the search needs to widen.
+    let mentioning = filters::mentioning_commanders(&mentions, cards, 3 * limit);
     suggested.extend(mentioning.into_iter().filter(|c| seen.insert(c.slug.clone())));
     // A filter that asks for one particular card (`name:aetherspark=1`): EDHREC's page for that
     // card lists the commanders that play it most (one request each, cached for a week).
@@ -599,13 +614,13 @@ fn start_search<'a>(
         }
     }
     let playing_slugs: std::collections::HashSet<&str> = pages.iter().flatten().map(|c| c.slug.as_str()).collect();
-    let mut candidates = filters::merge_candidates(&pages, &suggested, limit);
-    let from_cards = candidates.iter().filter(|c| playing_slugs.contains(c.slug.as_str())).count();
-    let from_themes = candidates
-        .iter()
-        .filter(|c| !playing_slugs.contains(c.slug.as_str()) && themed_slugs.contains(&c.slug))
-        .count();
-    let from_text = candidates.len() - from_cards - from_themes;
+    // In order: the first `limit` are scanned, the rest kept in reserve.
+    let mut candidates = filters::merge_candidates(&pages, &suggested, usize::MAX);
+    let first = &candidates[..limit.min(candidates.len())];
+    let from_cards = first.iter().filter(|c| playing_slugs.contains(c.slug.as_str())).count();
+    let from_themes =
+        first.iter().filter(|c| !playing_slugs.contains(c.slug.as_str()) && themed_slugs.contains(&c.slug)).count();
+    let from_text = first.len() - from_cards - from_themes;
     let mentioned = mentions.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(" or ");
     let parts: Vec<(usize, String)> = [
         (from_cards, format!("that EDHREC lists as playing {}", paged_cards.join(" or "))),
@@ -621,7 +636,6 @@ fn start_search<'a>(
             candidates = edhrec::top_commanders(http).context("EDHREC's top commanders")?;
             candidates.retain(|c| seen.insert(c.slug.clone()));
             candidates.sort_by_key(|c| std::cmp::Reverse(c.num_decks));
-            candidates.truncate(limit);
             "from EDHREC's most-built commanders".to_string()
         }
         [(_, only)] => only.clone(),
@@ -634,17 +648,24 @@ fn start_search<'a>(
     };
     let wanted = filters::describe(&select.types, &card_filters);
     let count_columns = filters::count_columns(&card_filters);
+    let scan = limit.min(candidates.len());
+    let reserve = candidates.len() - scan;
+    let reserve = if reserve > 0 && how.widen_every > 0 {
+        format!("; {reserve} more in reserve, if too few have matching decks")
+    } else {
+        String::new()
+    };
     status.note(&format!(
-        "searching {} commanders {source} for decks with {wanted}, {} ...",
-        candidates.len(),
+        "searching {scan} commanders {source} for decks with {wanted}, {}{reserve} ...",
         target.describe()
     ));
-    let stats = PoolStats { commanders_total: candidates.len(), ..Default::default() };
+    let stats = PoolStats { commanders_total: scan, ..Default::default() };
     let pool = Pool::new(cards, combos, salt, stats)
         .with_filters(card_filters)
         .with_store(store.clone(), score_epoch(cards, combos))
         .with_favorites(store.db().favorites().context("reading the favorites")?);
-    let fetcher = Fetcher::spawn_search(Arc::clone(http), store.clone(), candidates, select, keep_fetching);
+    let fetcher =
+        Fetcher::spawn_search(Arc::clone(http), store.clone(), candidates, select, SearchOptions { scan, ..how });
     Ok(Session {
         title: format!("decks with {wanted}"),
         name: format!("search-{}", slugify(&wanted)),

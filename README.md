@@ -141,12 +141,17 @@ starts from EDHREC's page for that card, which lists the commanders with the mos
 those the themes also suggest come first, then the card page's and the themes' in turn, so neither
 crowds the other out. When nothing fits (e.g. `creatures=40+`), EDHREC's most-built commanders are
 scanned instead.
-`--commanders N` (default 30) caps how many deck tables are scanned. The browser opens right away
-and fills as each commander's table and decks come in; commander and colour (WUBRG) columns show
-whose deck is whose.
+`--commanders N` (default 30) is how many deck tables are scanned first. The rest of the list waits
+in reserve: when too few commanders have matching decks (fewer than a third of those scanned, or at
+least 3), 5 more are scanned, and 5 decks fetched before it looks again. A commander stops counting
+once its table has no eligible decks, or 3 of its decks (all, if it has fewer) failed the `-T`
+filters without one passing; `--miss-after N` (or `miss_after` in the config file) changes the 3,
+and `--widen-every N` (`widen_every`) the 5 decks between widenings, 0 turning widening off. The browser opens right away and fills as each commander's table and
+decks come in; commander and colour (WUBRG) columns show whose deck is whose.
 
 **Variety.** Commanders get room in proportion to the square root of how many eligible decks EDHREC
-lists for them, so the most popular commander for a kind of deck shows up most, but not to the
+lists for them, times how likely their decks are to pass the `-T` filters (learnt from their decks
+as they're scored, starting from every commander's rate, worth 6 decks), so the most popular commander for a kind of deck shows up most, but not to the
 exclusion of the rest. Decks you already have count towards that share: a commander with 40 stored
 decks waits while the others are fetched up to their share. The ranking interleaves commanders the
 same way, each giving its best remaining deck in turn (decks in the target still come first). `m`
@@ -195,6 +200,15 @@ keep_fetching = true
 # tall as wide), and stacks them in a portrait one; "side-by-side" whenever 110 columns fit;
 # "stacked" always.
 layout = "auto"
+
+[search]
+# Searching across commanders: how many of a commander's decks may fail the -T filters, none
+# passing, before it counts as a miss (default: 3). Too many misses widen the search, so a higher
+# number gives each commander longer. `scout --miss-after N` overrides it for one run.
+miss_after = 3
+# Decks fetched between one widening of the search and the next (default: 5); higher widens more
+# slowly, 0 never. `scout --widen-every N` overrides it for one run.
+widen_every = 5
 
 [performance]
 # Threads for bulk work: reading, parsing and scoring the decks already on disk, which takes
