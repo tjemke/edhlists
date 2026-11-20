@@ -1,5 +1,7 @@
 //! Non-interactive output: a ranked table for `scout --plain` (or when stdout isn't a terminal).
 
+use std::collections::HashSet;
+
 use comfy_table::presets::UTF8_FULL_CONDENSED;
 use comfy_table::{Attribute, Cell, CellAlignment, Color, ContentArrangement, Table};
 
@@ -29,10 +31,12 @@ pub struct Columns {
     pub counts: Vec<CountColumn>,
 }
 
+/// The top `top` decks of `ranking`; those whose id is in `favorites` are starred.
 pub fn ranked_table(
     decks: &[Entry],
     cards: &CardDb,
     ranking: &[Ranked],
+    favorites: &HashSet<String>,
     target: &Target,
     top: usize,
     columns: &Columns,
@@ -57,7 +61,11 @@ pub fn ranked_table(
         let dim = |c: Cell| if r.fits { c } else { c.fg(Color::DarkGrey) };
         let b = format!("B{}", s.bracket);
         let mut row = vec![
-            dim(Cell::new(pos + 1)),
+            dim(Cell::new(if favorites.contains(&deck.id) {
+                format!("★ {}", pos + 1)
+            } else {
+                (pos + 1).to_string()
+            })),
             Cell::new(s.power_label()).fg(tc(view::power_color(target, s.power))).add_attribute(Attribute::Bold),
             if r.fits { Cell::new(b).fg(Color::Green) } else { Cell::new(b).fg(Color::Red) },
             Cell::new(s.salt.map(|s| format!("{s:.0}")).unwrap_or("–".into())).fg(tc(view::score_color(r.scores.salt))),
@@ -93,7 +101,8 @@ pub fn ranked_table(
 
 pub fn legend(target: &Target, mode: RankMode) -> String {
     format!(
-        "Ranked by {} · target {}. Power and bracket follow EDHPowerLevel; grey rows are outside the target. \
+        "Ranked by {} · target {}, favorites (★) first. Power and bracket follow EDHPowerLevel; grey rows are \
+         outside the target. \
          Salt: EDHREC deck salt (lower is friendlier). Structure: closeness to a 36 land / 10 ramp / 10 draw / \
          8 removal / 2 wipe template. Synergy: average EDHREC synergy with the commander.",
         mode.describe(),

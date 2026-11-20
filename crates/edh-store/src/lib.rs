@@ -4,7 +4,9 @@
 //! gzipped, EDHREC's own deck object from the page it came from, so a parser fix can re-read
 //! every deck without fetching its page again. Reading a commander's thousands of stored decks is
 //! one query instead of thousands of 270 KB pages to parse. Each deck's score is kept too, with
-//! what it was scored against, so decks are only scored again when that changes.
+//! what it was scored against, so decks are only scored again when that changes. The decks the
+//! user marked as favorites are kept in a table of their own, so storing a deck again (a re-read)
+//! never drops the mark.
 //!
 //! One writer at a time, readers alongside it (WAL); two runs at once wait for each other briefly
 //! rather than fail. The connection sits behind a mutex, so one [`DeckDb`] can be shared between
@@ -29,7 +31,7 @@ mod store;
 pub use store::{DeckStore, Imported, Retired};
 
 /// The schema this code reads and writes (`PRAGMA user_version`).
-pub const SCHEMA: i64 = 2;
+pub const SCHEMA: i64 = 3;
 
 /// Each step brings the schema from version `i` to `i + 1`.
 const MIGRATIONS: &[&str] = &[
@@ -59,6 +61,12 @@ const MIGRATIONS: &[&str] = &[
         floor       INTEGER NOT NULL,
         structure   REAL NOT NULL,
         synergy     REAL
+    ) WITHOUT ROWID;
+",
+    "
+    CREATE TABLE favorite (
+        id          TEXT PRIMARY KEY,   -- deck id
+        added       INTEGER NOT NULL    -- when it was marked, in seconds since 1970
     ) WITHOUT ROWID;
 ",
 ];
@@ -337,6 +345,26 @@ impl DeckDb {
         bytes.map(|b| gunzip(&b)).transpose()
     }
 
+    /// The ids of the decks marked as favorites, oldest mark first.
+    pub fn favorites(&self) -> Result<Vec<String>> {
+        let conn = lock(&self.conn);
+        let mut q = conn.prepare_cached("SELECT id FROM favorite ORDER BY added, id")?;
+        Ok(q.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Mark a deck as a favorite, or clear the mark. Marking it again keeps when it was first
+    /// marked.
+    pub fn set_favorite(&self, id: &str, favorite: bool) -> Result<()> {
+        let conn = lock(&self.conn);
+        if favorite {
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+            conn.execute("INSERT OR IGNORE INTO favorite (id, added) VALUES (?1, ?2)", params![id, now as i64])?;
+        } else {
+            conn.execute("DELETE FROM favorite WHERE id = ?1", [id])?;
+        }
+        Ok(())
+    }
+
     /// Ids of the decks a parser older than `parser` filled in.
     pub fn parsed_before(&self, parser: u32) -> Result<Vec<String>> {
         let conn = lock(&self.conn);
@@ -428,6 +456,51 @@ mod tests {
         // Storing a deck again (a re-read) drops its score.
         db.put(&deck("aaa", "Jodah, the Unifier", "Swords to Plowshares"), "{}", 1).unwrap();
         assert_eq!(db.scores(&["aaa", "bbb"]).unwrap()[0], None);
+    }
+
+    #[test]
+    fn favorites_persist_and_survive_a_deck_being_stored_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.sqlite");
+        {
+            let db = DeckDb::open(&path).unwrap();
+            assert!(db.favorites().unwrap().is_empty());
+            db.put(&deck("aaa", "Jodah, the Unifier", "Bonesplitter"), "{}", 1).unwrap();
+            db.set_favorite("bbb", true).unwrap();
+            db.set_favorite("aaa", true).unwrap();
+            // Marking twice is one mark; clearing one that isn't marked is fine.
+            db.set_favorite("aaa", true).unwrap();
+            db.set_favorite("zzz", false).unwrap();
+        }
+        let db = DeckDb::open(&path).unwrap();
+        let mut got = db.favorites().unwrap();
+        got.sort();
+        assert_eq!(got, vec!["aaa", "bbb"]);
+        // A re-read deck keeps its mark.
+        db.put(&deck("aaa", "Jodah, the Unifier", "Swords to Plowshares"), "{}", 2).unwrap();
+        db.set_favorite("bbb", false).unwrap();
+        assert_eq!(db.favorites().unwrap(), vec!["aaa"]);
+    }
+
+    #[test]
+    fn an_older_database_gains_favorites_and_keeps_its_decks() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.sqlite");
+        {
+            // A database as schema 2 left it.
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(MIGRATIONS[0]).unwrap();
+            conn.execute_batch(MIGRATIONS[1]).unwrap();
+            conn.pragma_update(None, "user_version", 2).unwrap();
+            let db = DeckDb { conn: Mutex::new(conn), ids: Mutex::new(HashSet::new()) };
+            db.put(&deck("aaa", "Jodah, the Unifier", "Bonesplitter"), "{}", 1).unwrap();
+        }
+        let db = DeckDb::open(&path).unwrap();
+        assert!(db.contains("aaa"));
+        db.set_favorite("aaa", true).unwrap();
+        assert_eq!(db.favorites().unwrap(), vec!["aaa"]);
+        let conn = Connection::open(&path).unwrap();
+        assert_eq!(conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(), SCHEMA);
     }
 
     #[test]

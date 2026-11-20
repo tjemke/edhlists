@@ -21,7 +21,7 @@ use crate::analysis::Analysis;
 use crate::config::PaneLayout;
 use crate::export::{self, ExportFormat, ReportInput};
 use crate::filters::CountColumn;
-use crate::rank::{RankMode, Ranked, Target, Weights, mix, rank};
+use crate::rank::{RankMode, Ranked, Target, Weights, hoist, mix, rank};
 use crate::scout::{Entry, Feed, FeedEvent, FetchEvent, Pool};
 use crate::view::{
     ACCENT, BAD, DIM, GOOD, OK, deck_identity, detail_lines, grouped_list, identity_line, power_color, score_color,
@@ -69,6 +69,9 @@ pub struct App<'a> {
     /// The selected deck's full analysis (by pool index), worked out when the selection moves.
     details: Option<(usize, Analysis)>,
     fits_only: bool,
+    favorites_only: bool,
+    /// How many of the pool's decks are favorites (they lead `ranking`), for the header.
+    favorite_count: usize,
     pane: Pane,
     state: TableState,
     scroll: u16,
@@ -92,6 +95,8 @@ impl<'a> App<'a> {
             visible: Vec::new(),
             details: None,
             fits_only: false,
+            favorites_only: false,
+            favorite_count: 0,
             pane: Pane::Details,
             state: TableState::default(),
             scroll: 0,
@@ -102,8 +107,8 @@ impl<'a> App<'a> {
         app
     }
 
-    /// Re-rank. With `keep`, the cursor stays on the deck it was on (decks arriving in the
-    /// background reshuffle the list; the user's place shouldn't move).
+    /// Re-rank, favorites first. With `keep`, the cursor stays on the deck it was on (decks
+    /// arriving in the background reshuffle the list; the user's place shouldn't move).
     fn rerank(&mut self, keep: bool) {
         let keep_deck = if keep { self.selected().map(|(_, r)| r.index) } else { None };
         self.ranking = rank(&self.pool.scores(), &self.settings.target, self.settings.mode, &self.settings.weights);
@@ -111,14 +116,22 @@ impl<'a> App<'a> {
             let (group, weights) = self.pool.commander_groups();
             self.ranking = mix(std::mem::take(&mut self.ranking), &group, &weights);
         }
+        self.ranking = hoist(std::mem::take(&mut self.ranking), |i| self.pool.is_favorite(i));
+        self.favorite_count = self.ranking.iter().take_while(|r| self.pool.is_favorite(r.index)).count();
         self.refresh_visible();
-        let pos = keep_deck
-            .and_then(|d| self.visible.iter().position(|(_, r)| r.index == d))
-            .or(if self.visible.is_empty() { None } else { Some(0) });
-        self.state.select(pos);
+        self.reselect(keep_deck, 0);
         if !keep {
             self.scroll = 0;
         }
+    }
+
+    /// Put the cursor on pool deck `deck` if it's on show, or else on row `fallback` (or the last
+    /// row, if there are fewer).
+    fn reselect(&mut self, deck: Option<usize>, fallback: usize) {
+        let pos = deck
+            .and_then(|d| self.visible.iter().position(|(_, r)| r.index == d))
+            .or_else(|| self.visible.len().checked_sub(1).map(|last| fallback.min(last)));
+        self.state.select(pos);
     }
 
     fn mixing(&self) -> bool {
@@ -168,7 +181,40 @@ impl<'a> App<'a> {
     }
 
     fn refresh_visible(&mut self) {
-        self.visible = self.ranking.iter().copied().enumerate().filter(|(_, r)| !self.fits_only || r.fits).collect();
+        let (fits_only, favorites_only, pool) = (self.fits_only, self.favorites_only, &self.pool);
+        self.visible = self
+            .ranking
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(_, r)| (!fits_only || r.fits) && (!favorites_only || pool.is_favorite(r.index)))
+            .collect();
+    }
+
+    /// Show or hide decks after a filter changed, keeping the cursor on its deck if it's still
+    /// on show, or else at the top.
+    fn refilter(&mut self) {
+        let keep = self.selected().map(|(_, r)| r.index);
+        self.refresh_visible();
+        self.reselect(keep, 0);
+    }
+
+    /// Mark the selected deck as a favorite, or clear the mark. A favorite moves to the top with
+    /// the cursor on it; one that leaves the favorites-only list hands its row to the next deck.
+    fn toggle_favorite(&mut self) {
+        let Some((_, r)) = self.selected() else { return };
+        let row = self.state.selected().unwrap_or(0);
+        self.status = Some(match self.pool.toggle_favorite(r.index) {
+            Ok(now) => {
+                self.rerank(true);
+                if !self.visible.iter().any(|(_, v)| v.index == r.index) {
+                    self.reselect(None, row);
+                }
+                let msg = if now { "★ added to favorites (they're listed first)" } else { "removed from favorites" };
+                (msg.into(), false)
+            }
+            Err(e) => (format!("couldn't change favorites: {e:#}"), true),
+        });
     }
 
     fn selected(&self) -> Option<(usize, Ranked)> {
@@ -237,13 +283,22 @@ impl<'a> App<'a> {
                 self.status = Some((msg.into(), false));
             }
             KeyCode::Char('f') => {
-                let keep = self.selected().map(|(_, r)| r.index);
                 self.fits_only = !self.fits_only;
-                self.refresh_visible();
-                let pos = keep.and_then(|d| self.visible.iter().position(|(_, r)| r.index == d));
-                self.state.select(pos.or(if self.visible.is_empty() { None } else { Some(0) }));
-                let msg = if self.fits_only { "showing only decks in the target" } else { "showing all decks" };
-                self.status = Some((msg.into(), false));
+                self.refilter();
+                self.status = Some((self.filter_message(), false));
+            }
+            KeyCode::Char('*') if self.pool.keeps_favorites() => self.toggle_favorite(),
+            KeyCode::Char('F') if self.pool.keeps_favorites() => {
+                self.favorites_only = !self.favorites_only;
+                self.refilter();
+                let none = self.favorites_only && self.visible.is_empty() && !self.ranking.is_empty();
+                self.status = Some(if none && self.favorite_count > 0 {
+                    ("none of the favorites is in the target: f shows them all".into(), true)
+                } else if none {
+                    ("no favorites among these decks yet: F shows them all again, * marks one".into(), true)
+                } else {
+                    (self.filter_message(), false)
+                });
             }
             KeyCode::Char('o') => {
                 let url = self.selected().and_then(|(_, r)| self.pool.decks[r.index].deck.meta.edhrec_url.clone());
@@ -282,6 +337,7 @@ impl<'a> App<'a> {
                     decks: &self.pool.decks,
                     analyze: &|i| self.pool.details(i),
                     ranking: &ranking,
+                    favorites: self.pool.favorites(),
                     limit: self.settings.report_top,
                     format: self.settings.format,
                     show_price: self.settings.show_price,
@@ -298,6 +354,17 @@ impl<'a> App<'a> {
             _ => {}
         }
         true
+    }
+
+    /// What the list shows, after `f` or `F`.
+    fn filter_message(&self) -> String {
+        match (self.fits_only, self.favorites_only) {
+            (false, false) => "showing all decks",
+            (true, false) => "showing only decks in the target",
+            (false, true) => "showing only favorites",
+            (true, true) => "showing only favorites in the target",
+        }
+        .into()
     }
 
     fn draw(&mut self, frame: &mut Frame) {
@@ -343,8 +410,9 @@ impl<'a> App<'a> {
             };
             spans.push(Span::styled(progress, Style::new().bold().fg(OK)));
         }
+        let favorites = if self.favorite_count > 0 { format!(", {} ★", self.favorite_count) } else { String::new() };
         spans.push(Span::styled(
-            format!(" {} decks, {fits} fit · {summary}", self.pool.decks.len()),
+            format!(" {} decks, {fits} fit{favorites} · {summary}", self.pool.decks.len()),
             Style::new().fg(DIM),
         ));
         frame.render_widget(Paragraph::new(Line::from(spans)), area);
@@ -354,7 +422,7 @@ impl<'a> App<'a> {
         let show_price = self.settings.show_price;
         let show_commander = self.settings.show_commander;
         let counts = &self.settings.count_columns;
-        let mut headers: Vec<String> = ["#", "Power", "B", "Salt", "Struct", "Syn"].map(String::from).to_vec();
+        let mut headers: Vec<String> = ["", "#", "Power", "B", "Salt", "Struct", "Syn"].map(String::from).to_vec();
         if show_price {
             headers.push("Price".into());
         }
@@ -377,7 +445,15 @@ impl<'a> App<'a> {
                 let Entry { deck, score: s, matches } = &self.pool.decks[r.index];
                 let base = if r.fits { Style::new() } else { Style::new().fg(DIM) };
                 let themes = if deck.meta.tags.is_empty() { "–".to_string() } else { deck.meta.tags.join(", ") };
+                // Styled only with a star in it: the selected row is drawn reversed, so a colour
+                // on an empty cell would show as a block of it.
+                let star = if self.pool.is_favorite(r.index) {
+                    Cell::from("★").style(Style::new().fg(OK))
+                } else {
+                    Cell::from("")
+                };
                 let mut cells = vec![
+                    star,
                     Cell::from(format!("{:>2}", pos + 1)),
                     Cell::from(format!("{:>5}", s.power_label()))
                         .style(Style::new().fg(power_color(&self.settings.target, s.power)).bold()),
@@ -408,6 +484,7 @@ impl<'a> App<'a> {
             })
             .collect();
         let mut widths = vec![
+            Constraint::Length(1),
             Constraint::Length(3),
             Constraint::Length(5),
             Constraint::Length(2),
@@ -424,7 +501,12 @@ impl<'a> App<'a> {
         }
         widths.extend(counts.iter().map(|c| Constraint::Length(c.label.chars().count().max(3) as u16)));
         widths.push(Constraint::Fill(1));
-        let title = if self.fits_only { " Decks in target " } else { " Decks " };
+        let title = match (self.fits_only, self.favorites_only) {
+            (false, false) => " Decks ",
+            (true, false) => " Decks in target ",
+            (false, true) => " Favorites ",
+            (true, true) => " Favorites in target ",
+        };
         let table = Table::new(rows, widths)
             .header(header)
             .block(Block::bordered().title(title.bold()))
@@ -437,12 +519,17 @@ impl<'a> App<'a> {
     fn pane_title(&self) -> Option<(String, &Deck)> {
         let (pos, r) = self.selected()?;
         let deck = &self.pool.decks[r.index].deck;
-        Some((format!(" #{} · {} ", pos + 1, deck.id), deck))
+        let star = if self.pool.is_favorite(r.index) { "★ " } else { "" };
+        Some((format!(" {star}#{} · {} ", pos + 1, deck.id), deck))
     }
 
     fn draw_details(&self, frame: &mut Frame, area: Rect) {
         let Some((title, _)) = self.pane_title() else {
-            let msg = if self.feed.is_some() {
+            let msg = if self.favorites_only && self.fits_only && self.favorite_count > 0 {
+                "None of the favorites is in the target: f shows them all."
+            } else if self.favorites_only && !self.ranking.is_empty() {
+                "None of these decks is a favorite yet: F shows them all again, and * marks the selected deck."
+            } else if self.feed.is_some() {
                 "Fetching decklists in the background — they show up here as they arrive (one every few seconds)."
             } else {
                 "No decks to show."
@@ -517,6 +604,10 @@ impl<'a> App<'a> {
                     ("E", "export report"),
                     ("q", "quit"),
                 ];
+                if self.pool.keeps_favorites() {
+                    keys.insert(5, ("*", "favorite"));
+                    keys.insert(6, ("F", "favorites only"));
+                }
                 if self.settings.show_commander {
                     keys.insert(5, ("m", "mix commanders"));
                 }

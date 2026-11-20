@@ -13,7 +13,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use edh_data::cards::CardDb;
 use edh_data::combos::ComboDb;
 use edh_data::deck::Deck;
@@ -543,13 +543,15 @@ pub struct Pool<'a> {
     /// Searching across commanders: how many eligible decks EDHREC lists for each one (by slug),
     /// a measure of how popular the commander is for this kind of deck.
     eligible: HashMap<String, usize>,
+    /// The ids of the decks the user marked as favorites (all of them, not only the pool's).
+    favorites: HashSet<String>,
     pub stats: PoolStats,
 }
 
 impl<'a> Pool<'a> {
     pub fn new(cards: &'a CardDb, combos: &'a ComboDb, salt: HashMap<String, f64>, stats: PoolStats) -> Self {
         let scorer = Scorer { cards, combos, salt, commanders: RwLock::default(), filters: Vec::new(), store: None };
-        Self { scorer: Arc::new(scorer), decks: Vec::new(), eligible: HashMap::new(), stats }
+        Self { scorer: Arc::new(scorer), decks: Vec::new(), eligible: HashMap::new(), favorites: HashSet::new(), stats }
     }
 
     fn scorer_mut(&mut self) -> &mut Scorer<'a> {
@@ -568,8 +570,45 @@ impl<'a> Pool<'a> {
         self
     }
 
+    /// The decks marked as favorites, by id (see [`edh_store::DeckDb::favorites`]).
+    pub fn with_favorites(mut self, ids: impl IntoIterator<Item = String>) -> Self {
+        self.favorites = ids.into_iter().collect();
+        self
+    }
+
     pub fn cards(&self) -> &'a CardDb {
         self.scorer.cards
+    }
+
+    /// Is the pool's deck `i` a favorite?
+    pub fn is_favorite(&self, i: usize) -> bool {
+        self.favorites.contains(&self.decks[i].deck.id)
+    }
+
+    /// The ids of every deck marked as a favorite, in the pool or not.
+    pub fn favorites(&self) -> &HashSet<String> {
+        &self.favorites
+    }
+
+    /// Can decks be marked as favorites? Only with a deck database to keep the marks in (not for
+    /// a local list).
+    pub fn keeps_favorites(&self) -> bool {
+        self.scorer.store.is_some()
+    }
+
+    /// Mark the pool's deck `i` as a favorite, or clear the mark, in the deck database too.
+    /// Returns whether it is a favorite now.
+    pub fn toggle_favorite(&mut self, i: usize) -> Result<bool> {
+        let Some((store, _)) = &self.scorer.store else { bail!("only decks from the deck database can be favorites") };
+        let id = &self.decks[i].deck.id;
+        let now = !self.favorites.contains(id);
+        store.db().set_favorite(id, now)?;
+        if now {
+            self.favorites.insert(id.clone());
+        } else {
+            self.favorites.remove(id);
+        }
+        Ok(now)
     }
 
     /// The scorer, to score decks on another thread (see [`Feed`]).
@@ -1083,6 +1122,36 @@ mod tests {
         assert_eq!((details.matches[0].count, details.card_count), (1, 2));
         assert_eq!(pool.stats.unmatched, 1);
         assert!(pool.stats.summary().ends_with("1 didn't match"));
+    }
+
+    #[test]
+    fn favorites_are_marked_in_the_deck_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = DeckStore::open(&dir.path().join("decks.sqlite"), dir.path().join("pages")).unwrap();
+        let cards = CardDb::new(vec![creature("Alpha One"), creature("Grizzly Bears")]);
+        let combos = ComboDb::empty();
+        let pool = |store: Option<&DeckStore>| {
+            let p = Pool::new(&cards, &combos, HashMap::new(), PoolStats::default());
+            let mut p = match store {
+                Some(s) => p.with_store(s.clone(), 1).with_favorites(s.db().favorites().unwrap()),
+                None => p,
+            };
+            p.add_many(decks(3));
+            p
+        };
+        let mut p = pool(Some(&store));
+        assert!(p.keeps_favorites() && !p.is_favorite(1));
+        assert!(p.toggle_favorite(1).unwrap());
+        assert!(p.toggle_favorite(2).unwrap());
+        assert!(!p.toggle_favorite(2).unwrap());
+        assert!(p.is_favorite(1) && !p.is_favorite(2));
+        assert_eq!(store.db().favorites().unwrap(), vec!["d1"]);
+        // The next run starts with them.
+        let p = pool(Some(&store));
+        assert_eq!((p.is_favorite(0), p.is_favorite(1)), (false, true));
+        // A local list has nowhere to keep the mark.
+        let mut p = pool(None);
+        assert!(!p.keeps_favorites() && p.toggle_favorite(0).is_err());
     }
 
     #[test]

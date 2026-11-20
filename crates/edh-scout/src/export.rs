@@ -64,6 +64,8 @@ pub struct ReportInput<'a> {
     /// The full analysis of deck `i` (see [`crate::scout::Pool::details`]), for the decks shown.
     pub analyze: &'a dyn Fn(usize) -> Analysis,
     pub ranking: &'a [Ranked],
+    /// The ids of the decks marked as favorites, starred in the report.
+    pub favorites: &'a std::collections::HashSet<String>,
     /// Only the first `limit` ranked decks get a section and an exported list.
     pub limit: usize,
     pub format: ExportFormat,
@@ -115,11 +117,12 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
     )?;
     for (pos, r) in shown.iter().enumerate() {
         let (deck, a) = (&input.decks[r.index].deck, &analyses[pos]);
+        let star = if input.favorites.contains(&deck.id) { " ★" } else { "" };
         let file = write_deck(dir, pos + 1, deck, input.format)?;
         let rel = file.strip_prefix(dir).unwrap_or(&file).display().to_string();
         writeln!(
             md,
-            "| [{n}](#deck-{n}) | {fit} | {pl} | B{b} | {salt} | {st:.0}% | {syn} |{price}{cmdr}{counts} {tags} | [{rel}]({rel}) |",
+            "| [{n}](#deck-{n}){star} | {fit} | {pl} | B{b} | {salt} | {st:.0}% | {syn} |{price}{cmdr}{counts} {tags} | [{rel}]({rel}) |",
             n = pos + 1,
             fit = if r.fits { "✓" } else { "✗" },
             pl = a.power.label(),
@@ -136,7 +139,8 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
     writeln!(md)?;
     for (pos, r) in shown.iter().enumerate() {
         let (deck, a) = (&input.decks[r.index].deck, &analyses[pos]);
-        writeln!(md, "## Deck {} · {}\n", pos + 1, commanders_of(deck))?;
+        let star = if input.favorites.contains(&deck.id) { " ★" } else { "" };
+        writeln!(md, "## Deck {} · {}{star}\n", pos + 1, commanders_of(deck))?;
         let mut links = Vec::new();
         if let Some(u) = &deck.meta.edhrec_url {
             links.push(format!("[EDHREC]({u})"));

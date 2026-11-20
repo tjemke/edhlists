@@ -19,7 +19,7 @@ use edh_scout::analysis::score_epoch;
 use edh_scout::config::{Config, PaneLayout};
 use edh_scout::export::{self, ExportFormat, ReportInput};
 use edh_scout::filters::{self, CardFilter, CompiledFilter, CountColumn, Filter};
-use edh_scout::rank::{RankMode, Target, Weights, mix, parse_range, rank};
+use edh_scout::rank::{RankMode, Target, Weights, hoist, mix, parse_range, rank};
 use edh_scout::scout::{
     Feed, Fetcher, Pool, PoolStats, Prepared, ScoutOptions, load_commander_sources, load_salt, prepare,
 };
@@ -440,7 +440,8 @@ fn start_single<'a>(
     }
     let mut pool = Pool::new(cards, combos, salt, stats)
         .with_filters(card_filters)
-        .with_store(store.clone(), score_epoch(cards, combos));
+        .with_store(store.clone(), score_epoch(cards, combos))
+        .with_favorites(store.db().favorites().context("reading the favorites")?);
     pool.add_commander(&slug, sources);
     status.step(&format!("scoring {} stored decks", decks.len()));
     // In the browser, decks that still need scoring after a short wait join the list as they're
@@ -564,7 +565,8 @@ fn start_search<'a>(
     let stats = PoolStats { commanders_total: candidates.len(), ..Default::default() };
     let pool = Pool::new(cards, combos, salt, stats)
         .with_filters(card_filters)
-        .with_store(store.clone(), score_epoch(cards, combos));
+        .with_store(store.clone(), score_epoch(cards, combos))
+        .with_favorites(store.db().favorites().context("reading the favorites")?);
     let fetcher = Fetcher::spawn_search(Arc::clone(http), store.clone(), candidates, select, keep_fetching);
     Ok(Session {
         title: format!("decks with {wanted}"),
@@ -657,9 +659,14 @@ fn print_plain(
         let (group, weights) = pool.commander_groups();
         ranking = mix(ranking, &group, &weights);
     }
+    let ranking = hoist(ranking, |i| pool.is_favorite(i));
+    let favorites = pool.favorites();
     let columns =
         plain::Columns { price: args.output.price, commander: show_commander, counts: count_columns.to_vec() };
-    println!("{}", plain::ranked_table(&pool.decks, pool.cards(), &ranking, target, args.output.top, &columns));
+    println!(
+        "{}",
+        plain::ranked_table(&pool.decks, pool.cards(), &ranking, favorites, target, args.output.top, &columns)
+    );
     println!("{}", plain::legend(target, args.rank));
     if args.output.export.is_some() {
         let input = ReportInput {
@@ -669,6 +676,7 @@ fn print_plain(
             decks: &pool.decks,
             analyze: &|i| pool.details(i),
             ranking: &ranking,
+            favorites,
             limit: args.output.top,
             format: args.output.format,
             show_price: args.output.price,

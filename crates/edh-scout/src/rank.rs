@@ -255,9 +255,32 @@ pub fn mix(ranking: Vec<Ranked>, group: &[usize], weights: &[f64]) -> Vec<Ranked
     out
 }
 
+/// Move the decks for which `first` holds (the user's favorites) to the top, keeping the order
+/// within both parts: favorites lead whatever the mode, then the ranking carries on as it was.
+pub fn hoist(ranking: Vec<Ranked>, first: impl Fn(usize) -> bool) -> Vec<Ranked> {
+    let (mut top, rest): (Vec<Ranked>, Vec<Ranked>) = ranking.into_iter().partition(|r| first(r.index));
+    top.extend(rest);
+    top
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hoisting_moves_favorites_up_and_keeps_both_orders() {
+        let t = Target::new((2, 3), None);
+        let decks: Vec<Score> =
+            [6.2, 9.5, 6.0, 5.9, 9.0].iter().map(|&l| analysis(l, if l > 8.0 { 5 } else { 3 }, 50.0)).collect();
+        let refs: Vec<&Score> = decks.iter().collect();
+        let ranked = rank(&refs, &t, RankMode::Fit, &Weights::default());
+        let order = |r: &[Ranked]| r.iter().map(|x| x.index).collect::<Vec<_>>();
+        assert_eq!(order(&ranked), vec![0, 2, 3, 1, 4]);
+        // A favorite outside the target still comes first, and favorites keep their ranking.
+        let fav = [1usize, 3];
+        assert_eq!(order(&hoist(ranked.clone(), |i| fav.contains(&i))), vec![3, 1, 0, 2, 4]);
+        assert_eq!(order(&hoist(ranked.clone(), |_| false)), order(&ranked));
+    }
 
     fn analysis(level: f64, bracket: u8, salt: f64) -> Score {
         Score { power: level, bracket, floor: 1, salt: Some(salt), ..Default::default() }

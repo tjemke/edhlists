@@ -149,7 +149,8 @@ two per commander that ends up with decks (synergy and combo votes, cached for a
 usual deck budget.
 
 In the browser: `↑↓` move · `⏎` decklist/details · `J/K` scroll · `r` cycle ranking ·
-`f` only decks in the target · `m` mix commanders or rank by score alone (across commanders) ·
+`f` only decks in the target · `*` mark the selected deck as a favorite (or unmark it) ·
+`F` only favorites · `m` mix commanders or rank by score alone (across commanders) ·
 `o`/`s`/`p` open on EDHREC / the source site / EDHPowerLevel ·
 `e` export the selected list · `E` export `report.md` plus the top lists · `q` quit.
 
@@ -158,6 +159,16 @@ When stdout isn't a terminal (or with `--plain`) you get a table instead.
 Once the `-n` budget is fetched, the browser keeps fetching the remaining eligible decks, in the
 same order and at the same pace, until you quit (the header shows `fetching N/total`). Turn that
 off in the config file; plain output always stops at the budget.
+
+### Favorites
+
+`*` in the browser marks a deck as a favorite (★); it's kept in the deck database, so it lasts
+across runs. Whenever a scout's list includes favorites, they come first, in the current ranking's
+order, ahead even of decks in the target (one outside it stays grey); the plain table, `report.md`
+and exports mark them with ★ too. `F` narrows the list to them (`f` and `F` combine).
+
+A favorite only shows up in a scout whose decks it's among: the same commander, passing the `-T`
+filters and the deck-table checks (bracket, salt ceiling, `--max-price`, …).
 
 ### Config file
 
@@ -238,7 +249,7 @@ Where things live (XDG):
 |---|---|---|
 | `$XDG_CACHE_HOME/edh-scout` (`~/.cache/…`) | bulk downloads, the card/combo databases built from them, EDHREC pages that expire anyway | re-downloaded by the next `sync` / run |
 | `$XDG_CACHE_HOME/edh-scout/pages` | the deck pages as fetched, `<urlhash>.html.gz` (~35 KB each) | nothing lost: the database has every deck |
-| `$XDG_STATE_HOME/edh-scout/decks.sqlite` (`~/.local/state/…`) | every fetched decklist, parsed, with EDHREC's deck data it was read from (~5 KB a deck), and its score | rebuilt from the page cache while that lasts; otherwise each deck costs a request again |
+| `$XDG_STATE_HOME/edh-scout/decks.sqlite` (`~/.local/state/…`) | every fetched decklist, parsed, with EDHREC's deck data it was read from (~5 KB a deck), and its score; your favorites | rebuilt from the page cache while that lasts; otherwise each deck costs a request again. The favorites are lost |
 | `$XDG_CONFIG_HOME/edh-scout/config.toml` (`~/.config/…`) | optional settings, see [Config file](#config-file) | defaults apply |
 
 Override with `--cache-dir` / `--state-dir` (or `EDH_SCOUT_CACHE` / `EDH_SCOUT_STATE`). On macOS and

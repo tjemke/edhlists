@@ -93,6 +93,12 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   those fields on `Card` and a `CARDS_SCHEMA` bump (rebuilds from the raw file, no download).
   *Small; only if wanted.*
 
+- [ ] **Keep the favorites somewhere deleting the deck database can't reach.** They're a table in
+  `decks.sqlite` (schema 3), the one file the README says can be deleted and rebuilt; deleting it
+  now loses them. A plain `favorites.txt` of ids in the state dir would survive that and is easy
+  to back up, at the cost of a second file to keep in step (two runs at once). Touches
+  `edh-store/src/lib.rs` and the README's table. *Small.*
+
 ## Considered, probably not
 
 - Searching every stored deck regardless of commander: cross-commander searches already read the
