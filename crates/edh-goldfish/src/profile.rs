@@ -50,6 +50,8 @@ pub struct Land {
     /// What it makes instead once this many lands are out (Temple of the False God: nothing
     /// before five).
     pub with_lands: Option<(usize, Vec<Unit>)>,
+    /// Lands sacrificed as it enters (Lotus Field: two).
+    pub sacrifices: usize,
     pub enters: Enters,
     /// Returns a land to its owner's hand as it enters (Simic Growth Chamber).
     pub bounce: bool,
@@ -151,6 +153,8 @@ pub enum Effect {
         to_hand: u8,
         tapped: bool,
         activation: u32,
+        /// Lands sacrificed to do it (Springbloom Druid: one, for two).
+        sacrifice: u8,
     },
     /// Draws this many cards (less any it discards), once.
     Draw {
@@ -179,6 +183,17 @@ static MULTIKICKER: LazyLock<Regex> = LazyLock::new(|| re(r"multikicker \{(\d+)\
 /// equipped creature attacks").
 static NEEDS_COMBAT_OR_DEATH: LazyLock<Regex> =
     LazyLock::new(|| re(r"attacks|combat damage|\bdies\b|put into a graveyard"));
+/// A draw that waits for something a goldfish doesn't have: combat, a death, an opponent's
+/// spell (Mystic Remora), Treasure (Smaug, Wicked Worm).
+static DRAW_WAITS: LazyLock<Regex> =
+    LazyLock::new(|| re(r"attacks|combat damage|\bdies\b|put into a graveyard|opponent|treasure"));
+/// Lands a land sacrifices as it enters (Lotus Field).
+static SACRIFICE_ON_ENTERING: LazyLock<Regex> =
+    LazyLock::new(|| re(r"when this land enters, sacrifice (an?|one|two|three) lands?"));
+/// Mana an Aura adds to a land of ours (Wild Growth, Fertile Ground), not an opponent's
+/// permanent turned into a land (Imprisoned in the Moon).
+static ENCHANTED_LAND_MANA: LazyLock<Regex> =
+    LazyLock::new(|| re(r"whenever enchanted land is tapped for mana, its controller adds"));
 static FETCH: LazyLock<Regex> = LazyLock::new(|| {
     re(r"sacrifice [^:]*: search your library for an? ([^.]*?) card,? (?:and )?put it onto the battlefield( tapped)?")
 });
@@ -200,8 +215,10 @@ static DISCARDS: LazyLock<Regex> = LazyLock::new(|| re(r"\bdiscards? (an?|one|tw
 /// card"); group 1 is what it waits for.
 static DRAW_TRIGGER: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?:at the beginning of|whenever)([^.]*)(?:\. if you do,[^.]*)?\bdraw"));
-/// An activated ability that draws (tapping, mana or life); group 1 is its cost.
-static DRAW_ABILITY: LazyLock<Regex> = LazyLock::new(|| re(r"(?m)^((?:\{[^}]+\}|pay \d+ life)[^:\n]*): [^\n]*\bdraw"));
+/// An activated ability that draws (tapping, mana or life); group 1 is its cost, group 2 what it
+/// does before the draw.
+static DRAW_ABILITY: LazyLock<Regex> =
+    LazyLock::new(|| re(r"(?m)^((?:\{[^}]+\}|pay \d+ life)[^:\n]*): ([^\n]*)\bdraw"));
 /// A draw as the permanent enters (Thought Monitor).
 static DRAW_ON_ENTERING: LazyLock<Regex> = LazyLock::new(|| re(r"when [^.]*\benters\b[^.]*\bdraw"));
 /// Gets cards back from the graveyard, which a goldfish's is empty of early on (Phyrexian
@@ -281,6 +298,7 @@ fn land_kind(card: &Card, face: usize, types: &Types, allowed: ManaSet) -> LandK
     LandKind::Mana(Land {
         units: makes.units,
         with_lands: makes.with_lands,
+        sacrifices: SACRIFICE_ON_ENTERING.captures(&t).map_or(0, |m| usize::from(number(&m[1]))),
         enters: enters(&t),
         bounce: t.contains("return a land you control to its owner's hand"),
         basic: types.supertypes.contains(Supertype::Basic),
@@ -428,7 +446,16 @@ fn effect(card: &Card, types: &Types, allowed: ManaSet) -> Effect {
     let t = text(card, 0);
     let permanent = types.is_permanent();
     let can_tap = permanent && !types.is(CardType::Planeswalker);
-    if can_tap && !card.produced.is_empty() && TAP_FOR_MANA.is_match(&t) {
+    let aura = card.front_type_line().contains("Aura");
+    if aura && ENCHANTED_LAND_MANA.is_match(&t) && !card.produced.is_empty() {
+        let any = card.produced & allowed;
+        return Effect::Rock {
+            units: vec![if any.is_empty() { card.produced } else { any }],
+            next_turn: false,
+            once: false,
+        };
+    }
+    if can_tap && !aura && !card.produced.is_empty() && TAP_FOR_MANA.is_match(&t) {
         let units = mana_units(&t, card.produced, allowed).units;
         if !units.is_empty() {
             return Effect::Rock {
@@ -446,13 +473,19 @@ fn effect(card: &Card, types: &Types, allowed: ManaSet) -> Effect {
         if (what.contains("land") || !types_wanted.is_empty()) && !waits {
             let n = number(&m[1]);
             let to_hand = u8::from(t.contains("other into your hand"));
-            return Effect::LandRamp {
-                finds: LandFilter { basic: what.contains("basic"), types: types_wanted },
-                to_battlefield: n.saturating_sub(to_hand).max(1),
-                to_hand,
-                tapped: m.get(3).is_some(),
-                activation: ACTIVATION.captures(&t).and_then(|a| a[1].parse().ok()).unwrap_or(0),
-            };
+            let to_battlefield = n.saturating_sub(to_hand).max(1);
+            // Swapping a land for one (Crop Rotation, Elvish Reclaimer) is no ramp.
+            let sacrifice = u8::from(t.contains("sacrifice a land"));
+            if to_battlefield > sacrifice {
+                return Effect::LandRamp {
+                    finds: LandFilter { basic: what.contains("basic"), types: types_wanted },
+                    to_battlefield,
+                    to_hand,
+                    tapped: m.get(3).is_some(),
+                    activation: ACTIVATION.captures(&t).and_then(|a| a[1].parse().ok()).unwrap_or(0),
+                    sacrifice,
+                };
+            }
         }
     }
     let draws = if card.tagged { card.roles.contains(Role::Draw) } else { DRAWS.is_match(&t) };
@@ -491,12 +524,14 @@ fn effect(card: &Card, types: &Types, allowed: ManaSet) -> Effect {
     Effect::Draw { cards: drawn.saturating_sub(discarded) }
 }
 
-/// Does a permanent draw again and again: a trigger a goldfish sets off (not a death, an attack
-/// or combat damage), or an ability it can use every turn (not one that sacrifices, removes
-/// counters, discards or exiles something)?
+/// Does a permanent draw again and again: a trigger a goldfish sets off (not a death, an attack,
+/// combat damage, an opponent or Treasure), or an ability it can use every turn (not one that
+/// sacrifices, removes counters, discards or exiles something, nor one that grants a draw on
+/// combat damage: Ascendant Spirit)?
 fn draws_again(t: &str) -> bool {
-    DRAW_TRIGGER.captures_iter(t).any(|c| !NEEDS_COMBAT_OR_DEATH.is_match(&c[1]))
-        || DRAW_ABILITY
-            .captures_iter(t)
-            .any(|c| !["sacrifice", "remove", "discard", "exile"].iter().any(|w| c[1].contains(w)))
+    DRAW_TRIGGER.captures_iter(t).any(|c| !DRAW_WAITS.is_match(&c[1]))
+        || DRAW_ABILITY.captures_iter(t).any(|c| {
+            !["sacrifice", "remove", "discard", "exile"].iter().any(|w| c[1].contains(w))
+                && !NEEDS_COMBAT_OR_DEATH.is_match(&c[2])
+        })
 }

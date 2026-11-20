@@ -527,6 +527,117 @@ fn ramp_that_waits_for_an_attack_isnt_ramp() {
     assert_eq!(profile(&bitterthorn, "G").spell.unwrap().effect, Effect::Other);
 }
 
+#[test]
+fn an_aura_makes_mana_for_us_only_on_our_land() {
+    let moon = card(
+        "Imprisoned in the Moon",
+        "Enchantment — Aura",
+        "{2}{U}",
+        "C",
+        "Enchant creature, land, or planeswalker\nEnchanted permanent is a colorless land with \"{T}: Add {C}\" and loses all other card types and abilities.",
+    );
+    assert_eq!(
+        profile(&moon, "U").spell.unwrap().effect,
+        Effect::Other,
+        "it's the opponent's commander that taps for {{C}}"
+    );
+    let growth = card(
+        "Wild Growth",
+        "Enchantment — Aura",
+        "{G}",
+        "G",
+        "Enchant land\nWhenever enchanted land is tapped for mana, its controller adds an additional {G}.",
+    );
+    assert_eq!(rock_units(&profile(&growth, "G")), ["G"]);
+}
+
+#[test]
+fn lands_given_up_for_ramp_come_off_it() {
+    let effect = |c: &Card| profile(c, "G").spell.unwrap().effect;
+    let rotation = card(
+        "Crop Rotation",
+        "Instant",
+        "{G}",
+        "",
+        "As an additional cost to cast this spell, sacrifice a land.\nSearch your library for a land card, put that card onto the battlefield, then shuffle.",
+    );
+    assert_eq!(effect(&rotation), Effect::Other, "a land for a land");
+    let springbloom = card(
+        "Springbloom Druid",
+        "Creature — Elf Druid",
+        "{2}{G}",
+        "",
+        "When this creature enters, you may sacrifice a land. If you do, search your library for up to two basic land cards, put them onto the battlefield tapped, then shuffle.",
+    );
+    assert!(matches!(effect(&springbloom), Effect::LandRamp { to_battlefield: 2, sacrifice: 1, .. }));
+    let lotus = card(
+        "Lotus Field",
+        "Land",
+        "",
+        "WUBRG",
+        "Hexproof\nThis land enters tapped.\nWhen this land enters, sacrifice two lands.\n{T}: Add three mana of any one color.",
+    );
+    assert_eq!(land(&profile(&lotus, "G")).sacrifices, 2);
+    // Played out, Lotus Field is a land for two: no more mana than the lands it replaces.
+    let cmd = [commander("Big", "{20}", "G")];
+    let with = [(lotus, 8), (basic("Forest", "G"), 32), (filler("{9}"), 59)];
+    let without = [(basic("Forest", "G"), 40), (filler("{9}"), 59)];
+    let (a, b) = (run(&deck(&cmd, &with), 1000, 1), run(&deck(&cmd, &without), 1000, 1));
+    assert!(a.capacity[5] < b.capacity[5] + 0.6, "{} vs {}", a.capacity[5], b.capacity[5]);
+    // The lands it sacrifices are tapped for mana first, and it waits for two to give up, so one
+    // in place of a Forest costs next to nothing.
+    let cmd = [commander("Four", "{3}{G}", "G")];
+    let lotus_one = card(
+        "Lotus Field",
+        "Land",
+        "",
+        "WUBRG",
+        "Hexproof\nThis land enters tapped.\nWhen this land enters, sacrifice two lands.\n{T}: Add three mana of any one color.",
+    );
+    let one = [(lotus_one, 1), (basic("Forest", "G"), 39), (filler("{9}"), 59)];
+    let (a, b) = (run(&deck(&cmd, &one), 4000, 1), run(&deck(&cmd, &without), 4000, 1));
+    let (a, b) = (a.commander_by_t4.unwrap(), b.commander_by_t4.unwrap());
+    assert!(a > b - 0.02, "commander by T4 with a Lotus Field {a}, without {b}");
+}
+
+#[test]
+fn draws_that_wait_for_opponents_treasure_or_combat_dont_repeat() {
+    let tagged = |c: Card| Card { tagged: true, roles: Role::Draw.into(), ..c };
+    let effect = |c: &Card| profile(c, "UBR").spell.unwrap().effect;
+    let remora = tagged(card(
+        "Mystic Remora",
+        "Enchantment",
+        "{U}",
+        "",
+        "Cumulative upkeep {1}\nWhenever an opponent casts a noncreature spell, you may draw a card unless that player pays {4}.",
+    ));
+    assert_eq!(effect(&remora), Effect::Other);
+    let smaug = tagged(card(
+        "Smaug, Wicked Worm",
+        "Legendary Creature — Dragon",
+        "{3}{B}{R}",
+        "",
+        "Flying\nWhenever you cast a spell, if mana from a Treasure was spent to cast it, you draw a card.",
+    ));
+    assert_eq!(effect(&smaug), Effect::Other);
+    let spirit = tagged(card(
+        "Ascendant Spirit",
+        "Snow Creature — Spirit",
+        "{U}",
+        "",
+        "{S}{S}{S}{S}: If this creature is an Angel, it becomes a 4/4 with \"Whenever this creature deals combat damage to a player, draw a card.\"",
+    ));
+    assert_eq!(effect(&spirit), Effect::Other);
+    let loran = tagged(card(
+        "Loran of the Third Path",
+        "Legendary Creature — Human Artificer",
+        "{2}{W}",
+        "",
+        "When Loran enters, destroy up to one target artifact or enchantment.\n{T}: You and target opponent each draw a card.",
+    ));
+    assert_eq!(effect(&loran), Effect::Engine, "draws for us too, every turn");
+}
+
 // --- whole games ----------------------------------------------------------------------------------
 
 #[test]

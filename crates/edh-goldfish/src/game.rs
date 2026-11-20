@@ -106,6 +106,14 @@ struct Rock {
     sick: bool,
 }
 
+/// What a land played this turn does once the turn's mana is spent.
+enum AfterSpending {
+    /// A bounce land (at this position) returns a land to hand.
+    Bounce(usize),
+    /// Lotus Field (at this position) sacrifices `n` lands.
+    Sacrifice { land: usize, n: usize },
+}
+
 /// Where a spell is cast from.
 #[derive(Clone, Copy)]
 enum Slot {
@@ -178,14 +186,20 @@ impl<'d> Game<'d> {
                 self.draw(1);
             }
             self.draw(self.engines as usize);
-            let bounce = self.land_drop();
+            let then = self.land_drop();
             let mana = self.units();
             let (spent, cast_commander) = self.spend();
             if cast_commander && rec.commander_turn.is_none() {
                 rec.commander_turn = Some(turn);
             }
-            if let Some(bounce_land) = bounce {
-                self.bounce(bounce_land);
+            match then {
+                Some(AfterSpending::Bounce(land)) => self.bounce(land),
+                Some(AfterSpending::Sacrifice { land, n }) => {
+                    let mut gone = self.least_useful_lands(n, Some(land));
+                    gone.sort_unstable_by(|a, b| b.cmp(a));
+                    gone.into_iter().for_each(|i| drop(self.lands.remove(i)));
+                }
+                None => {}
             }
             for c in self.stuck(&mana) {
                 if self.deck.commanders.contains(&c) && rec.commander_turn.is_none() {
@@ -306,9 +320,11 @@ impl<'d> Game<'d> {
 
     /// Play the land (or land face) that lets the most mana be spent this turn; on a tie, keep a
     /// modal card's spell side, play a tapped land while it costs nothing, and prefer the colours
-    /// the hand needs. A bounce land waits for another land to return. Returns the bounce land
-    /// played, if one was.
-    fn land_drop(&mut self) -> Option<usize> {
+    /// the hand needs. A bounce land waits for another land to return, Lotus Field for two to give
+    /// up. Returns what the land does
+    /// once the turn's mana is spent: a bounce land returns a land, Lotus Field sacrifices two
+    /// (their mana is used first, as a player taps them before the trigger resolves).
+    fn land_drop(&mut self) -> Option<AfterSpending> {
         let need = self.needed();
         let base = self.units();
         // (what it ranks by, its position in hand, which face)
@@ -321,18 +337,27 @@ impl<'d> Game<'d> {
                 let out = self.lands.len() + 1;
                 let makes = |land: &Land| land_units(&land.units, &land.with_lands, out).to_vec();
                 let (tapped, new) = match &face.kind {
-                    // With no other land out, a bounce land would return itself.
+                    // With no other land out, a bounce land would return itself; without enough to
+                    // give up, Lotus Field would go too.
                     LandKind::Mana(land) if land.bounce && self.lands.is_empty() => continue,
+                    LandKind::Mana(land) if self.lands.len() < land.sacrifices => continue,
                     LandKind::Mana(land) => (self.enters_tapped(land, c), makes(land)),
                     LandKind::Fetch { finds, tapped } => match self.best_in_library(*finds) {
                         Some((_, land)) => (*tapped || self.enters_tapped(land, c), makes(land)),
                         None => (true, vec![]),
                     },
                 };
-                // What it adds to the deck's mana for good: a bounce land less the land it returns.
+                // What it adds to the deck's mana for good: a bounce land less the land it returns,
+                // Lotus Field less the lands it sacrifices.
                 let returned = match &face.kind {
                     LandKind::Mana(land) if land.bounce => {
                         self.lands.get(self.to_return(None)).map_or(0, |l| l.units.len())
+                    }
+                    LandKind::Mana(land) if land.sacrifices > 0 => {
+                        let gone = self.least_useful_lands(land.sacrifices, None);
+                        let lost: usize = gone.iter().map(|&i| self.lands[i].units.len()).sum();
+                        // Without enough lands to give up, it goes itself.
+                        if gone.len() < land.sacrifices { new.len() + lost } else { lost }
                     }
                     _ => 0,
                 };
@@ -357,13 +382,36 @@ impl<'d> Game<'d> {
             LandKind::Mana(land) => {
                 let tapped = self.enters_tapped(land, c);
                 self.put(land, c, tapped);
-                land.bounce.then_some(self.lands.len() - 1)
+                let new = self.lands.len() - 1;
+                if land.sacrifices > 0 {
+                    Some(AfterSpending::Sacrifice { land: new, n: land.sacrifices })
+                } else {
+                    land.bounce.then_some(AfterSpending::Bounce(new))
+                }
             }
             LandKind::Fetch { finds, tapped } => {
                 self.fetch(*finds, *tapped);
                 None
             }
         }
+    }
+
+    /// The `n` lands least worth keeping (making the least mana, then the fewest kinds of it), by
+    /// position; `spare` only if there aren't enough others (Lotus Field sacrificing itself).
+    fn least_useful_lands(&self, n: usize, spare: Option<usize>) -> Vec<usize> {
+        let worth = |i: usize| {
+            let l = &self.lands[i];
+            (l.units.len(), l.units.iter().fold(ManaSet::empty(), |a, u| a | *u).len())
+        };
+        let mut others: Vec<usize> = (0..self.lands.len()).filter(|&i| Some(i) != spare).collect();
+        others.sort_by_key(|&i| worth(i));
+        others.truncate(n);
+        if others.len() < n
+            && let Some(s) = spare
+        {
+            others.push(s);
+        }
+        others
     }
 
     /// The land a bounce land returns: the one making the least mana, then the fewest kinds of it;
@@ -464,7 +512,12 @@ impl<'d> Game<'d> {
                         units.extend(made);
                     }
                 }
-                Effect::LandRamp { finds, to_battlefield, to_hand, tapped, .. } => {
+                Effect::LandRamp { finds, to_battlefield, to_hand, tapped, sacrifice, .. } => {
+                    for _ in 0..*sacrifice {
+                        if let Some(i) = self.least_useful_lands(1, None).first() {
+                            self.lands.remove(*i);
+                        }
+                    }
                     for _ in 0..*to_battlefield {
                         let before = self.lands.len();
                         self.fetch(*finds, *tapped);
