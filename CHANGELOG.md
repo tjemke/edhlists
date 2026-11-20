@@ -10,6 +10,9 @@ What changed in each version, newest first. How versions are numbered: see *Vers
   playing the card most come first, sharing the `--commanders` slots with the theme ones.
 - Colour searches take a number, as on Scryfall: `c=3` is exactly three colours, `c>=4` four or
   more, and `-T 'c>=wu c=3=5+'` asks for five three-colour cards with white and blue.
+- In a `-T` like `'t:creature mv=3'` or `'c>=wu c=3'`, the last `=` is part of the search, as it
+  already was when the search was only `mv=3`; it was taken for the range (exactly 3) and the
+  search for `t:creature mv`, where a bare `mv` means a name containing "mv".
 - A `-T` whose `=` belongs to the search (`c=w`, `mv<=2`) and so has no range says that it only
   counts, with how to filter (`-T 'c=w=1+'`): before `scout` or `check` starts and in the
   browser's status line.

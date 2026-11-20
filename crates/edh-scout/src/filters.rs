@@ -410,7 +410,9 @@ impl FromStr for Filter {
     fn from_str(s: &str) -> Result<Self> {
         let split = s.rsplit_once('=').filter(|(what, _)| {
             let what = what.trim_end();
-            !what.ends_with(['<', '>', '!']) && !COMPARING_KEYS.contains(&what.to_lowercase().as_str())
+            // The term the `=` follows: `c` in `c>=wu c=3`, `mv` in `(t:creature or -mv=3`.
+            let last = what.rsplit(char::is_whitespace).next().unwrap_or("").trim_start_matches(['(', '-']);
+            !what.ends_with(['<', '>', '!']) && !COMPARING_KEYS.contains(&last.to_lowercase().as_str())
         });
         let (what, range) = match split {
             Some((what, range)) => (what.trim(), Some(range)),
@@ -1033,6 +1035,20 @@ mod tests {
             vec!["kotis", "cloud", "atraxa"],
             "a commander playing both required cards comes first"
         );
+    }
+
+    #[test]
+    fn an_equals_after_a_comparing_key_belongs_to_the_search_even_after_other_terms() {
+        let parsed = |s: &str| {
+            let f = cards_filter(s);
+            (f.label, f.min, f.max)
+        };
+        assert_eq!(parsed("c>=wu c=3"), ("c>=wu c=3".into(), None, None), "c=3 is a colour count, not a range");
+        assert_eq!(parsed("c>=wu c=3=5+"), ("c>=wu c=3".into(), Some(5), None));
+        assert_eq!(parsed("t:creature mv=3"), ("t:creature mv=3".into(), None, None));
+        assert_eq!(parsed("t:creature -mv=3=2+"), ("t:creature -mv=3".into(), Some(2), None));
+        assert_eq!(parsed("name:c=2+"), ("name:c".into(), Some(2), None), "c inside name:c isn't the colour key");
+        assert_eq!(parsed("c=3=4+"), ("c=3".into(), Some(4), None));
     }
 
     #[test]
