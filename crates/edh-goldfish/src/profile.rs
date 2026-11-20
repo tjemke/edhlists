@@ -99,6 +99,20 @@ impl Spell {
     pub fn has_x(&self) -> bool {
         self.cost.pips.contains(&Pip::X)
     }
+    /// A rock with X in its cost (Astral Cornucopia) is cast with X = 1, among the ramp; other X
+    /// spells take whatever mana is left at the end of the turn.
+    pub fn x_rock(&self) -> bool {
+        self.has_x() && matches!(self.effect, Effect::Rock { .. })
+    }
+    /// Generic mana paid on top of the cost as printed: X = 1 for an X rock, and the activation of
+    /// a land-ramp artifact (Wayfarer's Bauble).
+    pub fn extra(&self) -> u32 {
+        let x = if self.x_rock() { self.cost.pips.iter().filter(|p| **p == Pip::X).count() as u32 } else { 0 };
+        match self.effect {
+            Effect::LandRamp { activation, .. } => x + activation,
+            _ => x,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -130,7 +144,10 @@ fn re(s: &str) -> Regex {
     Regex::new(s).expect("a valid pattern")
 }
 
-static TAP_FOR_MANA: LazyLock<Regex> = LazyLock::new(|| re(r"(?:\{(\d+)\}, )?\{t\}([^:.]*): add ([^.]+)"));
+/// A repeatable mana ability: tapping (with whatever else it costs), or life alone (Kozilek's
+/// Translator); the colour may be chosen first (Astral Cornucopia).
+static TAP_FOR_MANA: LazyLock<Regex> =
+    LazyLock::new(|| re(r"(?:\{(\d+)\}, )?(\{t\}[^:.]*|pay \d+ life): (?:choose a color\. )?add ([^.]+)"));
 static FETCH: LazyLock<Regex> = LazyLock::new(|| {
     re(r"sacrifice [^:]*: search your library for an? ([^.]*?) card,? (?:and )?put it onto the battlefield( tapped)?")
 });
@@ -142,8 +159,12 @@ static RAMP_SEARCH: LazyLock<Regex> = LazyLock::new(|| {
 static ACTIVATION: LazyLock<Regex> = LazyLock::new(|| re(r"\{(\d+)\}, \{t\}, sacrifice"));
 static DRAWS: LazyLock<Regex> = LazyLock::new(|| re(r"\bdraws? (an?|one|two|three|four|x) (?:additional )?cards?"));
 static DISCARDS: LazyLock<Regex> = LazyLock::new(|| re(r"\bdiscards? (an?|one|two|three) cards?"));
+/// A card drawn again and again: a trigger that draws (in its own sentence or the next, "you may
+/// pay {1}. If you do, draw a card"), or a tap ability that does.
 static ENGINE: LazyLock<Regex> =
-    LazyLock::new(|| re(r"(?:at the beginning of|whenever)[^.]*\bdraw|\{t\}[^:]*:[^.]*\bdraw|[+−-]\d+: [^.]*\bdraw"));
+    LazyLock::new(|| re(r"(?:at the beginning of|whenever)[^.]*(?:\. if you do,[^.]*)?\bdraw|\{t\}[^:]*:[^.]*\bdraw"));
+/// A planeswalker ability that draws and can be used every turn: + or 0 loyalty.
+static LOYALTY_DRAW: LazyLock<Regex> = LazyLock::new(|| re(r"(?m)^(?:\+\d+|0): [^\n]*\bdraw"));
 static UNLESS_CONTROL: LazyLock<Regex> =
     LazyLock::new(|| re(r"enters tapped unless you control an? (\w+)(?: or an? (\w+))?\."));
 static REVEAL: LazyLock<Regex> =
@@ -231,6 +252,7 @@ fn mana_units(text: &str, produced: ManaSet, allowed: ManaSet) -> Vec<Unit> {
     if found.is_empty() {
         return vec![any];
     }
+    // Not one-shot mana (sacrificing it). Mana only some spells may use counts like any other.
     let abilities: Vec<Vec<Unit>> = found
         .iter()
         .filter(|m| !m[2].contains("sacrifice"))
@@ -335,6 +357,10 @@ fn effect(card: &Card, types: &Types, allowed: ManaSet) -> Effect {
         }
     }
     let draws = if card.tagged { card.roles.contains(Role::Draw) } else { DRAWS.is_match(&t) };
+    if draws && types.is(CardType::Planeswalker) {
+        // A draw only in a minus ability (Ugin's −10) is a long way off.
+        return if LOYALTY_DRAW.is_match(&t) { Effect::Engine } else { Effect::Other };
+    }
     if draws {
         if permanent && ENGINE.is_match(&t) {
             return Effect::Engine;

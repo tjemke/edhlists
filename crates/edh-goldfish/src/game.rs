@@ -387,7 +387,7 @@ impl<'d> Game<'d> {
         let keep_lands = self.lands.len() < ENOUGH_LANDS;
         for (pos, &c) in hand.iter().enumerate() {
             let Some(s) = &self.profile(c).spell else { continue };
-            if s.has_x() || (keep_lands && is_land_card(self.deck, c) && land_cards < 2) {
+            if (s.has_x() && !s.x_rock()) || (keep_lands && is_land_card(self.deck, c) && land_cards < 2) {
                 continue;
             }
             let mv = i64::from(s.mana_value());
@@ -408,7 +408,7 @@ impl<'d> Game<'d> {
                 Slot::Command(p) => command[p],
             };
             let s = self.profile(c).spell.as_ref()?;
-            pay(units, &s.cost, activation(&s.effect)).map(|left| (slot, left))
+            pay(units, &s.cost, s.extra()).map(|left| (slot, left))
         })
     }
 
@@ -423,7 +423,7 @@ impl<'d> Game<'d> {
             };
             units = left;
             let s = self.profile(c).spell.as_ref().expect("cast");
-            spent += s.mana_value() + activation(&s.effect);
+            spent += s.mana_value() + s.extra();
             if let Effect::Rock { units: made, summoning_sick: false } = &s.effect {
                 units.extend(made);
             }
@@ -447,7 +447,7 @@ impl<'d> Game<'d> {
                 }
             };
             let s = self.profile(c).spell.as_ref().expect("cast");
-            spent += s.mana_value() + activation(&s.effect);
+            spent += s.mana_value() + s.extra();
             match &s.effect {
                 Effect::Rock { units: made, summoning_sick } => {
                     self.rocks.push(Rock { units: made.clone(), sick: *summoning_sick });
@@ -488,8 +488,8 @@ impl<'d> Game<'d> {
         let mut out = Vec::new();
         for &c in self.hand.iter().chain(&self.command) {
             let Some(s) = &self.profile(c).spell else { continue };
-            let total = s.mana_value() + activation(&s.effect);
-            if total as usize <= units.len() && pay(units, &s.cost, activation(&s.effect)).is_none() {
+            let total = s.mana_value() + s.extra();
+            if total as usize <= units.len() && pay(units, &s.cost, s.extra()).is_none() {
                 out.push(c);
             }
         }
@@ -497,18 +497,11 @@ impl<'d> Game<'d> {
     }
 }
 
-fn activation(effect: &Effect) -> u32 {
-    match effect {
-        Effect::LandRamp { activation, .. } => *activation,
-        _ => 0,
-    }
-}
-
 /// An X spell in hand that the units left can cast, with X as large as they allow: its position
 /// and the mana it takes (all of it).
 fn soak(deck: &Deck, hand: &[usize], units: &[Unit]) -> Option<(usize, u32)> {
     hand.iter().enumerate().find_map(|(pos, &c)| {
-        let s = deck.profiles[c].spell.as_ref().filter(|s| s.has_x())?;
+        let s = deck.profiles[c].spell.as_ref().filter(|s| s.has_x() && !s.x_rock())?;
         pay(units, &s.cost, 0).map(|_| (pos, units.len() as u32))
     })
 }

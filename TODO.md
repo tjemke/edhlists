@@ -92,15 +92,16 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   reducers (Jodah, Goreclaw, Urza's Incubator), tutors for lands or rocks, Fabled Passage's untap
   with four lands (counted tapped), Exotic Orchard and Fellwar Stone (taken to make any of the
   deck's colours), and commanders cast again after dying. Each is a pattern in `profile.rs` plus an
-  `Effect` the game applies (`game.rs`), with a test. Read wrong today, found by playing the
-  nine sim decks 2,000,000 times against the Python prototype's 200,000 (2026-11-20: beyond noise
-  on eight decks, up to 0.5 mana by turn 4 and 5 points of commander-by-T4, each traced to cards
-  one model reads better): mana that isn't a `{T}` ability (Kozilek's Translator's "Pay 1 life:
-  Add {C}") or comes after "Choose a color." (Astral Cornucopia) isn't counted; counter mana
-  (Pentad Prism, Crystalline Crawler) isn't either, and should be one-shot; a draw in the
-  sentence after its trigger ("you may pay {1}. If you do, draw a card": Mentor of the Meek, Dawn
-  of Hope) counts as one draw, not an engine; a 0-loyalty draw (Lolth) isn't taken for an engine
-  and a −10 ultimate (Ugin) is. *Small* each.
+  `Effect` the game applies (`game.rs`), with a test. Also: counter mana (Pentad Prism,
+  Crystalline Crawler) isn't counted, and should be one-shot; mana only some spells may use counts
+  as any mana (Lord of the Forsaken: spells from the graveyard; Gwenna, Inga and Esika, Ixalli's
+  Lorekeeper, Haven of the Spirit Dragon: creatures, Dinosaurs, Dragons). Not counting it at all
+  was tried and was worse: the commander is often what it pays for (Pantlaza is a Dinosaur), and
+  commander-by-T4 fell 2-5 points in three of the nine decks. A unit that knows what it may pay
+  for would do it right. And ramp is cast before the commander whatever it costs: Lord of the
+  Forsaken (5) goes ahead of Kotis (3), 1.2 points of Sultai Arisen's commander-by-T4. Found by playing the nine sim decks 2,000,000 times against the Python prototype's
+  200,000 (2026-11-20), where each difference traced to cards one model reads better. *Small*
+  each.
 
 - [ ] **Score each deck faster still.** Scoring takes ~150-180 µs a deck since combos are looked up
   under their rarest card (it was ~285-435 µs). `edhpl::bracket` lowercases and regex-matches every

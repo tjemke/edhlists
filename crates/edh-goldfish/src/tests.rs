@@ -95,6 +95,43 @@ fn sol_ring_makes_two_colourless_and_dorks_wait_a_turn() {
 }
 
 #[test]
+fn mana_for_life_or_after_choosing_a_colour_counts() {
+    let translator = card(
+        "Kozilek's Translator",
+        "Creature — Eldrazi Drone",
+        "{4}",
+        "C",
+        "Devoid\nPay 1 life: Add {C}. Activate only once each turn.",
+    );
+    assert_eq!(rock_units(&profile(&translator, "G")), ["C"]);
+    let cornucopia = card(
+        "Astral Cornucopia",
+        "Artifact",
+        "{X}{X}{X}",
+        "WUBRG",
+        "This artifact enters with X charge counters on it.\n{T}: Choose a color. Add one mana of that color for each charge counter on this artifact.",
+    );
+    assert_eq!(rock_units(&profile(&cornucopia, "BG")), ["BG"]);
+}
+
+#[test]
+fn a_rock_with_x_in_its_cost_is_cast_with_x_as_one() {
+    let cornucopia = card(
+        "Astral Cornucopia",
+        "Artifact",
+        "{X}{X}{X}",
+        "WUBRG",
+        "This artifact enters with X charge counters on it.\n{T}: Choose a color. Add one mana of that color for each charge counter on this artifact.",
+    );
+    assert_eq!(profile(&cornucopia, "U").spell.unwrap().extra(), 3, "{{X}}{{X}}{{X}} with X = 1");
+    let cmd = [commander("Teval", "{9}{U}", "U")];
+    let plain = [(basic("Island", "U"), 38), (filler("{6}"), 61)];
+    let rocks = [(basic("Island", "U"), 38), (cornucopia, 20), (filler("{6}"), 41)];
+    let (a, b) = (run(&deck(&cmd, &plain), 1000, 1), run(&deck(&cmd, &rocks), 1000, 1));
+    assert!(b.capacity[5] > a.capacity[5] + 0.5, "cast as rocks: {} vs {}", b.capacity[5], a.capacity[5]);
+}
+
+#[test]
 fn one_shot_mana_isnt_a_rock() {
     let petal =
         card("Lotus Petal", "Artifact", "{0}", "WUBRG", "{T}, Sacrifice Lotus Petal: Add one mana of any color.");
@@ -264,6 +301,50 @@ fn draw_counts_what_a_card_nets() {
         "+2: Each player draws a card.\n−1: Target player draws a card.",
     ));
     assert_eq!(effect(&jace), Effect::Engine);
+}
+
+#[test]
+fn a_draw_in_the_sentence_after_its_trigger_repeats() {
+    let tagged = |c: Card| Card { tagged: true, roles: Role::Draw.into(), ..c };
+    let effect = |c: &Card| profile(c, "W").spell.unwrap().effect;
+    let mentor = tagged(card(
+        "Mentor of the Meek",
+        "Creature — Human Soldier",
+        "{2}{W}",
+        "",
+        "Whenever another creature you control with power 2 or less enters, you may pay {1}. If you do, draw a card.",
+    ));
+    assert_eq!(effect(&mentor), Effect::Engine);
+    let dawn = tagged(card(
+        "Dawn of Hope",
+        "Enchantment",
+        "{1}{W}",
+        "",
+        "Whenever you gain life, you may pay {2}. If you do, draw a card.\n{3}{W}: Create a 1/1 white Soldier creature token with lifelink.",
+    ));
+    assert_eq!(effect(&dawn), Effect::Engine);
+}
+
+#[test]
+fn planeswalkers_draw_every_turn_only_from_a_plus_or_zero_ability() {
+    let tagged = |c: Card| Card { tagged: true, roles: Role::Draw.into(), ..c };
+    let effect = |c: &Card| profile(c, "B").spell.unwrap().effect;
+    let lolth = tagged(card(
+        "Lolth, Spider Queen",
+        "Legendary Planeswalker — Lolth",
+        "{3}{B}{B}",
+        "",
+        "Whenever a creature you control dies, put a loyalty counter on Lolth.\n0: You draw a card and you lose 1 life.\n−3: Create two 2/1 black Spider creature tokens with reach and menace.",
+    ));
+    assert_eq!(effect(&lolth), Effect::Engine);
+    let ugin = tagged(card(
+        "Ugin, the Spirit Dragon",
+        "Legendary Planeswalker — Ugin",
+        "{8}",
+        "",
+        "+2: Ugin deals 3 damage to any target.\n−X: Exile each permanent with mana value X or less that's one or more colors.\n−10: You gain 7 life, draw seven cards, then put up to seven permanent cards from your hand onto the battlefield.",
+    ));
+    assert_eq!(effect(&ugin), Effect::Other, "the −10 is a long way off, and draws once");
 }
 
 // --- whole games ----------------------------------------------------------------------------------
