@@ -18,7 +18,7 @@
       packages = forAllSystems (pkgs: {
         default = pkgs.rustPlatform.buildRustPackage {
           pname = "edh-scout";
-          version = "0.2.0";
+          version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).workspace.package.version;
           src = pkgs.lib.fileset.toSource {
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
