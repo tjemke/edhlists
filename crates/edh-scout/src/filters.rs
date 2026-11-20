@@ -11,6 +11,10 @@
 //! Like EDHREC's counts, card counts cover the 99: commanders don't count, quantities do. A card
 //! filter without a range (`-T equipment`) only counts, it doesn't filter.
 //!
+//! EDHREC's counts are counted in the decklist too, its way (each card under its front face's main
+//! type), so that every `-T` shows the same way: a count column, the cards in the details, marks in
+//! the decklist. That count never rejects a deck: EDHREC's already picked it.
+//!
 //! Before a deck is fetched, a card filter can still use the deck table ([`Prior`]): its cards can
 //! only sit in some of EDHREC's type columns, which bounds the count and says which decks are
 //! likeliest to match.
@@ -84,6 +88,32 @@ impl TypeField {
             TypeField::Planeswalkers => "planeswalkers",
             TypeField::Battles => "battles",
             TypeField::Lands => "lands",
+        }
+    }
+
+    /// [`name`](Self::name), short enough for a column header.
+    pub fn short_name(self) -> &'static str {
+        match self {
+            TypeField::Enchantments => "enchants",
+            TypeField::Planeswalkers => "walkers",
+            other => other.name(),
+        }
+    }
+
+    /// Does EDHREC count `card` here? It files each card under its front face's main type
+    /// ([`Card::primary_type`]): an artifact creature is a creature, not an artifact.
+    pub fn holds(self, card: &Card) -> bool {
+        let t = card.primary_type();
+        match self {
+            TypeField::Creatures => t == "Creature",
+            TypeField::Instants => t == "Instant",
+            TypeField::Sorceries => t == "Sorcery",
+            TypeField::Spells => t == "Instant" || t == "Sorcery",
+            TypeField::Artifacts => t == "Artifact",
+            TypeField::Enchantments => t == "Enchantment",
+            TypeField::Planeswalkers => t == "Planeswalker",
+            TypeField::Battles => t == "Battle",
+            TypeField::Lands => t == "Land",
         }
     }
 }
@@ -178,6 +208,12 @@ impl TypeFilter {
             (None, None) => "0+".to_string(),
         }
     }
+
+    /// The one count it lets through, if its range has only one (`lands=36`).
+    pub fn exact(&self) -> Option<u32> {
+        let lo = self.min.unwrap_or(0);
+        (self.max == Some(lo)).then_some(lo)
+    }
 }
 
 impl FromStr for TypeFilter {
@@ -202,6 +238,9 @@ impl fmt::Display for TypeFilter {
 pub enum Counted {
     Query(Query),
     Role(Role),
+    /// One of EDHREC's counts, the way EDHREC counts it. The [`TypeFilter`] already picked the
+    /// deck from the deck table; this only shows the count, so the filter itself has no range.
+    Table(TypeFilter),
 }
 
 /// A count taken from the decklist: `equipment=10+`, `ramp=15+`, `'o:"create a treasure"=6+'`.
@@ -269,10 +308,25 @@ impl CardFilter {
         self.min.is_some() || self.max.is_some()
     }
 
-    /// The one count it lets through, if its range has only one (`=0`, `=4`, `=..0`).
+    /// The one count it lets through, if its range has only one (`=0`, `=4`, `=..0`); for one of
+    /// EDHREC's counts, the one its range lets through.
     pub fn exact(&self) -> Option<u32> {
+        if let Counted::Table(t) = &self.counted {
+            return t.exact();
+        }
         let lo = self.min.unwrap_or(0);
         (self.max == Some(lo)).then_some(lo)
+    }
+
+    /// Count `t`'s type in the decklist, without filtering (see [`Counted::Table`]).
+    pub fn table_count(t: TypeFilter) -> Self {
+        CardFilter {
+            label: t.field.name().to_string(),
+            counted: Counted::Table(t),
+            alternatives: vec![],
+            min: None,
+            max: None,
+        }
     }
 
     /// Check every card in the database once. An `otag:` needs Scryfall Tagger's tag tree; a
@@ -281,6 +335,7 @@ impl CardFilter {
         let scan = |q: &Query| cards.cards.iter().map(|c| q.matches(c)).collect::<Vec<bool>>();
         let matching = match &mut self.counted {
             Counted::Role(role) => cards.cards.iter().map(|c| roles(c).contains(role)).collect(),
+            Counted::Table(t) => cards.cards.iter().map(|c| t.field.holds(c)).collect(),
             Counted::Query(q) => {
                 if q.needs_tags() {
                     let tags = tags.ok_or_else(|| {
@@ -324,6 +379,7 @@ impl CardFilter {
             Counted::Role(Role::Removal) => vec!["removal".into()],
             Counted::Role(Role::Wipe) => vec!["board-wipes".into(), "wipes".into()],
             Counted::Query(q) => q.words(),
+            Counted::Table(_) => vec![],
         }
     }
 }
@@ -394,13 +450,18 @@ impl Filter {
     }
 }
 
-/// Split parsed `-T` arguments into table counts and decklist counts.
+/// Split parsed `-T` arguments into table counts and decklist counts. Every argument is counted in
+/// the decklist, in the order given (for the columns and details), EDHREC's counts included: they
+/// count there without filtering, since the deck table filters on them.
 pub fn split(filters: Vec<Filter>) -> (Vec<TypeFilter>, Vec<CardFilter>) {
     let mut table = Vec::new();
     let mut cards = Vec::new();
     for f in filters {
         match f {
-            Filter::Table(t) => table.push(t),
+            Filter::Table(t) => {
+                table.push(t);
+                cards.push(CardFilter::table_count(t));
+            }
             Filter::Cards(c) => cards.push(c),
         }
     }
@@ -552,11 +613,12 @@ pub fn mentioning_commanders(texts: &[String], cards: &CardDb, limit: usize) -> 
         .collect()
 }
 
+/// The filters, as the title says them (EDHREC's counts once, with their range).
 pub fn describe(table: &[TypeFilter], cards: &[CompiledFilter]) -> String {
     table
         .iter()
         .map(ToString::to_string)
-        .chain(cards.iter().map(|c| c.filter.to_string()))
+        .chain(cards.iter().filter(|c| !matches!(c.filter.counted, Counted::Table(_))).map(|c| c.filter.to_string()))
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -576,8 +638,9 @@ impl CountColumn {
     }
 }
 
-/// The deck tables' count columns: one per card filter, except those that let only one count
-/// through (`sagas=0`), since every deck shown has that count. The detail view still lists them.
+/// The deck tables' count columns: one per `-T`, EDHREC's counts included, except those that let
+/// only one count through (`sagas=0`, `lands=36`), since every deck shown has that count. The
+/// detail view still lists them.
 pub fn count_columns(filters: &[CompiledFilter]) -> Vec<CountColumn> {
     filters
         .iter()
@@ -587,12 +650,16 @@ pub fn count_columns(filters: &[CompiledFilter]) -> Vec<CountColumn> {
         .collect()
 }
 
-/// A column header / detail label for the `i`th card filter: the label itself if it is short, else
-/// the value of a single `key:value` term, else `Q1`, `Q2`, ...
+/// A column header / detail label for the `i`th card filter: the label itself if it is short, a
+/// short name for EDHREC's counts (`walkers`), else the value of a single `key:value` term, else
+/// `Q1`, `Q2`, ...
 pub fn short_label(label: &str, i: usize) -> String {
     const MAX: usize = 9;
     if label.chars().count() <= MAX {
         return label.to_string();
+    }
+    if let Ok(field) = label.parse::<TypeField>() {
+        return field.short_name().to_string();
     }
     if !label.contains(' ')
         && let Some((_, value)) = label.split_once(':')
@@ -891,12 +958,42 @@ mod tests {
     }
 
     #[test]
+    fn edhrecs_counts_are_counted_in_the_decklist_too_without_filtering() {
+        let db = db();
+        let parsed: Vec<Filter> = ["planeswalkers=10+", "equipment=1+", "artifacts=..2", "lands=36"]
+            .iter()
+            .map(|s| s.parse().unwrap())
+            .collect();
+        let (table, cards) = split(parsed);
+        assert_eq!(table.len(), 3, "the deck table still filters on EDHREC's counts");
+        let compiled: Vec<CompiledFilter> = cards.into_iter().map(|f| f.compile(&db, None).unwrap()).collect();
+        assert_eq!(
+            compiled.iter().map(|c| c.filter.label.as_str()).collect::<Vec<_>>(),
+            ["planeswalkers", "equipment", "artifacts", "lands"],
+            "every -T is counted in the decklist, in the order given"
+        );
+        let d = deck(&[("Bonesplitter", 1), ("Lizard Blades", 1), ("Arcane Signet", 1), ("Mountain", 30)]);
+        let count = |i: usize| compiled[i].count(&d, &db);
+        assert_eq!(count(2).count, 2, "EDHREC files Lizard Blades, an artifact creature, as a creature");
+        assert_eq!(count(3).count, 30);
+        assert!(count(0).passes && count(2).passes, "EDHREC's count picked the deck; the decklist's doesn't filter");
+        assert_eq!(describe(&table, &compiled), "10+ planeswalkers, ≤2 artifacts, 36 lands, 1+ equipment");
+        assert_eq!(
+            count_columns(&compiled).iter().map(|c| (c.filter, c.label.as_str())).collect::<Vec<_>>(),
+            vec![(0, "walkers"), (1, "equipment"), (2, "artifacts")],
+            "lands=36 lets a single count through, so it gets no column"
+        );
+    }
+
+    #[test]
     fn labels_for_columns() {
         assert_eq!(short_label("equipment", 0), "equipment");
         assert_eq!(short_label("otag:sweeper", 0), "sweeper");
         assert_eq!(short_label(r#"o:"treasure""#, 0), "treasure");
         assert_eq!(short_label(r#"o:"create a treasure""#, 1), "Q2");
         assert_eq!(short_label("t:equipment mv<=2", 2), "Q3");
+        assert_eq!(short_label("planeswalkers", 3), "walkers");
+        assert_eq!(short_label("enchantments", 3), "enchants");
     }
 
     #[test]

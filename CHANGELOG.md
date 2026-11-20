@@ -7,6 +7,9 @@ What changed in each version, newest first. How versions are numbered: see *Vers
 
 - The Aetherspark counts as an artifact, as EDHREC files it, not a planeswalker: in the decklist's
   grouping and in which decks a `-T` fetches first.
+- EDHREC's counts (`-T planeswalkers=10+`, `-T creatures=..5`) get a count column too, like every
+  other `-T`: counted in the decklist the way EDHREC files cards, listed in the details and marked
+  in the decklist. They still filter on EDHREC's own count.
 
 ## 0.3.0
 

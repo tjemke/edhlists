@@ -1,7 +1,7 @@
 //! The browser as a user drives it: keys in, what the list shows out.
 //!
 //! Scenarios talk to the browser only through [`Browser`] (`press`, `arrive`, `ids`, `starred`,
-//! `selected`, `status`, `text`) and never compare whole screens. When the browser's internals
+//! `selected`, `status`, `count_columns`, `text`) and never compare whole screens. When the browser's internals
 //! change, fix the driver, not the scenarios; when its look changes, nothing here should break.
 //! What any screen must get right, at any size, is checked by
 //! `the_screen_holds_together_at_every_size`. See "When a test fails" in AGENTS.md.
@@ -22,6 +22,7 @@ use super::{App, Settings};
 use crate::analysis::Score;
 use crate::config::PaneLayout;
 use crate::export::ExportFormat;
+use crate::filters::{self, CompiledFilter, Filter};
 use crate::rank::{RankMode, Target, Weights};
 use crate::scout::{Entry, Feed, FeedEvent, Origin, Pool, PoolStats};
 
@@ -47,6 +48,10 @@ impl World {
                 card("Alpha One", "Legendary Creature — Human"),
                 card("Beta Two", "Legendary Creature — Elf"),
                 card("Grizzly Bears", "Creature — Bear"),
+                card("Bonesplitter", "Artifact — Equipment"),
+                card("Lizard Blades", "Artifact Creature — Equipment Lizard"),
+                card("Sol Ring", "Artifact"),
+                card("Jace Beleren", "Legendary Planeswalker — Jace"),
             ]),
             combos: ComboDb::empty(),
             dir: tempfile::tempdir().unwrap(),
@@ -61,10 +66,15 @@ impl World {
 /// A deck called `id` for `commander`, scoring `power`: in the default target (B2–3) up to 7.7,
 /// outside it above that.
 fn scored(id: &str, power: f64, commander: &str) -> (Deck, Score) {
+    scored_with(id, power, commander, &["Grizzly Bears"])
+}
+
+/// [`scored`], running these cards (one of each).
+fn scored_with(id: &str, power: f64, commander: &str, cards: &[&str]) -> (Deck, Score) {
     let deck = Deck {
         id: id.into(),
         commanders: vec![commander.into()],
-        cards: [("Grizzly Bears".to_string(), 1)].into(),
+        cards: cards.iter().map(|c| (c.to_string(), 1)).collect(),
         meta: DeckMeta { edhrec_url: Some(format!("https://edhrec.com/deckpreview/{id}")), ..Default::default() },
     };
     let bracket = if power > 7.7 { 5 } else { 3 };
@@ -76,6 +86,16 @@ struct Browser<'a> {
     app: App<'a>,
     /// Where decks "arriving in the background" come from; `None` for a local list.
     arrivals: Option<Sender<FeedEvent>>,
+    /// The `-T` counts, for decks that arrive.
+    counts: Vec<CompiledFilter>,
+}
+
+/// `-T` arguments, as `scout` takes them in: every one counted in the decklist, and the columns
+/// for those counts.
+fn counting(world: &World, args: &[&str]) -> Vec<CompiledFilter> {
+    let parsed: Vec<Filter> = args.iter().map(|a| a.parse().unwrap()).collect();
+    let (_, cards) = filters::split(parsed);
+    cards.into_iter().map(|f| f.compile(&world.cards, None).unwrap()).collect()
 }
 
 impl<'a> Browser<'a> {
@@ -83,30 +103,41 @@ impl<'a> Browser<'a> {
     /// decks still arriving.
     fn open(world: &'a World, decks: &[(&str, f64)]) -> Self {
         let decks = decks.iter().map(|(id, power)| scored(id, *power, "Alpha One")).collect();
-        Self::build(world, decks, true, false)
+        Self::build(world, decks, true, false, &[])
+    }
+
+    /// One commander's decks, `(id, cards)`, scouted with these `-T` arguments (`equipment=1+`).
+    /// The decks are taken as already picked: EDHREC's counts aren't checked against them.
+    fn open_counting(world: &'a World, args: &[&str], decks: &[(&str, &[&str])]) -> Self {
+        let decks = decks.iter().map(|(id, cards)| scored_with(id, 6.0, "Alpha One", cards)).collect();
+        Self::build(world, decks, true, false, args)
     }
 
     /// A search across commanders: `(id, power, commander)`.
     fn open_search(world: &'a World, decks: &[(&str, f64, &str)]) -> Self {
         let decks = decks.iter().map(|(id, power, commander)| scored(id, *power, commander)).collect();
-        Self::build(world, decks, true, true)
+        Self::build(world, decks, true, true, &[])
     }
 
     /// A local list, as `check` shows it: no deck database, nothing arriving.
     fn open_local(world: &'a World, decks: &[(&str, f64)]) -> Self {
         let decks = decks.iter().map(|(id, power)| scored(id, *power, "Alpha One")).collect();
-        Self::build(world, decks, false, false)
+        Self::build(world, decks, false, false, &[])
     }
 
-    fn build(world: &'a World, decks: Vec<(Deck, Score)>, stored: bool, across: bool) -> Self {
-        let mut pool = Pool::new(&world.cards, &world.combos, HashMap::new(), PoolStats::default());
+    fn build(world: &'a World, decks: Vec<(Deck, Score)>, stored: bool, across: bool, args: &[&str]) -> Self {
+        let counts = counting(world, args);
+        let count_columns = filters::count_columns(&counts);
+        let mut pool =
+            Pool::new(&world.cards, &world.combos, HashMap::new(), PoolStats::default()).with_filters(counts.clone());
         if stored {
             let store = world.store();
             let favorites = store.db().favorites().unwrap();
             pool = pool.with_store(store, 1).with_favorites(favorites);
         }
         for (deck, score) in decks {
-            pool.decks.push(Entry { deck, score, matches: Vec::new() });
+            let matches = counts.iter().map(|f| f.count(&deck, &world.cards)).collect();
+            pool.decks.push(Entry { deck, score, matches });
         }
         let settings = Settings {
             title: "test".into(),
@@ -119,7 +150,7 @@ impl<'a> Browser<'a> {
             show_price: false,
             show_commander: across,
             mix: across,
-            count_columns: Vec::new(),
+            count_columns,
             layout: PaneLayout::Auto,
             source: (!stored).then(|| "local decklist".to_string()),
         };
@@ -129,7 +160,7 @@ impl<'a> Browser<'a> {
         } else {
             (None, None)
         };
-        Self { app: App::new(settings, pool, feed, None), arrivals }
+        Self { app: App::new(settings, pool, feed, None), arrivals, counts }
     }
 
     /// Press keys, separated by spaces: a character (`*`, `F`, `j`), or `down`, `up`, `enter`,
@@ -154,8 +185,8 @@ impl<'a> Browser<'a> {
     /// A deck arrives in the background, already scored, and the browser takes it in.
     fn arrive(&mut self, id: &str, power: f64) -> &mut Self {
         let (deck, score) = scored(id, power, "Alpha One");
-        let event =
-            FeedEvent::Scored { deck: Box::new(deck), scored: Some((score, Vec::new())), from: Origin::Fetched };
+        let matches = self.counts.iter().map(|f| f.count(&deck, self.app.pool.cards())).collect();
+        let event = FeedEvent::Scored { deck: Box::new(deck), scored: Some((score, matches)), from: Origin::Fetched };
         self.arrivals.as_ref().expect("a local list has nothing arriving").send(event).unwrap();
         self.app.pump();
         self
@@ -180,6 +211,15 @@ impl<'a> Browser<'a> {
     /// The selected deck's position in the ranking, as its `#` column shows it.
     fn selected_position(&self) -> Option<usize> {
         self.app.selected().map(|(pos, _)| pos + 1)
+    }
+
+    /// The headers of the columns the `-T` arguments added to the list, left to right.
+    fn count_columns(&mut self) -> Vec<String> {
+        let text = self.text(240, 30);
+        let header = text.iter().find(|l| l.contains("Power") && l.contains("Struct")).expect("the list's header");
+        let list: Vec<String> = header.split('│').nth(1).unwrap().split_whitespace().map(String::from).collect();
+        let after = |name: &str| list.iter().position(|c| c == name).unwrap_or_else(|| panic!("no {name} column"));
+        list[after("Syn") + 1..after("Themes")].to_vec()
     }
 
     /// The message in the status line, if there is one.
@@ -337,6 +377,29 @@ fn m_switches_between_mixing_commanders_and_ranking_by_score_keeping_the_cursor(
     b.press("j j m");
     assert_eq!(b.ids(), ["a1", "a2", "a3", "b1"]);
     assert_eq!(b.selected().as_deref(), Some("a2"));
+}
+
+#[test]
+fn every_t_gets_a_count_column_in_the_order_given() {
+    let w = World::new();
+    let deck: &[&str] = &["Bonesplitter", "Lizard Blades", "Jace Beleren", "Grizzly Bears"];
+    let args = ["equipment=1+", "planeswalker=1+", "creatures=..5", "ramp", "bear=1", "lands=0"];
+    let mut b = Browser::open_counting(&w, &args, &[("a", deck)]);
+    assert_eq!(
+        b.count_columns(),
+        ["equipment", "walkers", "creatures", "ramp"],
+        "EDHREC's counts (planeswalker, creatures) need a column like any other -T; only those that \
+         let a single count through (bear=1, lands=0) go without, since every deck shown has it"
+    );
+    let details = b.text(240, 30);
+    assert!(
+        shows(&details, "walkers    1   planeswalkers  Jace Beleren"),
+        "the details should list the planeswalkers counted: {details:#?}"
+    );
+    assert!(
+        shows(&details, "creatures  2   Grizzly Bears · Lizard Blades"),
+        "counted as EDHREC files cards, an artifact creature is a creature: {details:#?}"
+    );
 }
 
 /// On the selected row, a stretch of blank cells styled unlike the row is a block of colour; it's
