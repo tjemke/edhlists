@@ -11,7 +11,7 @@
 //! | `name:`, a bare word or `"phrase"` | the name contains the text; `!"Exact Name"` for one card |
 //! | `kw:` `keyword:` | has this keyword ability |
 //! | `mv` `cmc`, `usd` | numbers: `mv<=2`, `usd>10` (`:` means `=`) |
-//! | `c` `color`, `id` `identity` | colours: `c:rg` is at least red and green, `id:esper` fits an Esper deck |
+//! | `c` `color`, `id` `identity` | colours: `c:rg` is at least red and green, `id:esper` fits an Esper deck; a number counts them: `c=3`, `c>=wu c=3` (exactly three, white and blue among them) |
 //! | `is:` / `not:` | `gamechanger`, `commander`, `reserved`, `historic`, `permanent`, `mdfc`, `dfc` |
 //! | `otag:` `function:` | a Scryfall Tagger tag, its sub-tags included ([`Query::resolve_tags`]) |
 //!
@@ -72,6 +72,8 @@ enum Colors {
     Set(u8),
     Colorless,
     Multicolor,
+    /// How many colours (`c=3`, `id>=2`), 0 to 5.
+    Count(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -335,6 +337,7 @@ impl Term {
                     Colors::Set(q) => cmp.set(have, *q),
                     Colors::Colorless => cmp.set(have, 0),
                     Colors::Multicolor => (have.count_ones() >= 2) == (*cmp != Cmp::Ne),
+                    Colors::Count(n) => cmp.num(f64::from(have.count_ones()), f64::from(*n)),
                 }
             }
             Term::Is(is) => match is {
@@ -662,6 +665,7 @@ fn colors(value: &str) -> Option<Colors> {
         "artifice" | "yore" => set("wubr"),
         "wubrg" | "rainbow" | "five-color" => set("wubrg"),
         s if !s.is_empty() && s.chars().all(|c| "wubrg".contains(c)) => set(s),
+        "0" | "1" | "2" | "3" | "4" | "5" => Colors::Count(v.parse().expect("a digit")),
         _ => return None,
     })
 }
@@ -711,12 +715,13 @@ fn term(key: &str, op: Op, val: Val) -> Result<Expr> {
         "c" | "color" | "colour" | "id" | "identity" | "ci" => {
             let identity = matches!(key, "id" | "identity" | "ci");
             let v = plain(val, key)?;
-            let colors = colors(&v)
-                .ok_or_else(|| anyhow!("'{v}' isn't a colour (use letters like rg, or names like azorius)"))?;
-            // `c:rg` means "at least red and green", `id:rg` "fits a red-green deck"; `c:c` and
-            // `c:m` mean colourless and multicolour outright.
+            let colors = colors(&v).ok_or_else(|| {
+                anyhow!("'{v}' isn't a colour (use letters like rg, names like azorius, or a count from 0 to 5)")
+            })?;
+            // `c:rg` means "at least red and green", `id:rg` "fits a red-green deck"; `c:c`, `c:m`
+            // and `c:3` mean colourless, multicolour and exactly three colours outright.
             let cmp = match (op, colors) {
-                (Op::Colon, Colors::Colorless | Colors::Multicolor) => Cmp::Eq,
+                (Op::Colon, Colors::Colorless | Colors::Multicolor | Colors::Count(_)) => Cmp::Eq,
                 (Op::Colon, _) if identity => Cmp::Le,
                 (Op::Colon, _) => Cmp::Ge,
                 (op, _) => cmp(op),
@@ -888,6 +893,21 @@ mod tests {
         assert_eq!(hits("id:r t:instant"), vec!["Lightning Bolt", "Valakut Awakening"]); // fits mono-red
         assert_eq!(hits("id<=rw t:instant").len(), 3);
         assert_eq!(hits("id>r"), vec!["Boros Charm"]);
+    }
+
+    #[test]
+    fn a_number_counts_colours_as_on_scryfall() {
+        assert_eq!(hits("c=2"), vec!["Boros Charm"]);
+        assert_eq!(hits("c:2"), vec!["Boros Charm"], "with a number, : means exactly, as on Scryfall");
+        assert_eq!(hits("c>=2"), vec!["Boros Charm"]);
+        assert_eq!(hits("c=0"), hits("c:c"), "no colours is colourless");
+        assert_eq!(hits("c=1 t:instant"), vec!["Lightning Bolt", "Valakut Awakening"]);
+        assert_eq!(hits("c>=r c=2"), vec!["Boros Charm"], "named colours and a count combine");
+        assert_eq!(hits("c>=r c=3"), Vec::<String>::new());
+        assert_eq!(hits("c!=1 t:instant"), vec!["Boros Charm"]);
+        assert_eq!(hits("id<=1 t:instant"), vec!["Lightning Bolt", "Valakut Awakening"]);
+        let err = Query::parse("c=6").unwrap_err().to_string();
+        assert!(err.contains("a count from 0 to 5"), "c=6 should say colour counts stop at 5: {err}");
     }
 
     #[test]

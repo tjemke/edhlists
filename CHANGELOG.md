@@ -8,6 +8,8 @@ What changed in each version, newest first. How versions are numbered: see *Vers
 - Searching across commanders with a `-T` that asks for one particular card
   (`-T name:aetherspark=1`) starts from EDHREC's page for that card: the commanders it lists as
   playing the card most come first, sharing the `--commanders` slots with the theme ones.
+- Colour searches take a number, as on Scryfall: `c=3` is exactly three colours, `c>=4` four or
+  more, and `-T 'c>=wu c=3=5+'` asks for five three-colour cards with white and blue.
 - A `-T` whose `=` belongs to the search (`c=w`, `mv<=2`) and so has no range says that it only
   counts, with how to filter (`-T 'c=w=1+'`): before `scout` or `check` starts and in the
   browser's status line.

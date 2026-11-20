@@ -102,7 +102,7 @@ this part of [Scryfall's syntax](https://scryfall.com/docs/syntax):
 | `t:/…/`, `o:/…/`, `name:/…/` | a case-insensitive regular expression |
 | `kw:` `keyword:` | keyword abilities (`kw:flying`) |
 | `mv`, `cmc`, `usd` | numbers with `: = != < <= > >=` (`mv<=2`; `usd` is the cheapest printing) |
-| `c`, `id` | colour and colour identity: `c:rg` (at least red and green), `id:esper` (fits Esper), `c:m`, `c:c` |
+| `c`, `id` | colour and colour identity: `c:rg` (at least red and green), `id:esper` (fits Esper), `c:m`, `c:c`; a number counts colours, as on Scryfall: `c=3`, `c>=4`, and `'c>=wu c=3=5+'` for five or more three-colour cards with white and blue |
 | `is:` / `not:` | `gamechanger`, `commander`, `reserved`, `historic`, `permanent`, `mdfc`, `dfc` |
 | `otag:` `function:` | a [Scryfall Tagger](https://tagger.scryfall.com) tag and its sub-tags (`otag:ramp`, `otag:mana-rock`, `otag:sweeper`, `otag:tutor`) |
 | `name:`, bare words, `"…"`, `!"…"` | card names; `!` for one exact card |
