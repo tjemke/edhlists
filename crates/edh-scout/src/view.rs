@@ -236,7 +236,7 @@ pub fn detail_lines(
         label("  Lands"),
         Span::styled(format!("{:>3}", s.lands), Style::new().fg(if lands_ok { GOOD } else { OK })),
     ]));
-    for role in Role::ALL {
+    for &role in Role::ALL {
         let (have, want) = (s.count(role), role_target(role));
         let mut l = vec![label(&format!("  {}", role.short_label())), Span::raw(format!("{have:>3} "))];
         l.extend(meter(have, want));

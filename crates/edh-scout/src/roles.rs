@@ -1,6 +1,6 @@
 //! Is the deck well-rounded? Card roles measured against a deckbuilding template.
 //!
-//! Roles come from Scryfall Tagger's community-curated oracle tags (folded into bits by
+//! Roles come from Scryfall Tagger's community-curated oracle tags (folded into a set by
 //! `edh_data::tags`); cards Tagger doesn't know yet fall back to simple oracle-text heuristics.
 //! The template is the common community baseline (e.g. the Command Zone's): ~36 lands, ~10 ramp,
 //! ~10 card draw, ~8 targeted removal/interaction, ~2 board wipes.
@@ -12,7 +12,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use edh_data::cards::Card;
-use edh_data::tags;
+use edh_data::flags::Flag;
+pub use edh_data::tags::Role;
 use edh_data::text::strip_reminder;
 use edh_data::types::CardType;
 
@@ -22,35 +23,6 @@ pub struct Entry<'a> {
     pub card: &'a Card,
     pub qty: u32,
     pub commander: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum Role {
-    Ramp,
-    Draw,
-    Removal,
-    Wipe,
-}
-
-impl Role {
-    pub const ALL: [Role; 4] = [Role::Ramp, Role::Draw, Role::Removal, Role::Wipe];
-    pub fn label(self) -> &'static str {
-        match self {
-            Role::Ramp => "Ramp",
-            Role::Draw => "Card draw",
-            Role::Removal => "Removal",
-            Role::Wipe => "Board wipes",
-        }
-    }
-    /// Fits the detail pane's label column.
-    pub fn short_label(self) -> &'static str {
-        match self {
-            Role::Ramp => "Ramp",
-            Role::Draw => "Draw",
-            Role::Removal => "Removal",
-            Role::Wipe => "Wipes",
-        }
-    }
 }
 
 fn re(s: &str) -> Regex {
@@ -131,13 +103,7 @@ pub fn roles(card: &Card) -> Vec<Role> {
         return vec![];
     }
     if card.tagged {
-        let bits = [
-            (tags::RAMP, Role::Ramp),
-            (tags::DRAW, Role::Draw),
-            (tags::REMOVAL, Role::Removal),
-            (tags::WIPE, Role::Wipe),
-        ];
-        return bits.into_iter().filter(|(b, _)| card.roles & b != 0).map(|(_, r)| r).collect();
+        return card.roles.iter().collect();
     }
     heuristic_roles(card)
 }
@@ -207,7 +173,7 @@ impl Structure {
         } else if self.lands > hi {
             out.push(format!("{} lands is a lot", self.lands));
         }
-        for role in Role::ALL {
+        for &role in Role::ALL {
             let (have, want) = (self.count(role), target(role));
             if have < want {
                 out.push(format!("{} {} short", want - have, role.label().to_lowercase()));
@@ -232,7 +198,7 @@ pub fn structure(entries: &[Entry]) -> Structure {
     }
     let mut total = s.land_score();
     let mut weights = 1.0;
-    for role in Role::ALL {
+    for &role in Role::ALL {
         let w = weight(role);
         total += w * (f64::from(s.count(role)) / f64::from(target(role))).min(1.0);
         weights += w;
@@ -326,9 +292,9 @@ mod tests {
             "Destroy target permanent. Its controller creates a 3/3 green Beast creature token.",
         );
         c.tagged = true;
-        c.roles = tags::REMOVAL;
+        c.roles = Role::Removal.into();
         assert_eq!(roles(&c), vec![Role::Removal]);
-        c.roles = 0;
+        c.roles = Default::default();
         assert!(roles(&c).is_empty(), "a tagged card with no role tags plays no role");
     }
 

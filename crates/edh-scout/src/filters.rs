@@ -853,7 +853,7 @@ mod tests {
 
     fn db() -> CardDb {
         let mut signet = card("Arcane Signet", "Artifact", "{T}: Add one mana of any color.");
-        signet.roles = edh_data::tags::RAMP;
+        signet.roles = Role::Ramp.into();
         CardDb::new(vec![
             card("Bonesplitter", "Artifact — Equipment", "Equipped creature gets +2/+0."),
             card("Lizard Blades", "Artifact Creature — Equipment Lizard", "Double strike"),

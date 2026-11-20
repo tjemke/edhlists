@@ -1,7 +1,7 @@
 //! Scryfall Tagger oracle tags ("otags"): community-curated labels for what a card *does*.
 //!
 //! Two uses: the four structural roles — is it ramp, card draw, removal/interaction, a board wipe —
-//! are folded into a bitmask at build time ([`load_role_tags`]); and `otag:` searches read the
+//! are folded into a set of [`Role`]s at build time ([`load_role_tags`]); and `otag:` searches read the
 //! whole tag tree on demand ([`TagIndex`]).
 
 use std::collections::{HashMap, HashSet};
@@ -11,23 +11,46 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+use crate::flags::{EnumSet, flags};
 use crate::storage::open_maybe_gz;
 
-pub const RAMP: u8 = 1;
-pub const DRAW: u8 = 2;
-pub const REMOVAL: u8 = 4;
-pub const WIPE: u8 = 8;
+flags! {
+    /// A structural role in a deck, as the deckbuilding template counts them.
+    pub enum Role { Ramp = "Ramp", Draw = "Draw", Removal = "Removal", Wipe = "Wipe" }
+}
 
-/// (role bit, root tag labels, labels whose subtrees are excluded)
-const ROLES: &[(u8, &[&str], &[&str])] = &[
-    (RAMP, &["ramp"], &["ritual"]),
+pub type Roles = EnumSet<Role>;
+
+impl Role {
+    pub fn label(self) -> &'static str {
+        match self {
+            Role::Ramp => "Ramp",
+            Role::Draw => "Card draw",
+            Role::Removal => "Removal",
+            Role::Wipe => "Board wipes",
+        }
+    }
+    /// Fits the detail pane's label column.
+    pub fn short_label(self) -> &'static str {
+        match self {
+            Role::Ramp => "Ramp",
+            Role::Draw => "Draw",
+            Role::Removal => "Removal",
+            Role::Wipe => "Wipes",
+        }
+    }
+}
+
+/// (role, root tag labels, labels whose subtrees are excluded)
+const ROLES: &[(Role, &[&str], &[&str])] = &[
+    (Role::Ramp, &["ramp"], &["ritual"]),
     (
-        DRAW,
+        Role::Draw,
         &["card advantage"],
         &["loot", "rummage", "loot to library", "rummage to library", "loot to exile", "regrowth"],
     ),
-    (REMOVAL, &["removal", "counterspell"], &["sweeper", "removal-land"]),
-    (WIPE, &["sweeper"], &[]),
+    (Role::Removal, &["removal", "counterspell"], &["sweeper", "removal-land"]),
+    (Role::Wipe, &["sweeper"], &[]),
 ];
 
 #[derive(Deserialize)]
@@ -51,7 +74,7 @@ struct Tagging {
 
 #[derive(Default)]
 pub struct RoleTags {
-    pub roles: HashMap<String, u8>,
+    pub roles: HashMap<String, Roles>,
     /// Every oracle id that carries any tag at all (untagged cards fall back to heuristics).
     pub tagged: HashSet<String>,
 }
@@ -77,7 +100,7 @@ pub fn load_role_tags(path: &Path) -> Result<RoleTags> {
     for t in tags.values() {
         out.tagged.extend(t.taggings.iter().map(|x| x.oracle_id.clone()));
     }
-    for (bit, roots, excluded) in ROLES {
+    for &(role, roots, excluded) in ROLES {
         let mut stack: Vec<&RawTag> = roots.iter().filter_map(|r| by_label.get(r).copied()).collect();
         let mut seen = HashSet::new();
         while let Some(t) = stack.pop() {
@@ -85,7 +108,7 @@ pub fn load_role_tags(path: &Path) -> Result<RoleTags> {
                 continue;
             }
             for x in &t.taggings {
-                *out.roles.entry(x.oracle_id.clone()).or_default() |= bit;
+                out.roles.entry(x.oracle_id.clone()).or_default().insert(role);
             }
             stack.extend(t.child_ids.iter().filter_map(|c| tags.get(c)));
         }
@@ -206,5 +229,12 @@ mod tests {
         assert!(idx.oracle_ids("nope").is_none());
         assert_eq!(idx.suggestions("sweep"), vec!["sweeper", "sweeper-one-sided"]);
         assert_eq!(idx.suggestions("sweepr"), vec!["sweeper", "sweeper-one-sided"]);
+    }
+
+    #[test]
+    fn roles_are_written_by_name_in_template_order() {
+        let roles: Roles = [Role::Wipe, Role::Ramp].into_iter().collect();
+        assert_eq!(serde_json::to_string(&roles).unwrap(), r#"["Ramp","Wipe"]"#);
+        assert_eq!(serde_json::to_string(&Role::Draw).unwrap(), r#""Draw""#, "as the enum's variant was before");
     }
 }

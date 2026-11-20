@@ -281,7 +281,7 @@ mod tests {
     fn scores_are_pinned_to_the_scorer_version() {
         let mut ramp =
             card("Cultivate", 3.0, 0.4, 120, "Sorcery", "Search your library for up to two basic land cards");
-        ramp.roles = edh_data::tags::RAMP;
+        ramp.roles = edh_data::tags::Role::Ramp.into();
         ramp.tagged = true;
         let mut gc = card("Craterhoof Behemoth", 8.0, 55.0, 900, "Creature — Beast", "Haste");
         gc.game_changer = true;

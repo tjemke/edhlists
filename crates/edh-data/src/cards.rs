@@ -11,12 +11,12 @@ use serde::{Deserialize, Serialize};
 use crate::flags::EnumSet;
 use crate::mana::{ColorSet, ManaCost, ManaSet};
 use crate::storage::{open_maybe_gz, read_json_gz, write_json_gz};
-use crate::tags::RoleTags;
+use crate::tags::{RoleTags, Roles};
 use crate::text::{fold, front_face};
 use crate::types::{CardType, Supertype, Types};
 
 /// Bump when [`Card`] changes shape; `sync` rebuilds from the kept raw bulk file without downloading.
-pub const CARDS_SCHEMA: u32 = 5;
+pub const CARDS_SCHEMA: u32 = 6;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Card {
@@ -60,9 +60,9 @@ pub struct Card {
     /// The kinds of mana it can make, as Scryfall lists them (`produced_mana`).
     #[serde(default, skip_serializing_if = "EnumSet::is_empty")]
     pub produced: ManaSet,
-    /// Scryfall Tagger role bits ([`crate::tags`]): ramp, draw, removal, wipe.
-    #[serde(default)]
-    pub roles: u8,
+    /// The roles Scryfall Tagger's tags give it ([`crate::tags`]): ramp, draw, removal, wipe.
+    #[serde(default, skip_serializing_if = "EnumSet::is_empty")]
+    pub roles: Roles,
     /// Whether Scryfall Tagger knows this card at all (if not, roles come from heuristics).
     #[serde(default)]
     pub tagged: bool,
@@ -353,7 +353,7 @@ fn convert(c: RawCard) -> Option<Card> {
         game_changer: c.game_changer,
         banned: legal == "banned",
         produced: ManaSet::from_codes(c.produced_mana.iter().flatten().map(String::as_str)),
-        roles: 0,
+        roles: Roles::empty(),
         tagged: false,
         keywords: c.keywords,
         name: c.name,
@@ -407,7 +407,7 @@ pub fn build_from_bulk(path: &Path, tags: Option<&RoleTags>) -> Result<CardDb> {
     for (_, (mut card, usd, foil, etched)) in by_oracle {
         card.usd = usd.or(foil).or(etched).unwrap_or(0.0);
         if let Some(t) = tags {
-            card.roles = t.roles.get(&card.oracle_id).copied().unwrap_or(0);
+            card.roles = t.roles.get(&card.oracle_id).copied().unwrap_or_default();
             card.tagged = t.tagged.contains(&card.oracle_id);
         }
         // On a name clash (rare), prefer the one people actually play.
