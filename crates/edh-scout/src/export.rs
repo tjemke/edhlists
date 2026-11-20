@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
+use edh_goldfish::ManaReport;
+
 use crate::analysis::Analysis;
 use crate::filters::CountColumn;
 use crate::rank::{RankMode, Ranked, Target};
@@ -63,6 +65,8 @@ pub struct ReportInput<'a> {
     pub decks: &'a [Entry],
     /// The full analysis of deck `i` (see [`crate::scout::Pool::details`]), for the decks shown.
     pub analyze: &'a dyn Fn(usize) -> Analysis,
+    /// The mana goldfish's report on deck `i` ([`crate::mana::report`]), `None` when it's off.
+    pub mana: &'a dyn Fn(usize) -> Option<ManaReport>,
     pub ranking: &'a [Ranked],
     /// The ids of the decks marked as favorites, starred in the report.
     pub favorites: &'a std::collections::HashSet<String>,
@@ -201,6 +205,12 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
             s.count(crate::roles::Role::Wipe),
             if s.gaps().is_empty() { String::new() } else { format!(" ({})", s.gaps().join(", ")) }
         )?;
+        if let Some(m) = (input.mana)(r.index) {
+            let (summary, stuck) = crate::view::mana_summary(&m);
+            let stuck =
+                if stuck.is_empty() { String::new() } else { format!(" — stuck on colours: {}", stuck.join(", ")) };
+            writeln!(md, "- Mana ({} solitaire games): {summary}{stuck}", m.games)?;
+        }
         if let Some(syn) = &a.synergy {
             let sig: Vec<String> =
                 syn.signature.iter().take(6).map(|(n, v)| format!("{n} (+{:.0}%)", v * 100.0)).collect();
@@ -269,6 +279,7 @@ mod tests {
             mode: RankMode::Fit,
             decks: &decks,
             analyze: &|_| Analysis::default(),
+            mana: &|_| None,
             ranking: &ranking,
             favorites: &favorites,
             limit: 10,

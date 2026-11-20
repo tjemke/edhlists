@@ -18,6 +18,11 @@
 //! [performance]
 //! # Threads for bulk work (reading, parsing and scoring stored decks); default: half the CPUs.
 //! threads = 4
+//!
+//! [goldfish]
+//! # Games the mana goldfish plays per deck for the details pane, `check` and the report;
+//! # 0 turns it off.
+//! games = 5000
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -31,6 +36,23 @@ pub struct Config {
     pub tui: TuiConfig,
     pub search: SearchConfig,
     pub performance: PerformanceConfig,
+    pub goldfish: GoldfishConfig,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct GoldfishConfig {
+    /// Games the mana goldfish ([`crate::mana`]) plays per deck; 0 turns it off.
+    pub games: u32,
+}
+
+/// Enough games that a share moves by about a point at most from one run of games to another.
+pub const GOLDFISH_GAMES: u32 = 5000;
+
+impl Default for GoldfishConfig {
+    fn default() -> Self {
+        Self { games: GOLDFISH_GAMES }
+    }
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -198,6 +220,14 @@ mod tests {
         assert_eq!(Config::parse("").unwrap().search.widen_every, crate::plan::WIDEN_EVERY);
         assert_eq!(Config::parse("[search]\nwiden_every = 20\n").unwrap().search.widen_every, 20);
         assert_eq!(Config::parse("[search]\nwiden_every = 0\n").unwrap().search.widen_every, 0, "0 turns it off");
+    }
+
+    #[test]
+    fn goldfish_games() {
+        assert_eq!(Config::parse("").unwrap().goldfish.games, GOLDFISH_GAMES);
+        assert_eq!(Config::parse("[goldfish]\ngames = 20000\n").unwrap().goldfish.games, 20000);
+        assert_eq!(Config::parse("[goldfish]\ngames = 0\n").unwrap().goldfish.games, 0, "0 turns it off");
+        assert!(Config::parse("[goldfish]\ngames = -1\n").is_err());
     }
 
     #[test]

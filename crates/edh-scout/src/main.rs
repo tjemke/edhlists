@@ -25,7 +25,7 @@ use edh_scout::scout::{
 };
 use edh_scout::select::SelectOptions;
 use edh_scout::status::Status;
-use edh_scout::{picker, plain, tui, view};
+use edh_scout::{mana, picker, plain, tui, view};
 use edh_store::{DeckStore, Retired};
 
 /// Find well-rounded, fun Commander decklists on EDHREC.
@@ -301,6 +301,8 @@ struct Show<'a> {
     layout: PaneLayout,
     /// For the browser's status line on opening (see [`filters::count_only_notice`]).
     notice: Option<String>,
+    /// Games the mana goldfish plays per deck (`[goldfish] games`).
+    goldfish_games: u32,
 }
 
 fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) -> Result<()> {
@@ -374,8 +376,15 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
         )?,
     };
     drop(status);
-    let show =
-        Show { rank: args.rank, weights, mix: !args.no_mix, output: &args.output, layout: config.tui.layout, notice };
+    let show = Show {
+        rank: args.rank,
+        weights,
+        mix: !args.no_mix,
+        output: &args.output,
+        layout: config.tui.layout,
+        notice,
+        goldfish_games: config.goldfish.games,
+    };
     finish(http, session, &show, target)
 }
 
@@ -722,8 +731,15 @@ fn run_favorites(http: &Arc<Http>, paths: &Paths, config: &Config, args: Favorit
         source: Some(format!("favorites across {commanders} commander{}", if commanders == 1 { "" } else { "s" })),
     };
     drop(status);
-    let show =
-        Show { rank: args.rank, weights, mix: args.mix, output: &args.output, layout: config.tui.layout, notice: None };
+    let show = Show {
+        rank: args.rank,
+        weights,
+        mix: args.mix,
+        output: &args.output,
+        layout: config.tui.layout,
+        notice: None,
+        goldfish_games: config.goldfish.games,
+    };
     finish(http, session, &show, target)
 }
 
@@ -753,6 +769,7 @@ fn finish(http: &Arc<Http>, session: Session, show: &Show, target: Target) -> Re
                 layout: show.layout,
                 source: source.clone(),
                 notice: show.notice.clone(),
+                goldfish_games: show.goldfish_games,
             };
             let mut app = tui::App::new(settings, pool, feed, Some(http));
             tui::run(&mut app)?;
@@ -818,6 +835,7 @@ fn print_plain(
             mode: show.rank,
             decks: &pool.decks,
             analyze: &|i| pool.details(i),
+            mana: &|i| mana::report(&pool.decks[i].deck, pool.cards(), show.goldfish_games),
             ranking: &ranking,
             favorites,
             limit: output.top,
@@ -888,12 +906,15 @@ fn run_check(http: &Http, paths: &Paths, config: &Config, args: CheckArgs) -> Re
             layout: config.tui.layout,
             source: Some("local decklist".into()),
             notice,
+            goldfish_games: config.goldfish.games,
         };
         tui::run(&mut tui::App::new(settings, pool, None, None))?;
     } else {
         let (deck, a) = (&pool.decks[0].deck, pool.details(0));
         let fits = target.fits(&pool.decks[0].score);
-        let mut lines = view::detail_lines(deck, &a, &target, None, args.price);
+        let report = mana::report(deck, &cards, config.goldfish.games);
+        let mana = report.as_ref().map_or(view::ManaView::Off, view::ManaView::Ready);
+        let mut lines = view::detail_lines(deck, &a, &target, None, args.price, mana);
         if let Some(width) = terminal_width() {
             lines = view::wrap_lines(lines, width);
         }

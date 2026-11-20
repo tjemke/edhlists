@@ -20,11 +20,12 @@ use crate::analysis::Analysis;
 use crate::config::PaneLayout;
 use crate::export::{self, ExportFormat, ReportInput};
 use crate::filters::{CountColumn, short_label};
+use crate::mana;
 use crate::rank::{RankMode, Ranked, Target, Weights, hoist, mix, rank};
 use crate::scout::{Entry, Feed, FeedEvent, FetchEvent, Pool};
 use crate::view::{
-    ACCENT, BAD, DIM, GOOD, OK, counted_color, deck_identity, detail_lines, grouped_list, identity_line, power_color,
-    score_color, wrap_lines,
+    ACCENT, BAD, DIM, GOOD, ManaView, OK, counted_color, deck_identity, detail_lines, grouped_list, identity_line,
+    power_color, score_color, wrap_lines,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -58,6 +59,8 @@ pub struct Settings {
     /// Shown in the status line on opening (a `-T` that only counts though it looks like a
     /// filter: [`filters::count_only_notice`](crate::filters::count_only_notice)).
     pub notice: Option<String>,
+    /// Games the mana goldfish plays for the selected deck; 0 leaves it out.
+    pub goldfish_games: u32,
 }
 
 pub struct App<'a> {
@@ -73,6 +76,8 @@ pub struct App<'a> {
     visible: Vec<(usize, Ranked)>,
     /// The selected deck's full analysis (by pool index), worked out when the selection moves.
     details: Option<(usize, Analysis)>,
+    /// The mana goldfish, playing the selected deck in the background; `None` when it's off.
+    mana: Option<mana::Background>,
     fits_only: bool,
     favorites_only: bool,
     /// How many of the pool's decks are favorites (they lead `ranking`), for the header.
@@ -92,6 +97,7 @@ const TICK: Duration = Duration::from_millis(120);
 impl<'a> App<'a> {
     pub fn new(settings: Settings, pool: Pool<'a>, feed: Option<Feed>, http: Option<&'a Http>) -> Self {
         let status = settings.notice.clone().map(|n| (n, true));
+        let mana = mana::Background::start(settings.goldfish_games);
         let mut app = Self {
             settings,
             pool,
@@ -100,6 +106,7 @@ impl<'a> App<'a> {
             ranking: Vec::new(),
             visible: Vec::new(),
             details: None,
+            mana,
             fits_only: false,
             favorites_only: false,
             favorite_count: 0,
@@ -179,6 +186,7 @@ impl<'a> App<'a> {
             self.status = Some((n, true));
             changed = true;
         }
+        changed |= self.mana.as_mut().is_some_and(|m| m.poll());
         changed
     }
 
@@ -233,6 +241,9 @@ impl<'a> App<'a> {
         let want = self.selected().map(|(_, r)| r.index);
         if want != self.details.as_ref().map(|(i, _)| *i) {
             self.details = want.map(|i| (i, self.pool.details(i)));
+            if let (Some(m), Some(i)) = (&mut self.mana, want) {
+                m.want(&self.pool.decks[i].deck, self.pool.cards());
+            }
         }
     }
 
@@ -343,6 +354,11 @@ impl<'a> App<'a> {
                     mode: self.settings.mode,
                     decks: &self.pool.decks,
                     analyze: &|i| self.pool.details(i),
+                    mana: &|i| {
+                        let deck = &self.pool.decks[i].deck;
+                        let kept = self.mana.as_ref().and_then(|m| m.get(&deck.id).cloned());
+                        kept.or_else(|| mana::report(deck, self.pool.cards(), self.settings.goldfish_games))
+                    },
                     ranking: &ranking,
                     favorites: self.pool.favorites(),
                     limit: self.settings.report_top,
@@ -559,7 +575,11 @@ impl<'a> App<'a> {
         let (_, r) = self.selected().expect("selected");
         let Some((_, a)) = &self.details else { return };
         let deck = &self.pool.decks[r.index].deck;
-        let lines = detail_lines(deck, a, &self.settings.target, Some(&r), self.settings.show_price);
+        let mana = match &self.mana {
+            None => ManaView::Off,
+            Some(m) => m.get(&deck.id).map_or(ManaView::Pending(m.games()), ManaView::Ready),
+        };
+        let lines = detail_lines(deck, a, &self.settings.target, Some(&r), self.settings.show_price, mana);
         let lines = wrap_lines(lines, area.width.saturating_sub(2) as usize);
         let p = Paragraph::new(lines)
             .scroll((self.scroll, 0))

@@ -3,6 +3,15 @@
 What changed in each version, newest first. How versions are numbered: see *Versioning* in
 `AGENTS.md`.
 
+## 0.3.5
+
+- The details pane, `check` and the exported report say how a deck's mana develops: a goldfish
+  plays the deck 5,000 times on its own and reports how often the commander is out by turn 4, the
+  mana on turn 4 against a land a turn, how often colours held the commander up, and the cards
+  most often stuck on colours (when it's more than 0.5% of games). In the browser it plays in the
+  background, a deck at a time. `[goldfish] games` in the config file changes the number of
+  games; 0 turns it off.
+
 ## 0.3.4
 
 - The card database keeps each card's mana cost and the kinds of mana it makes, for the mana

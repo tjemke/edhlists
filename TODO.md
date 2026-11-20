@@ -86,23 +86,21 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
 
 ## Maybe
 
-- [ ] **A colour-aware mana goldfish per deck.** A solitaire simulation (no rules engine, no
-  opponent) of lands, rocks/dorks, land-ramp and draw, paying coloured pips from the sources that
-  make them, reports how often the commander lands on curve, how often colours strand a card (and
-  which cards), mulligan rate and mana by turn N. A Python prototype (2026-11-20, 9 decks, 10k
-  games each in ~80 s) separated decks by mana in ways card counts don't: Sultai Arisen's and
-  Frodo's commanders were held up by colours in ~15% of games, a colourless version of the same
-  model missed it (Kotis by T4 95% → 75%, Jodah 42% → 24%). It does not measure strength (rank
-  correlation with power ≈ 0.2), so it would be a diagnostic in the detail pane, `check` and
-  export, not a ranking input or filter (it's a share of simulated games, not a card count).
-  Show: commander cast by T4, mana on T4 against a land a turn (+1.4), how often colours held
-  the commander up, the cards most often stuck on colours. The card data it needs is in place
-  (`Card::mana_cost`, `produced`, `types()` with basic land types, `roles`). Plan: a new crate
-  `crates/edh-goldfish` (depends on edh-data only; no I/O, seeded so a deck always gets the same
-  report): card profiles from oracle text (enters-tapped rules: check/snarl/fast/slow/shock
-  lands, ~12 patterns; fetch and bounce lands; rock output), the simulation, and tests.
-  edh-scout computes a report when a deck is opened and caches it per deck. *Medium*: ~600-800
-  lines with tests.
+- [ ] **Teach the mana goldfish more cards.** `crates/edh-goldfish/src/profile.rs` reads lands,
+  rocks/dorks, land-ramp and draw; everything else is a spell of its cost. Left out, roughly by how
+  much they'd move the numbers: Treasure makers and rituals (one-shot mana: no ramp now), cost
+  reducers (Jodah, Goreclaw, Urza's Incubator), tutors for lands or rocks, Fabled Passage's untap
+  with four lands (counted tapped), Exotic Orchard and Fellwar Stone (taken to make any of the
+  deck's colours), and commanders cast again after dying. Each is a pattern in `profile.rs` plus an
+  `Effect` the game applies (`game.rs`), with a test. Read wrong today, found by playing the
+  nine sim decks 2,000,000 times against the Python prototype's 200,000 (2026-11-20: beyond noise
+  on eight decks, up to 0.5 mana by turn 4 and 5 points of commander-by-T4, each traced to cards
+  one model reads better): mana that isn't a `{T}` ability (Kozilek's Translator's "Pay 1 life:
+  Add {C}") or comes after "Choose a color." (Astral Cornucopia) isn't counted; counter mana
+  (Pentad Prism, Crystalline Crawler) isn't either, and should be one-shot; a draw in the
+  sentence after its trigger ("you may pay {1}. If you do, draw a card": Mentor of the Meek, Dawn
+  of Hope) counts as one draw, not an engine; a 0-loyalty draw (Lolth) isn't taken for an engine
+  and a −10 ultimate (Ugin) is. *Small* each.
 
 - [ ] **Score each deck faster still.** Scoring takes ~150-180 µs a deck since combos are looked up
   under their rarest card (it was ~285-435 µs). `edhpl::bracket` lowercases and regex-matches every

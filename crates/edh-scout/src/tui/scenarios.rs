@@ -164,6 +164,8 @@ impl<'a> Browser<'a> {
             layout: PaneLayout::Auto,
             source: (!stored).then(|| "local decklist".to_string()),
             notice: filters::count_only_notice(counts.iter().map(|f| &f.filter)),
+            // Enough to play every deck, few enough to be quick.
+            goldfish_games: 200,
         };
         let (arrivals, feed) = if stored {
             let (tx, feed) = Feed::for_test();
@@ -254,6 +256,23 @@ impl<'a> Browser<'a> {
         marks
     }
 
+    /// What the details say about the selected deck's mana, once the goldfish has played it: the
+    /// lines from "Mana" on, as one string.
+    fn mana(&mut self) -> String {
+        self.app.refresh_details();
+        if let Some(m) = self.app.mana.as_mut() {
+            m.wait();
+        }
+        let text = self.text(240, 60);
+        let at = text.iter().position(|l| l.contains("Mana ")).expect("a Mana line in the details");
+        let mut out = vec![text[at].clone()];
+        out.extend(text[at + 1..].iter().take_while(|l| l.contains("stuck on colours")).cloned());
+        out.iter()
+            .map(|l| l.split('│').filter(|s| s.contains("Mana") || s.contains("stuck")).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     /// The message in the status line, if there is one.
     fn status(&self) -> String {
         self.app.status.as_ref().map(|(msg, _)| msg.clone()).unwrap_or_default()
@@ -299,6 +318,17 @@ fn a_deck_marked_as_favorite_leads_the_list_with_the_cursor_on_it() {
     assert_eq!(b.ids(), ["x", "a", "b", "c", "d"]);
     assert_eq!(b.selected().as_deref(), Some("d"));
     assert!(b.status().contains("removed"), "status: {}", b.status());
+}
+
+#[test]
+fn the_details_say_how_the_selected_decks_mana_develops() {
+    let w = World::new();
+    let mut b = Browser::open(&w, &[("a", 6.2), ("b", 6.0)]);
+    let a = b.mana();
+    assert!(a.contains("commander by T4") && a.contains("mana on T4"), "deck a's details: {a}");
+    b.press("j");
+    let next = b.mana();
+    assert!(next.contains("mana on T4"), "the next deck gets its own: {next}");
 }
 
 #[test]

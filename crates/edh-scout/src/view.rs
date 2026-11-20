@@ -11,6 +11,8 @@ use edh_data::text::front_face;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
+use edh_goldfish::ManaReport;
+
 use crate::analysis::Analysis;
 use crate::filters::{Matched, short_label};
 use crate::rank::{Ranked, Target};
@@ -140,6 +142,7 @@ pub fn detail_lines(
     target: &Target,
     ranked: Option<&Ranked>,
     show_price: bool,
+    mana: ManaView,
 ) -> Vec<Line<'static>> {
     let mut out: Vec<Line<'static>> = Vec::new();
     let themes = if deck.meta.tags.is_empty() { "no themes tagged".to_string() } else { deck.meta.tags.join(" · ") };
@@ -244,6 +247,12 @@ pub fn detail_lines(
     }
     out.push(Line::default());
 
+    let mana = mana_lines(mana);
+    if !mana.is_empty() {
+        out.extend(mana);
+        out.push(Line::default());
+    }
+
     // Synergy
     if let Some(syn) = &a.synergy {
         let mut l = vec![label("Synergy"), Span::styled(format!("{:.1}%", syn.average * 100.0), Style::new().bold())];
@@ -299,6 +308,57 @@ pub fn detail_lines(
 /// One `-T` card filter's count and the cards that make it up; a long filter is shown under its
 /// short label (`Q1`), in the filter's colour, and spelled out before the cards. The count is green
 /// within the filter's range, red (with the range) outside it, uncoloured without one.
+/// The mana goldfish's part of the details.
+pub enum ManaView<'a> {
+    /// Turned off (`[goldfish] games = 0`).
+    Off,
+    /// Still playing this many games.
+    Pending(u32),
+    Ready(&'a ManaReport),
+}
+
+/// A share as a percentage: a decimal below 10% ("2.1%"), none above ("80%").
+fn share(x: f64) -> String {
+    if x < 0.1 { format!("{:.1}%", x * 100.0) } else { format!("{:.0}%", x * 100.0) }
+}
+
+/// What the mana goldfish found, in words ("commander by T4 80% · 5.3 mana on T4, +1.3 over a
+/// land a turn · colours held it up 2%"), and the cards most often stuck on colours, if any were
+/// more than now and then ([`edh_goldfish::STUCK_WORTH_SHOWING`]). Shared with the report.
+pub fn mana_summary(m: &ManaReport) -> (String, Vec<String>) {
+    let mut parts = Vec::new();
+    if let Some(t4) = m.commander_by_t4 {
+        parts.push(format!("commander by T4 {}", share(t4)));
+    }
+    parts.push(format!("{:.1} mana on T4, {:+.1} over a land a turn", m.capacity[3], m.ahead_on_t4()));
+    if let Some(d) = m.colour_delayed.filter(|d| *d > edh_goldfish::STUCK_WORTH_SHOWING) {
+        parts.push(format!("colours held it up {}", share(d)));
+    }
+    let stuck = m.stuck_often().take(4).map(|(n, s)| format!("{} {}", front_face(n), share(*s))).collect();
+    (parts.join(" · "), stuck)
+}
+
+fn mana_lines(mana: ManaView) -> Vec<Line<'static>> {
+    match mana {
+        ManaView::Off => vec![],
+        ManaView::Pending(games) => {
+            vec![Line::from(vec![label("Mana"), Span::styled(format!("playing {games} games…"), Style::new().fg(DIM))])]
+        }
+        ManaView::Ready(m) => {
+            let (summary, stuck) = mana_summary(m);
+            let mut out = vec![Line::from(vec![label("Mana"), Span::raw(summary)])];
+            if !stuck.is_empty() {
+                out.push(Line::from(vec![
+                    label(""),
+                    Span::styled("stuck on colours: ", Style::new().fg(DIM)),
+                    Span::styled(stuck.join(", "), Style::new().fg(OK)),
+                ]));
+            }
+            out
+        }
+    }
+}
+
 pub fn matched_line(m: &Matched, i: usize) -> Line<'static> {
     let short = short_label(&m.label, i);
     let color = match (&m.wanted, m.passes) {
@@ -509,6 +569,28 @@ mod tests {
 
     fn text(lines: &[Line]) -> Vec<String> {
         lines.iter().map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect()).collect()
+    }
+
+    #[test]
+    fn mana_mentions_cards_stuck_on_colours_only_when_it_happens_more_than_now_and_then() {
+        let report = ManaReport {
+            games: 5000,
+            mulligan: 0.3,
+            commander_by_t4: Some(0.8),
+            colour_delayed: Some(0.004),
+            capacity: [1.0, 2.1, 3.2, 5.3, 6.0, 7.0, 8.0, 9.0],
+            spent_by_t8: 30.0,
+            stuck: vec![("Reanimate".into(), 0.032), ("Entomb".into(), 0.006), ("Careful Study".into(), 0.005)],
+        };
+        let (summary, stuck) = mana_summary(&report);
+        assert_eq!(summary, "commander by T4 80% · 5.3 mana on T4, +1.3 over a land a turn");
+        assert_eq!(stuck, ["Reanimate 3.2%", "Entomb 0.6%"], "0.5% and less isn't worth a mention");
+        let held_up = ManaReport { colour_delayed: Some(0.15), stuck: vec![("Careful Study".into(), 0.005)], ..report };
+        let (summary, stuck) = mana_summary(&held_up);
+        assert!(summary.ends_with("· colours held it up 15%"), "{summary}");
+        assert!(stuck.is_empty());
+        assert!(text(&mana_lines(ManaView::Ready(&held_up))).len() == 1, "no stuck line without stuck cards");
+        assert!(mana_lines(ManaView::Off).is_empty());
     }
 
     #[test]

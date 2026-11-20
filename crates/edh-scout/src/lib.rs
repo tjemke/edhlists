@@ -8,6 +8,7 @@ pub mod analysis;
 pub mod config;
 pub mod export;
 pub mod filters;
+pub mod mana;
 pub mod picker;
 pub mod plain;
 pub mod plan;

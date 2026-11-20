@@ -21,8 +21,8 @@ $ edh-scout scout "Jodah, the Unifier" --plain
 ```
 
 Without `--plain` the same ranking opens in an interactive browser with a detail pane per deck
-(power bar against the target band, bracket reasons, salty cards, role counts, synergy, combos) and
-the full decklist one keypress away.
+(power bar against the target band, bracket reasons, salty cards, role counts, how its mana
+develops, synergy, combos) and the full decklist one keypress away.
 
 ## Install
 
@@ -215,6 +215,11 @@ widen_every = 5
 # seconds for a commander with thousands of stored decks. Default: half the CPUs the system
 # reports, at least 1, so a big run leaves the rest of the machine alone.
 threads = 4
+
+[goldfish]
+# Games the mana goldfish plays per deck for the details, `check` and report.md (default: 5000,
+# about 0.1 s a deck); 0 turns it off.
+games = 5000
 ```
 
 ### Exports (proxies)
@@ -233,6 +238,15 @@ its source page and a prefilled EDHPowerLevel check.
 | **Salt** | EDHREC's deck salt (sum of its cards' salt). The detail view lists the saltiest cards. |
 | **Structure** | Closeness to a ~36 land / 10 ramp / 10 draw / 8 removal / 2 wipe template, using Scryfall Tagger's community card tags. |
 | **Synergy** | Average EDHREC synergy of the deck's cards with this commander: how on-plan it is. |
+
+**Mana goldfish.** Not a score: the details, `check` and `report.md` say how a deck's mana
+develops when nobody interacts, over 5,000 solitaire games (`[goldfish] games`). Each game
+mulligans, plays the land that lets it spend most, and casts ramp, the commander, card draw and
+then its biggest spells, paying coloured costs from the lands and rocks that make those colours
+(check, snarl, fast, slow and shock lands, fetches, bounce lands and modal double-faced cards
+included). It reports how often the commander is out by turn 4, the mana on turn 4 against a land
+a turn, how often colours held the commander up, and the cards most often stuck on colours (more
+than 0.5% of games). It doesn't measure strength: opponents, combat and tutors aren't in it.
 
 **Target.** `-b 2-3` (default) means "EDHPowerLevel would call it bracket 2 or 3", i.e. power
 4.7–7.7 using the site's own power→bracket curve, with no rule pushing it higher. `-p` sets an
