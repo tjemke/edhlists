@@ -135,8 +135,11 @@ decklist filters to the theme named after what they count (`equipment` → Equip
 `legendary` → Legends, `ramp` → Ramp, `o:treasure` → Treasure), looked up in EDHREC's theme list.
 Commanders whose own rules text mentions what a decklist filter counts (Sram's "Aura, Equipment, or
 Vehicle spell" for `equipment=10+`) fill the slots the themes leave, most popular first, found in
-the card database for free. When neither fits (e.g. `creatures=40+`), EDHREC's most-built
-commanders are scanned instead.
+the card database for free. A filter that asks for one particular card (`name:aetherspark=1`)
+starts from EDHREC's page for that card, which lists the commanders with the most decks playing it:
+those the themes also suggest come first, then the card page's and the themes' in turn, so neither
+crowds the other out. When nothing fits (e.g. `creatures=40+`), EDHREC's most-built commanders are
+scanned instead.
 `--commanders N` (default 30) caps how many deck tables are scanned. The browser opens right away
 and fills as each commander's table and decks come in; commander and colour (WUBRG) columns show
 whose deck is whose.
@@ -147,7 +150,7 @@ exclusion of the rest. Decks you already have count towards that share: a comman
 decks waits while the others are fetched up to their share. The ranking interleaves commanders the
 same way, each giving its best remaining deck in turn (decks in the target still come first). `m`
 in the browser, or `--no-mix`, ranks by score alone instead. Cost: one request for the theme list (when a decklist filter asks for a
-minimum) and one per theme (both cached for a week), one per deck table scanned (cached for a day),
+minimum) and one per theme and per card page (all cached for a week), one per deck table scanned (cached for a day),
 two per commander that ends up with decks (synergy and combo votes, cached for a week), plus the
 usual deck budget.
 
@@ -240,7 +243,7 @@ reused for free, so repeated runs grow the pool.
 
 | Source | Used for | Requests |
 |---|---|---|
-| EDHREC | deck tables, deck pages, commander synergy, combo votes, top-salt list, theme list and pages | 1 table + 2 side pages per commander and 1 salt list (cached 1–14 days); 1 per new deck (kept for good); 1 per theme (+1 for the theme list) when searching across commanders |
+| EDHREC | deck tables, deck pages, commander synergy, combo votes, top-salt list, theme list and pages, card pages | 1 table + 2 side pages per commander and 1 salt list (cached 1–14 days); 1 per new deck (kept for good); 1 per theme (+1 for the theme list) and per card a `-T` asks for when searching across commanders |
 | Scryfall | `default_cards` bulk (cheapest printing prices, Game Changers, oracle text) and `oracle_tags` bulk (card roles, `otag:` searches) | 4 per `sync` |
 | Commander Spellbook | full combo dump | 1 per `sync` |
 | EDHPowerLevel | nothing — scored locally; links go to the site | 0 |

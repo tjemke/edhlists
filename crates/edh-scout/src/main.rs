@@ -553,30 +553,63 @@ fn start_search<'a>(
             Err(e) => status.note(&format!("  note: couldn't load EDHREC's theme list ({e:#})")),
         }
     }
-    let mut candidates: Vec<ListedCommander> = Vec::new();
+    let mut suggested: Vec<ListedCommander> = Vec::new();
     for theme in &themes {
         status.step(&format!("loading EDHREC's '{theme}' theme"));
         match edhrec::theme_commanders(http, theme) {
-            Ok(list) => candidates.extend(list),
+            Ok(list) => suggested.extend(list),
             Err(e) => status.note(&format!("  note: couldn't load EDHREC's '{theme}' theme ({e:#})")),
         }
     }
     let limit = args.commanders.max(1);
     let mut seen = std::collections::HashSet::new();
-    candidates.retain(|c| seen.insert(c.slug.clone()));
-    candidates.sort_by_key(|c| std::cmp::Reverse(c.num_decks));
-    let from_themes = candidates.len().min(limit);
+    suggested.retain(|c| seen.insert(c.slug.clone()));
+    suggested.sort_by_key(|c| std::cmp::Reverse(c.num_decks));
+    let themed_slugs: std::collections::HashSet<String> = seen.clone();
     // Then commanders whose own text mentions what the card filters count (free, from the card
     // database): they fill the slots the themes leave, and stand in for the most-built fallback.
     let mentions = filters::mention_texts(&card_filters);
     let mentioning = filters::mentioning_commanders(&mentions, cards, limit);
-    candidates.extend(mentioning.into_iter().filter(|c| seen.insert(c.slug.clone())));
-    candidates.truncate(limit);
-    let from_text = candidates.len() - from_themes;
+    suggested.extend(mentioning.into_iter().filter(|c| seen.insert(c.slug.clone())));
+    // A filter that asks for one particular card (`name:aetherspark=1`): EDHREC's page for that
+    // card lists the commanders that play it most (one request each, cached for a week).
+    let mut sole_cards: Vec<&str> = Vec::new();
+    for c in card_filters.iter().filter_map(|f| f.sole_card(cards)) {
+        if !sole_cards.contains(&c.name.as_str()) {
+            sole_cards.push(&c.name);
+        }
+    }
+    let mut pages = Vec::new();
+    let mut paged_cards = Vec::new();
+    for name in sole_cards {
+        status.step(&format!("loading EDHREC's page for {name}"));
+        match edhrec::card_commanders(http, name) {
+            Ok(list) => {
+                pages.push(list);
+                paged_cards.push(name);
+            }
+            Err(e) => status.note(&format!("  note: couldn't load EDHREC's page for {name} ({e:#})")),
+        }
+    }
+    let playing_slugs: std::collections::HashSet<&str> = pages.iter().flatten().map(|c| c.slug.as_str()).collect();
+    let mut candidates = filters::merge_candidates(&pages, &suggested, limit);
+    let from_cards = candidates.iter().filter(|c| playing_slugs.contains(c.slug.as_str())).count();
+    let from_themes = candidates
+        .iter()
+        .filter(|c| !playing_slugs.contains(c.slug.as_str()) && themed_slugs.contains(&c.slug))
+        .count();
+    let from_text = candidates.len() - from_cards - from_themes;
     let mentioned = mentions.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(" or ");
-    let themed = format!("from EDHREC theme{} {}", if themes.len() > 1 { "s" } else { "" }, themes.join(", "));
-    let source = match (from_themes, from_text) {
-        (0, 0) => {
+    let parts: Vec<(usize, String)> = [
+        (from_cards, format!("that EDHREC lists as playing {}", paged_cards.join(" or "))),
+        (from_themes, format!("from EDHREC theme{} {}", if themes.len() > 1 { "s" } else { "" }, themes.join(", "))),
+        (from_text, format!("whose text mentions {mentioned}")),
+    ]
+    .into_iter()
+    .filter(|(n, _)| *n > 0)
+    .collect();
+    let source = match parts.as_slice() {
+        [] => {
             status.step("loading EDHREC's most-built commanders");
             candidates = edhrec::top_commanders(http).context("EDHREC's top commanders")?;
             candidates.retain(|c| seen.insert(c.slug.clone()));
@@ -584,9 +617,13 @@ fn start_search<'a>(
             candidates.truncate(limit);
             "from EDHREC's most-built commanders".to_string()
         }
-        (0, _) => format!("whose text mentions {mentioned}"),
-        (_, 0) => themed,
-        (_, n) => format!("{themed}, plus {n} whose text mentions {mentioned},"),
+        [(_, only)] => only.clone(),
+        // "from EDHREC theme equipment, plus 1 whose text mentions "equipment","; the card page's
+        // part gets its count too, so it doesn't read as all of them: "— 24 that EDHREC lists ..."
+        [(n, first), rest @ ..] => {
+            let rest = rest.iter().map(|(n, what)| format!(", plus {n} {what}")).collect::<String>();
+            if from_cards > 0 { format!("— {n} {first}{rest},") } else { format!("{first}{rest},") }
+        }
     };
     let wanted = filters::describe(&select.types, &card_filters);
     let count_columns = filters::count_columns(&card_filters);

@@ -1,0 +1,223 @@
+{
+ "header": "The Aetherspark (Card)",
+ "container": {
+  "json_dict": {
+   "card": {
+    "name": "The Aetherspark",
+    "type": "Legendary Artifact Planeswalker — Equipment"
+   },
+   "cardlists": [
+    {
+     "header": "New Commanders",
+     "tag": "newcommanders",
+     "cardviews": [
+      {
+       "name": "Ekthi, Contaminator Priest",
+       "sanitized": "ekthi-contaminator-priest",
+       "num_decks": 1238,
+       "potential_decks": 4821
+      },
+      {
+       "name": "Tam, the Possibility",
+       "sanitized": "tam-the-possibility",
+       "num_decks": 471,
+       "potential_decks": 9571
+      },
+      {
+       "name": "Blor the Impervious",
+       "sanitized": "blor-the-impervious",
+       "num_decks": 423,
+       "potential_decks": 2433
+      },
+      {
+       "name": "Omnath, Locus of the Void",
+       "sanitized": "omnath-locus-of-the-void",
+       "num_decks": 359,
+       "potential_decks": 3203
+      },
+      {
+       "name": "Whtz, the Bibliophile",
+       "sanitized": "whtz-the-bibliophile",
+       "num_decks": 266,
+       "potential_decks": 7786
+      }
+     ]
+    },
+    {
+     "header": "Top Commanders",
+     "tag": "topcommanders",
+     "cardviews": [
+      {
+       "name": "Cloud, Ex-SOLDIER",
+       "sanitized": "cloud-ex-soldier",
+       "num_decks": 3421,
+       "potential_decks": 34278
+      },
+      {
+       "name": "Cloud, Midgar Mercenary",
+       "sanitized": "cloud-midgar-mercenary",
+       "num_decks": 3291,
+       "potential_decks": 9147
+      },
+      {
+       "name": "Captain America, First Avenger",
+       "sanitized": "captain-america-first-avenger",
+       "num_decks": 2654,
+       "potential_decks": 13813
+      },
+      {
+       "name": "Anti-Venom, Horrifying Healer",
+       "sanitized": "anti-venom-horrifying-healer",
+       "num_decks": 2071,
+       "potential_decks": 13516
+      },
+      {
+       "name": "Kotis, the Fangkeeper",
+       "sanitized": "kotis-the-fangkeeper",
+       "num_decks": 2044,
+       "potential_decks": 20885
+      },
+      {
+       "name": "Mendicant Core, Guidelight",
+       "sanitized": "mendicant-core-guidelight",
+       "num_decks": 1779,
+       "potential_decks": 17767
+      },
+      {
+       "name": "Lightning, Army of One",
+       "sanitized": "lightning-army-of-one",
+       "num_decks": 1692,
+       "potential_decks": 15858
+      },
+      {
+       "name": "Atraxa, Praetors' Voice",
+       "sanitized": "atraxa-praetors-voice",
+       "num_decks": 1364,
+       "potential_decks": 44129
+      },
+      {
+       "name": "T'Challa, the Black Panther",
+       "sanitized": "tchalla-the-black-panther",
+       "num_decks": 1212,
+       "potential_decks": 5202
+      },
+      {
+       "name": "Kratos, God of War",
+       "sanitized": "kratos-god-of-war",
+       "num_decks": 1205,
+       "potential_decks": 10117
+      },
+      {
+       "name": "Kilo, Apogee Mind",
+       "sanitized": "kilo-apogee-mind",
+       "num_decks": 1177,
+       "potential_decks": 20671
+      },
+      {
+       "name": "Tony Stark",
+       "sanitized": "tony-stark",
+       "num_decks": 1099,
+       "potential_decks": 8812
+      },
+      {
+       "name": "Jin Sakai, Ghost of Tsushima",
+       "sanitized": "jin-sakai-ghost-of-tsushima",
+       "num_decks": 1071,
+       "potential_decks": 18146
+      },
+      {
+       "name": "Gilgamesh, Master-at-Arms",
+       "sanitized": "gilgamesh-master-at-arms",
+       "num_decks": 1038,
+       "potential_decks": 3329
+      },
+      {
+       "name": "Ardenn, Intrepid Archaeologist // Rograkh, Son of Rohgahh",
+       "sanitized": "ardenn-intrepid-archaeologist-rograkh-son-of-rohgahh",
+       "num_decks": 1001,
+       "potential_decks": 8238
+      },
+      {
+       "name": "Ultima, Origin of Oblivion",
+       "sanitized": "ultima-origin-of-oblivion",
+       "num_decks": 913,
+       "potential_decks": 8420
+      },
+      {
+       "name": "Nahiri, Forged in Fury",
+       "sanitized": "nahiri-forged-in-fury",
+       "num_decks": 896,
+       "potential_decks": 6429
+      },
+      {
+       "name": "Rendmaw, Creaking Nest",
+       "sanitized": "rendmaw-creaking-nest",
+       "num_decks": 874,
+       "potential_decks": 11349
+      },
+      {
+       "name": "Syr Gwyn, Hero of Ashvale",
+       "sanitized": "syr-gwyn-hero-of-ashvale",
+       "num_decks": 747,
+       "potential_decks": 8715
+      },
+      {
+       "name": "Wolverine, Best There Is",
+       "sanitized": "wolverine-best-there-is",
+       "num_decks": 683,
+       "potential_decks": 10594
+      },
+      {
+       "name": "Lara Croft, Tomb Raider",
+       "sanitized": "lara-croft-tomb-raider",
+       "num_decks": 645,
+       "potential_decks": 2898
+      },
+      {
+       "name": "Karn, Legacy Reforged",
+       "sanitized": "karn-legacy-reforged",
+       "num_decks": 625,
+       "potential_decks": 6137
+      },
+      {
+       "name": "Sab-Sunen, Luxa Embodied",
+       "sanitized": "sab-sunen-luxa-embodied",
+       "num_decks": 594,
+       "potential_decks": 4252
+      },
+      {
+       "name": "Alexios, Deimos of Kosmos",
+       "sanitized": "alexios-deimos-of-kosmos",
+       "num_decks": 593,
+       "potential_decks": 8360
+      }
+     ]
+    },
+    {
+     "header": "Top Cards",
+     "tag": "topcards",
+     "cardviews": [
+      {
+       "name": "Swords to Plowshares",
+       "sanitized": "swords-to-plowshares",
+       "num_decks": 35189,
+       "potential_decks": 54903
+      },
+      {
+       "name": "Path to Exile",
+       "sanitized": "path-to-exile",
+       "num_decks": 27666,
+       "potential_decks": 54903
+      },
+      {
+       "name": "Puresteel Paladin",
+       "sanitized": "puresteel-paladin",
+       "num_decks": 26622,
+       "potential_decks": 54903
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

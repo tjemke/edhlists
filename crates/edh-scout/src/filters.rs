@@ -19,6 +19,7 @@
 //! only sit in some of EDHREC's type columns, which bounds the count and says which decks are
 //! likeliest to match.
 
+use std::collections::HashSet;
 use std::fmt;
 use std::str::FromStr;
 
@@ -504,6 +505,17 @@ impl CompiledFilter {
         m
     }
 
+    /// The one card this filter asks for at least one of (`name:aetherspark=1`), if it matches
+    /// only that card: EDHREC's page for the card lists the commanders that play it.
+    pub fn sole_card<'c>(&self, cards: &'c CardDb) -> Option<&'c Card> {
+        if !self.filter.wants_many() || matches!(self.filter.counted, Counted::Table(_)) {
+            return None;
+        }
+        let mut hits = self.matching.iter().enumerate().filter(|(_, m)| **m).map(|(i, _)| i);
+        let first = hits.next()?;
+        hits.next().is_none().then(|| &cards.cards[first])
+    }
+
     /// What the deck table can say about this filter before fetching; `None` without a minimum.
     pub fn prior(&self, cards: &CardDb) -> Option<Prior> {
         let min = self.filter.min.filter(|m| *m > 0)?;
@@ -611,6 +623,45 @@ pub fn mentioning_commanders(texts: &[String], cards: &CardDb, limit: usize) -> 
         .take(limit)
         .map(|c| ListedCommander { name: c.name.clone(), slug: slugify(&c.name), num_decks: 0 })
         .collect()
+}
+
+/// The commanders to search, at most `limit`. `pages` are EDHREC's card pages for the cards the
+/// filters require ([`CompiledFilter::sole_card`]): commanders on more of them first, then those
+/// with more decks playing the card. `suggested` are the theme and rules-text candidates, in their
+/// own order. Commanders on both lists come first; then the rest of each, taken in turn, so
+/// neither crowds the other out: a card page ranks by decks with the card, so it leaves out
+/// smaller commanders that play it often, and the themes cover what the other filters ask for.
+pub fn merge_candidates(
+    pages: &[Vec<ListedCommander>],
+    suggested: &[ListedCommander],
+    limit: usize,
+) -> Vec<ListedCommander> {
+    let mut playing: Vec<(ListedCommander, usize)> = Vec::new();
+    for c in pages.iter().flatten() {
+        match playing.iter_mut().find(|(p, _)| p.slug == c.slug) {
+            Some((p, n)) => {
+                *n += 1;
+                p.num_decks = p.num_decks.min(c.num_decks);
+            }
+            None => playing.push((c.clone(), 1)),
+        }
+    }
+    playing.sort_by_key(|(c, n)| std::cmp::Reverse((*n, c.num_decks)));
+    let suggested_slugs: HashSet<&str> = suggested.iter().map(|c| c.slug.as_str()).collect();
+    let playing_slugs: HashSet<&str> = playing.iter().map(|(c, _)| c.slug.as_str()).collect();
+    let (both, only_playing): (Vec<ListedCommander>, Vec<ListedCommander>) =
+        playing.iter().map(|(c, _)| c.clone()).partition(|c| suggested_slugs.contains(c.slug.as_str()));
+    let mut out = both;
+    let mut a = only_playing.into_iter();
+    let mut b = suggested.iter().filter(|c| !playing_slugs.contains(c.slug.as_str())).cloned();
+    while out.len() < limit {
+        match (a.next(), b.next()) {
+            (None, None) => break,
+            (x, y) => out.extend(x.into_iter().chain(y)),
+        }
+    }
+    out.truncate(limit);
+    out
 }
 
 /// The filters, as the title says them (EDHREC's counts once, with their range).
@@ -931,6 +982,42 @@ mod tests {
         assert_eq!(names(&compile(&["aura=5+"]), 5), vec!["sram-senior-edificer", "wyleth-soul-of-steel"]);
         assert!(names(&compile(&["equipment=..2", "ramp=10+"]), 5).is_empty(), "only minimums of searches");
         assert_eq!(names(&compile(&["legendary=20+"]), 5), vec!["lord-of-legends"]);
+    }
+
+    #[test]
+    fn a_filter_for_one_card_names_it() {
+        let db = db();
+        let sole = |s: &str| cards_filter(s).compile(&db, None).unwrap().sole_card(&db).map(|c| c.name.clone());
+        assert_eq!(sole("name:bonesplitter=1").as_deref(), Some("Bonesplitter"));
+        assert_eq!(sole("name:\"smothering tithe\"=1+").as_deref(), Some("Smothering Tithe"));
+        assert_eq!(sole("equipment=2+"), None, "two cards match: no single card page to start from");
+        assert_eq!(sole("name:bonesplitter=0"), None, "a deck without the card can be anyone's");
+        assert_eq!(sole("name:bonesplitter"), None, "only counted, not asked for");
+    }
+
+    #[test]
+    fn commanders_playing_a_required_card_share_the_search_with_the_themes() {
+        let c = |slug: &str, n: u64| ListedCommander { name: slug.into(), slug: slug.into(), num_decks: n };
+        let slugs = |v: Vec<ListedCommander>| v.into_iter().map(|c| c.slug).collect::<Vec<_>>();
+        let page = vec![c("new", 50), c("cloud", 3000), c("atraxa", 1300), c("kotis", 2000)];
+        let themes = vec![c("guff", 7000), c("atraxa", 44000), c("esika", 20000), c("cloud", 34000)];
+        assert_eq!(
+            slugs(merge_candidates(std::slice::from_ref(&page), &themes, 10)),
+            vec!["cloud", "atraxa", "kotis", "guff", "new", "esika"],
+            "on both first (most decks with the card first), then the card page and the themes in turn"
+        );
+        assert_eq!(
+            slugs(merge_candidates(std::slice::from_ref(&page), &themes, 4)),
+            vec!["cloud", "atraxa", "kotis", "guff"]
+        );
+        assert_eq!(slugs(merge_candidates(&[], &themes, 2)), vec!["guff", "atraxa"], "no card page: the themes' order");
+        assert_eq!(slugs(merge_candidates(std::slice::from_ref(&page), &[], 3)), vec!["cloud", "kotis", "atraxa"]);
+        let other = vec![c("kotis", 10), c("tam", 400)];
+        assert_eq!(
+            slugs(merge_candidates(&[page, other], &[], 3)),
+            vec!["kotis", "cloud", "atraxa"],
+            "a commander playing both required cards comes first"
+        );
     }
 
     #[test]

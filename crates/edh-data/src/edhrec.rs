@@ -18,6 +18,7 @@ use serde_json::Value;
 use crate::config::{EDHREC_JSON, EDHREC_SITE, TTL_COMMANDER_PAGE, TTL_DECK_TABLE, TTL_SALT};
 use crate::deck::{Deck, DeckMeta};
 use crate::http::{Http, Ttl};
+use crate::text::slugify;
 
 // --- deck table -----------------------------------------------------------------------------------
 
@@ -293,13 +294,14 @@ pub fn parse_combos_page(v: &Value) -> Vec<EdhrecCombo> {
 
 // --- themes and top commanders ---------------------------------------------------------------------
 
-/// A commander as EDHREC lists it on theme and "top commanders" pages.
+/// A commander as EDHREC lists it on theme, card and "top commanders" pages.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ListedCommander {
     pub name: String,
     /// EDHREC page slug (also the deck-table slug).
     pub slug: String,
-    /// Decks with this commander (on a theme page: with this commander *and* theme).
+    /// Decks with this commander (on a theme page: with this commander *and* theme; on a card
+    /// page: with this commander *and* card).
     pub num_decks: u64,
 }
 
@@ -332,6 +334,19 @@ pub fn theme_commanders(http: &Http, theme: &str) -> Result<Vec<ListedCommander>
 }
 
 pub fn parse_theme_commanders(v: &Value) -> Vec<ListedCommander> {
+    listed_commanders(v, &["topcommanders", "newcommanders"])
+}
+
+/// The commanders EDHREC lists as playing a card (`edhrec.com/cards/<slug>`): the 24 with the
+/// most decks with it and 5 new ones, `num_decks` counting the decks with the card. One request,
+/// cached for a week.
+pub fn card_commanders(http: &Http, card: &str) -> Result<Vec<ListedCommander>> {
+    let url = format!("{EDHREC_JSON}/cards/{}.json", slugify(card));
+    let v: Value = http.cached_json(&url, None, Ttl::For(TTL_COMMANDER_PAGE))?;
+    Ok(parse_card_commanders(&v))
+}
+
+pub fn parse_card_commanders(v: &Value) -> Vec<ListedCommander> {
     listed_commanders(v, &["topcommanders", "newcommanders"])
 }
 
@@ -491,6 +506,22 @@ mod tests {
         let top = parse_top_commanders(&v);
         assert_eq!(top.len(), 40);
         assert_eq!(top[0].slug, "yshtola-nights-blessed");
+    }
+
+    #[test]
+    fn card_page_lists_the_commanders_that_play_it() {
+        let v: Value = serde_json::from_str(&read("card_the_aetherspark.json")).unwrap();
+        let c = parse_card_commanders(&v);
+        assert_eq!(c.len(), 29, "5 new + 24 top commanders, and none of the card lists");
+        assert_eq!(c[0].slug, "ekthi-contaminator-priest");
+        assert!(
+            c.iter().any(|c| c.slug == "cloud-ex-soldier" && c.num_decks == 3421),
+            "num_decks should count the decks with the card"
+        );
+        assert!(
+            !c.iter().any(|c| c.name == "Swords to Plowshares"),
+            "a card from the card lists counted as a commander"
+        );
     }
 
     #[test]

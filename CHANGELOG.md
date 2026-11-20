@@ -3,6 +3,12 @@
 What changed in each version, newest first. How versions are numbered: see *Versioning* in
 `AGENTS.md`.
 
+## 0.3.2
+
+- Searching across commanders with a `-T` that asks for one particular card
+  (`-T name:aetherspark=1`) starts from EDHREC's page for that card: the commanders it lists as
+  playing the card most come first, sharing the `--commanders` slots with the theme ones.
+
 ## 0.3.1
 
 - The Aetherspark counts as an artifact, as EDHREC files it, not a planeswalker: in the decklist's

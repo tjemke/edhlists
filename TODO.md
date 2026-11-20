@@ -72,6 +72,14 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   decks). Touches `edhrec.rs` (card pages, bracket pages), `filters.rs` (expected count,
   seed cards), `scout.rs` `search` (score → scan → fetch with re-weighting and expansion; needs
   the filters on the fetch thread, see below), `main.rs` `start_search`. *Medium–large.*
+  Done meanwhile: a filter for one card (`name:aetherspark=1`) adds the commanders on that card's
+  page (`edhrec::card_commanders`, `filters::merge_candidates`), sharing the `--commanders` slots
+  with the themes. What's still missing for it: the card page gives each commander's inclusion
+  (`num_decks`/`potential_decks`; Blor 17%, Cloud 10%, Tam 5%, Atraxa 3%), which could weight the
+  fetch budget, and it ranks by decks with the card, so smaller commanders that play it often
+  are left off (Carth: 460 of 4,156 decks, 11%, below the 594 cutoff). With
+  `-T planeswalkers=15+ -T equipment=10+ -T name:aetherspark=1` the 30 slots went to 24 card-page
+  commanders, most with no 15-walker decks, and dropped Bolas, Carth, Jace and Chandra.
 
 ## Maybe
 
