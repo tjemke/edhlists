@@ -27,9 +27,11 @@ use anyhow::{Result, anyhow, bail};
 use edh_data::cards::{Card, CardDb};
 use edh_data::deck::Deck;
 use edh_data::edhrec::{ListedCommander, TableRow, Theme};
+use edh_data::flags::EnumSet;
 use edh_data::query::Query;
 use edh_data::tags::TagIndex;
 use edh_data::text::{slugify, strip_reminder};
+use edh_data::types::CardType;
 use serde::{Deserialize, Serialize};
 
 use crate::roles::{Role, roles};
@@ -104,17 +106,17 @@ impl TypeField {
     /// Does EDHREC count `card` here? It files each card under its front face's main type
     /// ([`Card::primary_type`]): an artifact creature is a creature, not an artifact.
     pub fn holds(self, card: &Card) -> bool {
-        let t = card.primary_type();
+        let Some(t) = card.primary_type() else { return false };
         match self {
-            TypeField::Creatures => t == "Creature",
-            TypeField::Instants => t == "Instant",
-            TypeField::Sorceries => t == "Sorcery",
-            TypeField::Spells => t == "Instant" || t == "Sorcery",
-            TypeField::Artifacts => t == "Artifact",
-            TypeField::Enchantments => t == "Enchantment",
-            TypeField::Planeswalkers => t == "Planeswalker",
-            TypeField::Battles => t == "Battle",
-            TypeField::Lands => t == "Land",
+            TypeField::Creatures => t == CardType::Creature,
+            TypeField::Instants => t == CardType::Instant,
+            TypeField::Sorceries => t == CardType::Sorcery,
+            TypeField::Spells => t == CardType::Instant || t == CardType::Sorcery,
+            TypeField::Artifacts => t == CardType::Artifact,
+            TypeField::Enchantments => t == CardType::Enchantment,
+            TypeField::Planeswalkers => t == CardType::Planeswalker,
+            TypeField::Battles => t == CardType::Battle,
+            TypeField::Lands => t == CardType::Land,
         }
     }
 }
@@ -548,7 +550,8 @@ impl CompiledFilter {
             if !matches {
                 continue;
             }
-            let types: Vec<usize> = (0..8).filter(|&c| card.type_line.contains(COLUMNS[c])).collect();
+            let on_faces = card.face_types().fold(EnumSet::empty(), |all, t| all | t.types);
+            let types: Vec<usize> = (0..8).filter(|&c| on_faces.contains(COLUMNS[c])).collect();
             if types.is_empty() {
                 possible = [true; 8]; // no main type we know of: it could be counted anywhere
             }
@@ -562,9 +565,17 @@ impl CompiledFilter {
     }
 }
 
-/// EDHREC's per-deck type columns, in [`columns`] order (also [`Card::primary_type`]'s labels).
-const COLUMNS: [&str; 8] =
-    ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Battle", "Planeswalker", "Land"];
+/// EDHREC's per-deck type columns, in [`columns`] order.
+const COLUMNS: [CardType; 8] = [
+    CardType::Creature,
+    CardType::Instant,
+    CardType::Sorcery,
+    CardType::Artifact,
+    CardType::Enchantment,
+    CardType::Battle,
+    CardType::Planeswalker,
+    CardType::Land,
+];
 
 fn columns(r: &TableRow) -> [u32; 8] {
     [r.creature, r.instant, r.sorcery, r.artifact, r.enchantment, r.battle, r.planeswalker, r.land]
@@ -573,7 +584,7 @@ fn columns(r: &TableRow) -> [u32; 8] {
 /// The column EDHREC counts a card in: its front face's main type, land before creature before
 /// the rest ("Artifact Creature" is a creature, "Artifact Land" a land), as its deck pages file them.
 fn edhrec_column(card: &Card) -> Option<usize> {
-    let t = card.primary_type();
+    let t = card.primary_type()?;
     COLUMNS.iter().position(|c| *c == t)
 }
 

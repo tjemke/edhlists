@@ -15,3 +15,4 @@ pub mod storage;
 pub mod sync;
 pub mod tags;
 pub mod text;
+pub mod types;

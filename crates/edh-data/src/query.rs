@@ -347,9 +347,7 @@ impl Term {
                 Is::Commander => card.can_be_commander(),
                 Is::Reserved => card.reserved,
                 Is::Historic => ["Legendary", "Artifact", "Saga"].iter().any(|t| card.type_line.contains(t)),
-                Is::Permanent => ["Artifact", "Creature", "Enchantment", "Land", "Planeswalker", "Battle"]
-                    .iter()
-                    .any(|t| card.front_type().contains(t)),
+                Is::Permanent => card.types().is_permanent(),
                 Is::Mdfc => card.layout == "modal_dfc",
                 Is::Dfc => matches!(card.layout.as_str(), "transform" | "modal_dfc" | "meld"),
             },

@@ -13,6 +13,7 @@ use crate::mana::{ColorSet, ManaCost, ManaSet};
 use crate::storage::{open_maybe_gz, read_json_gz, write_json_gz};
 use crate::tags::RoleTags;
 use crate::text::{fold, front_face};
+use crate::types::{CardType, Supertype, Types};
 
 /// Bump when [`Card`] changes shape; `sync` rebuilds from the kept raw bulk file without downloading.
 pub const CARDS_SCHEMA: u32 = 5;
@@ -71,45 +72,37 @@ pub struct Card {
 }
 
 impl Card {
-    /// The front face's type, as EDHPowerLevel reads it ("Legendary Creature — Elf" -> "Legendary Creature").
-    pub fn front_type(&self) -> &str {
-        let front = self.type_line.split(" // ").next().unwrap_or("");
-        front.split(" — ").next().unwrap_or(front)
+    /// The front face's type line ("Legendary Creature — Elf").
+    pub fn front_type_line(&self) -> &str {
+        self.type_line.split(" // ").next().unwrap_or("")
+    }
+    /// The front face's types.
+    pub fn types(&self) -> Types {
+        Types::parse(self.front_type_line())
+    }
+    /// Each face's types, front first.
+    pub fn face_types(&self) -> impl Iterator<Item = Types> + '_ {
+        self.type_line.split(" // ").map(Types::parse)
     }
     pub fn is_land(&self) -> bool {
-        self.front_type().contains("Land")
+        self.types().is(CardType::Land)
     }
     pub fn is_mdfc(&self) -> bool {
         self.layout == "modal_dfc"
     }
     pub fn is_basic(&self) -> bool {
-        self.front_type().contains("Basic")
+        self.types().supertypes.contains(Supertype::Basic)
     }
-    /// The one main type EDHREC files the card under, by its front face: land before creature before
-    /// artifact before the rest ("Artifact Creature" is a creature, "Artifact Land" a land, The
-    /// Aetherspark's "Artifact Planeswalker" an artifact). Checked against EDHREC's deck tables:
-    /// counted this way, at least 99.5% of 24,696 stored decks match EDHREC's count of each type.
-    pub fn primary_type(&self) -> &'static str {
-        let t = self.front_type();
-        for (needle, label) in [
-            ("Land", "Land"),
-            ("Creature", "Creature"),
-            ("Artifact", "Artifact"),
-            ("Planeswalker", "Planeswalker"),
-            ("Battle", "Battle"),
-            ("Instant", "Instant"),
-            ("Sorcery", "Sorcery"),
-            ("Enchantment", "Enchantment"),
-        ] {
-            if t.contains(needle) {
-                return label;
-            }
-        }
-        "Other"
+    /// The one main type EDHREC files the card under, by its front face ([`Types::primary`]).
+    /// Checked against EDHREC's deck tables: counted this way, at least 99.5% of 24,696 stored
+    /// decks match EDHREC's count of each type.
+    pub fn primary_type(&self) -> Option<CardType> {
+        self.types().primary()
     }
     pub fn can_be_commander(&self) -> bool {
-        let t = self.type_line.split(" // ").next().unwrap_or("");
-        (t.contains("Legendary") && (t.contains("Creature") || t.contains("Background")))
+        let t = self.types();
+        let background = self.front_type_line().split_once('—').is_some_and(|(_, sub)| sub.contains("Background"));
+        (t.supertypes.contains(Supertype::Legendary) && (t.is(CardType::Creature) || background))
             || self.oracle.iter().any(|o| o.contains("can be your commander"))
     }
     pub fn oracle_joined(&self) -> String {
@@ -515,14 +508,29 @@ mod tests {
     #[test]
     fn each_card_has_the_main_type_edhrec_files_it_under() {
         let typed = |type_line: &str| Card { type_line: type_line.into(), ..Default::default() }.primary_type();
-        assert_eq!(typed("Legendary Artifact Planeswalker — Equipment"), "Artifact", "The Aetherspark");
-        assert_eq!(typed("Artifact Creature — Equipment Lizard"), "Creature");
-        assert_eq!(typed("Artifact Land"), "Land");
-        assert_eq!(typed("Enchantment Land — Urza's Saga"), "Land");
-        assert_eq!(typed("Legendary Enchantment Artifact"), "Artifact");
-        assert_eq!(typed("Legendary Planeswalker — Jace"), "Planeswalker");
-        assert_eq!(typed("Legendary Creature — Human Wizard // Legendary Planeswalker — Jace"), "Creature");
-        assert_eq!(typed("Kindred Instant — Elf"), "Instant");
+        use CardType::*;
+        assert_eq!(typed("Legendary Artifact Planeswalker — Equipment"), Some(Artifact), "The Aetherspark");
+        assert_eq!(typed("Artifact Creature — Equipment Lizard"), Some(Creature));
+        assert_eq!(typed("Artifact Land"), Some(Land));
+        assert_eq!(typed("Enchantment Land — Urza's Saga"), Some(Land));
+        assert_eq!(typed("Legendary Enchantment Artifact"), Some(Artifact));
+        assert_eq!(typed("Legendary Planeswalker — Jace"), Some(Planeswalker));
+        assert_eq!(typed("Legendary Creature — Human Wizard // Legendary Planeswalker — Jace"), Some(Creature));
+        assert_eq!(typed("Kindred Instant — Elf"), Some(Instant));
+        assert_eq!(typed("Conspiracy"), None);
+    }
+
+    #[test]
+    fn legendary_creatures_backgrounds_and_cards_that_say_so_can_lead_a_deck() {
+        let leads = |type_line: &str, oracle: &str| {
+            Card { type_line: type_line.into(), oracle: vec![oracle.into()], ..Default::default() }.can_be_commander()
+        };
+        assert!(leads("Legendary Creature — Elf", ""));
+        assert!(leads("Legendary Enchantment — Background", ""));
+        assert!(leads("Legendary Planeswalker — Teferi", "Teferi can be your commander."));
+        assert!(!leads("Legendary Planeswalker — Jace", ""));
+        assert!(!leads("Creature — Elf", ""), "not legendary");
+        assert!(!leads("Legendary Artifact", ""));
     }
 
     #[test]

@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use edh_data::cards::Card;
 use edh_data::tags;
 use edh_data::text::strip_reminder;
+use edh_data::types::CardType;
 
 /// One resolved deck entry.
 #[derive(Clone, Copy)]
@@ -145,8 +146,8 @@ pub fn roles(card: &Card) -> Vec<Role> {
 pub fn heuristic_roles(card: &Card) -> Vec<Role> {
     let text = strip_reminder(&card.oracle_joined().to_lowercase());
     let mut out = Vec::new();
-    let t = card.front_type();
-    let is_spell = t.contains("Instant") || t.contains("Sorcery");
+    let t = card.types();
+    let is_spell = t.is(CardType::Instant) || t.is(CardType::Sorcery);
     if (!card.produced.is_empty() && !is_spell) || RAMP.iter().any(|r| r.is_match(&text)) {
         out.push(Role::Ramp);
     }
@@ -220,7 +221,7 @@ pub fn structure(entries: &[Entry]) -> Structure {
     let mut s = Structure::default();
     for e in entries.iter().filter(|e| !e.commander) {
         let card = e.card;
-        let land_back = card.is_mdfc() && card.type_line.split(" // ").any(|t| t.contains("Land"));
+        let land_back = card.is_mdfc() && card.face_types().any(|t| t.is(CardType::Land));
         if card.is_land() || land_back {
             s.lands += e.qty;
         }

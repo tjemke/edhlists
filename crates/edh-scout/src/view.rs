@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use edh_data::cards::CardDb;
 use edh_data::deck::Deck;
+use edh_data::flags::Flag;
 use edh_data::http::host_of;
 use edh_data::mana::{Color as Mtg, ColorSet};
 use edh_data::text::front_face;
@@ -446,7 +447,7 @@ pub fn grouped_list(deck: &Deck, cards: &CardDb) -> Vec<(String, Vec<(u32, Strin
         groups.entry(0).or_default().push((1, c.clone()));
     }
     for (name, qty) in &deck.cards {
-        let t = cards.get(name).map(|c| c.primary_type()).unwrap_or("Other");
+        let t = cards.get(name).and_then(|c| c.primary_type()).map_or("Other", |t| t.code());
         let idx = ORDER.iter().position(|o| *o == t).unwrap_or(ORDER.len() - 1);
         groups.entry(idx).or_default().push((*qty, name.clone()));
     }
