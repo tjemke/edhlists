@@ -1,0 +1,15 @@
+[package]
+name = "edh-goldfish"
+description = "A colour-aware solitaire mana simulation of a Commander deck"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+edh-data.workspace = true
+rayon.workspace = true
+regex.workspace = true
+
+[lints]
+workspace = true

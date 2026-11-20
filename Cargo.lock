@@ -573,6 +573,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "edh-goldfish"
+version = "0.3.4"
+dependencies = [
+ "edh-data",
+ "rayon",
+ "regex",
+]
+
+[[package]]
 name = "edh-scout"
 version = "0.3.4"
 dependencies = [

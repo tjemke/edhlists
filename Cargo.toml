@@ -15,6 +15,7 @@ unsafe_code = "forbid"
 [workspace.dependencies]
 edhpl = { path = "crates/edhpl" }
 edh-data = { path = "crates/edh-data" }
+edh-goldfish = { path = "crates/edh-goldfish" }
 edh-store = { path = "crates/edh-store" }
 
 anyhow = "1.0.104"
