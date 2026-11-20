@@ -469,6 +469,21 @@ pub fn split(filters: Vec<Filter>) -> (Vec<TypeFilter>, Vec<CardFilter>) {
     (table, cards)
 }
 
+/// What to tell the user about `-T` arguments that only count though they look like filters:
+/// in `c=w` or `mv<=2` the `=` is part of the search, so there's no range, and like `-T equipment`
+/// it adds a column and lets every deck through. `None` when there are none.
+pub fn count_only_notice<'f>(filters: impl IntoIterator<Item = &'f CardFilter>) -> Option<String> {
+    let quiet: Vec<&str> =
+        filters.into_iter().filter(|f| !f.has_range() && f.label.contains('=')).map(|f| f.label.as_str()).collect();
+    let first = quiet.first()?;
+    let named = quiet.iter().map(|l| format!("-T {l}")).collect::<Vec<_>>().join(", ");
+    let (counts, it) = if quiet.len() == 1 { ("only counts", "it doesn't") } else { ("only count", "they don't") };
+    let example = if first.contains('\'') { format!("{first}=1+") } else { format!("'{first}=1+'") };
+    Some(format!(
+        "{named} {counts}, {it} filter: the = is part of the search. To require some, give a range: -T {example}"
+    ))
+}
+
 /// How many cards of one filter a deck has, and which.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Matched {
@@ -1018,6 +1033,21 @@ mod tests {
             vec!["kotis", "cloud", "atraxa"],
             "a commander playing both required cards comes first"
         );
+    }
+
+    #[test]
+    fn a_search_whose_equals_hides_the_missing_range_says_so() {
+        let notice = |args: &[&str]| {
+            let (_, cards) = split(args.iter().map(|a| a.parse().unwrap()).collect());
+            count_only_notice(&cards)
+        };
+        let n = notice(&["c=w"]).expect("-T c=w only counts, and nothing said so");
+        assert!(n.starts_with("-T c=w only counts") && n.ends_with("-T 'c=w=1+'"), "{n}");
+        let n = notice(&["equipment=10+", "mv<=2", "c=w"]).expect("two count-only searches");
+        assert!(n.starts_with("-T mv<=2, -T c=w only count,"), "{n}");
+        assert_eq!(notice(&["equipment"]), None, "a bare word plainly only counts");
+        assert_eq!(notice(&["c=w=1+", "mv<=2=5+", "equipment=10+"]), None, "these have ranges");
+        assert_eq!(notice(&["planeswalkers=10+"]), None, "EDHREC's counts filter on the deck table");
     }
 
     #[test]

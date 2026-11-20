@@ -55,6 +55,9 @@ pub struct Settings {
     /// What the header says about where the decks came from, instead of the EDHREC counts (a
     /// local list, the favorites).
     pub source: Option<String>,
+    /// Shown in the status line on opening (a `-T` that only counts though it looks like a
+    /// filter: [`filters::count_only_notice`](crate::filters::count_only_notice)).
+    pub notice: Option<String>,
 }
 
 pub struct App<'a> {
@@ -88,6 +91,7 @@ const TICK: Duration = Duration::from_millis(120);
 
 impl<'a> App<'a> {
     pub fn new(settings: Settings, pool: Pool<'a>, feed: Option<Feed>, http: Option<&'a Http>) -> Self {
+        let status = settings.notice.clone().map(|n| (n, true));
         let mut app = Self {
             settings,
             pool,
@@ -102,7 +106,7 @@ impl<'a> App<'a> {
             pane: Pane::Details,
             state: TableState::default(),
             scroll: 0,
-            status: None,
+            status,
             opened: Instant::now(),
         };
         app.rerank(false);

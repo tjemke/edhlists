@@ -154,6 +154,7 @@ impl<'a> Browser<'a> {
             count_columns,
             layout: PaneLayout::Auto,
             source: (!stored).then(|| "local decklist".to_string()),
+            notice: filters::count_only_notice(counts.iter().map(|f| &f.filter)),
         };
         let (arrivals, feed) = if stored {
             let (tx, feed) = Feed::for_test();
@@ -422,6 +423,25 @@ fn every_t_gets_a_count_column_in_the_order_given() {
         shows(&details, "creatures  2   Grizzly Bears · Lizard Blades"),
         "counted as EDHREC files cards, an artifact creature is a creature: {details:#?}"
     );
+}
+
+#[test]
+fn a_t_that_only_counts_though_it_looks_like_a_filter_says_so() {
+    let w = World::new();
+    let deck: &[&str] = &["Bonesplitter", "Grizzly Bears"];
+    let mut b = Browser::open_counting(&w, &["mv<=2"], &[("a", deck)]);
+    assert!(
+        b.status().starts_with("-T mv<=2 only counts"),
+        "-T mv<=2 has no range (its = is part of the search), so it lets every deck through; opening \
+         should say so, not leave it to the title's \"any\": {:?}",
+        b.status()
+    );
+    let screen = b.text(80, 20);
+    assert!(shows(&screen, "-T mv<=2 only counts"), "the status line should show it: {screen:#?}");
+    for args in [&["equipment"][..], &["mv<=2=1+"][..]] {
+        let b = Browser::open_counting(&w, args, &[("a", deck)]);
+        assert_eq!(b.status(), "", "-T {args:?} needs no note");
+    }
 }
 
 #[test]

@@ -92,7 +92,7 @@ struct ScoutArgs {
     /// in the 99 once a deck is fetched: a type-line word (equipment=10+, legendary=25+), a role
     /// (ramp=15+, draw, removal, wipes) or a Scryfall search ('o:"create a treasure"=6+',
     /// 'otag:sweeper=4+'). Ranges: 10+, ..5, 25-40, 36; without one (-T equipment) a decklist
-    /// count only adds a column. With a commander it narrows that commander's decks; without one
+    /// count only adds a column (so does c=w, whose = is the search's: c=w=1+ filters). With a commander it narrows that commander's decks; without one
     /// it searches across commanders.
     #[arg(short = 'T', long = "type", value_name = "WHAT[=RANGE]")]
     types: Vec<String>,
@@ -291,6 +291,8 @@ struct Show<'a> {
     mix: bool,
     output: &'a OutputArgs,
     layout: PaneLayout,
+    /// For the browser's status line on opening (see [`filters::count_only_notice`]).
+    notice: Option<String>,
 }
 
 fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) -> Result<()> {
@@ -306,7 +308,11 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
     };
     let parsed: Vec<Filter> = args.types.iter().map(|t| t.parse()).collect::<Result<_>>().context("-T")?;
     let (types, card_filters) = filters::split(parsed);
+    let notice = filters::count_only_notice(&card_filters);
     let status = Status::new(Some(http));
+    if let Some(n) = &notice {
+        status.note(&format!("note: {n}"));
+    }
     let (cards, combos) = ensure_databases(http, paths, &status)?;
     let card_filters = compile_filters(card_filters, &cards, paths, &status)?;
     http.set_min_gap("edhrec.com", std::time::Duration::from_secs_f64(args.deck_delay.max(2.0)));
@@ -356,7 +362,8 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
         )?,
     };
     drop(status);
-    let show = Show { rank: args.rank, weights, mix: !args.no_mix, output: &args.output, layout: config.tui.layout };
+    let show =
+        Show { rank: args.rank, weights, mix: !args.no_mix, output: &args.output, layout: config.tui.layout, notice };
     finish(http, session, &show, target)
 }
 
@@ -697,7 +704,8 @@ fn run_favorites(http: &Arc<Http>, paths: &Paths, config: &Config, args: Favorit
         source: Some(format!("favorites across {commanders} commander{}", if commanders == 1 { "" } else { "s" })),
     };
     drop(status);
-    let show = Show { rank: args.rank, weights, mix: args.mix, output: &args.output, layout: config.tui.layout };
+    let show =
+        Show { rank: args.rank, weights, mix: args.mix, output: &args.output, layout: config.tui.layout, notice: None };
     finish(http, session, &show, target)
 }
 
@@ -726,6 +734,7 @@ fn finish(http: &Arc<Http>, session: Session, show: &Show, target: Target) -> Re
                 count_columns,
                 layout: show.layout,
                 source: source.clone(),
+                notice: show.notice.clone(),
             };
             let mut app = tui::App::new(settings, pool, feed, Some(http));
             tui::run(&mut app)?;
@@ -818,7 +827,11 @@ fn run_check(http: &Http, paths: &Paths, config: &Config, args: CheckArgs) -> Re
             t.range_arg()
         );
     }
+    let notice = filters::count_only_notice(&card_filters);
     let status = Status::new(Some(http));
+    if let Some(n) = &notice {
+        status.note(&format!("note: {n}"));
+    }
     let (cards, combos) = ensure_databases(http, paths, &status)?;
     let card_filters = compile_filters(card_filters, &cards, paths, &status)?;
     let mut deck = parse_decklist(&text, &args.commanders);
@@ -856,6 +869,7 @@ fn run_check(http: &Http, paths: &Paths, config: &Config, args: CheckArgs) -> Re
             count_columns: filters::count_columns(&card_filters),
             layout: config.tui.layout,
             source: Some("local decklist".into()),
+            notice,
         };
         tui::run(&mut tui::App::new(settings, pool, None, None))?;
     } else {

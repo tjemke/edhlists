@@ -69,7 +69,8 @@ rank to tell look-alikes apart). Without a terminal you get the list of matches 
 `-T WHAT=RANGE` filters on how many cards of a kind a deck runs. Ranges: `10+`, `..5`, `25-40` or an
 exact number. Repeat `-T` to combine filters; all must match, and a card can count towards several.
 Without a range (`-T equipment`, `-T 'otag:sweeper'`) a decklist count only adds a column, it
-doesn't filter. `check` takes the same `-T` to count a local list, marking counts outside a range.
+doesn't filter. That includes searches whose `=` is their own (`c=w`, `mv<=2`): `-T c=w` counts
+mono-white cards, `-T 'c=w=1+'` requires one, and a note says so when the range is missing. `check` takes the same `-T` to count a local list, marking counts outside a range.
 
 | `WHAT` | Counts | Checked |
 |---|---|---|
