@@ -437,7 +437,6 @@ impl<'a> App<'a> {
         }
         headers.extend(counts.iter().map(|c| c.label.clone()));
         headers.push("Themes".into());
-        let header = Row::new(headers).style(Style::new().bold().fg(DIM));
         // Only the rows that fit are built: formatting every deck's row each frame cost 15 ms for
         // 11k decks. The table then renders that window, at our own scroll offset.
         let height = usize::from(area.height.saturating_sub(3)).max(1);
@@ -445,6 +444,10 @@ impl<'a> App<'a> {
         let offset = window_offset(self.state.offset(), selected, height, self.visible.len());
         *self.state.offset_mut() = offset;
         let end = (offset + height).min(self.visible.len());
+        // `#` has room for 3 digits, and grows only once the positions on screen need more.
+        let num_w = number_width(self.visible[offset..end].iter().map(|(pos, _)| pos + 1));
+        headers[1] = format!("{:>num_w$}", "#");
+        let header = Row::new(headers).style(Style::new().bold().fg(DIM));
         let rows: Vec<Row> = self.visible[offset..end]
             .iter()
             .map(|(pos, r)| {
@@ -460,7 +463,7 @@ impl<'a> App<'a> {
                 };
                 let mut cells = vec![
                     star,
-                    Cell::from(format!("{:>2}", pos + 1)),
+                    Cell::from(format!("{:>num_w$}", pos + 1)),
                     Cell::from(format!("{:>5}", s.power_label()))
                         .style(Style::new().fg(power_color(&self.settings.target, s.power)).bold()),
                     Cell::from(format!("B{}", s.bracket)).style(Style::new().fg(if r.fits { GOOD } else { BAD })),
@@ -491,7 +494,7 @@ impl<'a> App<'a> {
             .collect();
         let mut widths = vec![
             Constraint::Length(1),
-            Constraint::Length(3),
+            Constraint::Length(num_w as u16),
             Constraint::Length(5),
             Constraint::Length(2),
             Constraint::Length(4),
@@ -651,6 +654,12 @@ fn footer_keys(width: usize, favorites: bool, mix: bool) -> Vec<(&'static str, &
     keys.into_iter().zip(shown).filter(|(_, s)| *s).map(|((k, w, _), _)| (k, w)).collect()
 }
 
+/// The width of the `#` column: 3, or the digits of the largest of these positions if it has more.
+/// Up to 999 the column stays put while scrolling.
+fn number_width(positions: impl Iterator<Item = usize>) -> usize {
+    positions.max().map_or(0, |n| n.max(1).ilog10() as usize + 1).max(3)
+}
+
 /// The first row to show in a window of `height` rows over `len`: the previous one, moved just
 /// enough to keep the selection in view, and never past the end.
 fn window_offset(previous: usize, selected: Option<usize>, height: usize, len: usize) -> usize {
@@ -709,7 +718,18 @@ pub fn run(app: &mut App) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{footer_keys, window_offset};
+    use super::{footer_keys, number_width, window_offset};
+
+    #[test]
+    fn the_number_column_fits_the_positions_on_screen() {
+        // Three digits' room whatever is on screen, so scrolling up to 999 never shifts the table.
+        assert_eq!(number_width([].into_iter()), 3);
+        assert_eq!(number_width([1, 2, 9].into_iter()), 3);
+        assert_eq!(number_width([999].into_iter()), 3);
+        // Past 999 it grows (the old fixed width cut row 11066 to "110").
+        assert_eq!(number_width([998, 1000].into_iter()), 4);
+        assert_eq!(number_width([11030, 11066].into_iter()), 5);
+    }
 
     #[test]
     fn the_footer_fits_its_width_and_keeps_quit() {

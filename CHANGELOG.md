@@ -14,6 +14,7 @@ pages last, and the favorites are lost.
 - `edh-scout favorites` lists every favorite, across commanders.
 - The browser's key hints fit the terminal: `↑↓` dropped, two shortened, and the least needed left
   out when it's narrow.
+- The browser's `#` column grows past 999 instead of cutting the number off.
 
 ## 0.2.0
 
