@@ -13,7 +13,7 @@ use crate::tags::RoleTags;
 use crate::text::{fold, front_face};
 
 /// Bump when [`Card`] changes shape; `sync` rebuilds from the kept raw bulk file without downloading.
-pub const CARDS_SCHEMA: u32 = 3;
+pub const CARDS_SCHEMA: u32 = 4;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Card {
@@ -33,6 +33,11 @@ pub struct Card {
     pub layout: String,
     /// `None` when Scryfall has no colors at all; EDHPowerLevel treats that differently from `[]`.
     pub colors: Option<Vec<String>>,
+    /// Each face's colours, for cards whose faces have their own and the card none (transforming
+    /// and modal double-faced cards: Plargg // Augusta is red, then white); empty otherwise. A `c`
+    /// search takes such a card as all its faces' colours together (red-white).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub face_colors: Vec<Vec<String>>,
     #[serde(default)]
     pub identity: Vec<String>,
     /// Cheapest non-foil USD price across real printings (what EDHPowerLevel prices cards at).
@@ -308,6 +313,12 @@ fn convert(c: RawCard) -> Option<Card> {
         c.card_faces.iter().map(|f| f.type_line.clone().unwrap_or_default()).collect::<Vec<_>>().join(" // ")
     });
     let colors = c.colors.clone().or_else(|| c.card_faces.first().and_then(|f| f.colors.clone()));
+    // Split, adventure and flip cards have the card's colours and none per face; double-faced
+    // cards the other way round.
+    let face_colors = match c.card_faces.iter().map(|f| f.colors.clone()).collect::<Option<Vec<_>>>() {
+        Some(faces) if c.colors.is_none() && multi => faces,
+        _ => vec![],
+    };
     let oracle_id = c
         .oracle_id
         .clone()
@@ -322,6 +333,7 @@ fn convert(c: RawCard) -> Option<Card> {
         oracle,
         layout: c.layout,
         colors,
+        face_colors,
         identity: c.color_identity,
         usd: 0.0,
         rank: c.edhrec_rank,
@@ -422,6 +434,23 @@ pub fn display_name(card: &Card) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn double_faced_cards_keep_each_faces_colours() {
+        let raw = |json: &str| convert(serde_json::from_str(json).unwrap()).unwrap();
+        let plargg = raw(r#"{"name": "Plargg, Dean of Chaos // Augusta, Dean of Order", "layout": "modal_dfc",
+                "color_identity": ["R", "W"], "card_faces": [
+                    {"name": "Plargg, Dean of Chaos", "colors": ["R"]},
+                    {"name": "Augusta, Dean of Order", "colors": ["W"]}]}"#);
+        assert_eq!(plargg.face_colors, vec![vec!["R".to_string()], vec!["W".to_string()]]);
+        assert_eq!(plargg.colors, Some(vec!["R".to_string()]), "colors stays the front face's, as scoring reads it");
+        let fire_ice =
+            raw(r#"{"name": "Fire // Ice", "layout": "split", "colors": ["U", "R"], "color_identity": ["U", "R"],
+                "card_faces": [{"name": "Fire"}, {"name": "Ice"}]}"#);
+        assert!(fire_ice.face_colors.is_empty(), "a split card's colours are the card's: {:?}", fire_ice.face_colors);
+        let bolt = raw(r#"{"name": "Lightning Bolt", "layout": "normal", "colors": ["R"]}"#);
+        assert!(bolt.face_colors.is_empty());
+    }
 
     fn card(name: &str, faces: &[&str]) -> Card {
         Card {

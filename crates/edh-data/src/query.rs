@@ -11,7 +11,7 @@
 //! | `name:`, a bare word or `"phrase"` | the name contains the text; `!"Exact Name"` for one card |
 //! | `kw:` `keyword:` | has this keyword ability |
 //! | `mv` `cmc`, `usd` | numbers: `mv<=2`, `usd>10` (`:` means `=`) |
-//! | `c` `color`, `id` `identity` | colours: `c:rg` is at least red and green, `id:esper` fits an Esper deck; a number counts them: `c=3`, `c>=wu c=3` (exactly three, white and blue among them) |
+//! | `c` `color`, `id` `identity` | colours: `c:rg` is at least red and green, `id:esper` fits an Esper deck; a number counts them: `c=3`, `c>=wu c=3` (exactly three, white and blue among them); a double-faced card has all its faces' colours |
 //! | `is:` / `not:` | `gamechanger`, `commander`, `reserved`, `historic`, `permanent`, `mdfc`, `dfc` |
 //! | `otag:` `function:` | a Scryfall Tagger tag, its sub-tags included ([`Query::resolve_tags`]) |
 //!
@@ -332,12 +332,20 @@ impl Term {
             // Cards without a price never match a price comparison (as on Scryfall).
             Term::Usd(cmp, x) => card.usd > 0.0 && cmp.num(card.usd, *x),
             Term::Color { identity, cmp, colors } => {
-                let have = if *identity { mask(&card.identity) } else { mask(card.colors.as_deref().unwrap_or(&[])) };
-                match colors {
+                let test = |have: u8| match colors {
                     Colors::Set(q) => cmp.set(have, *q),
                     Colors::Colorless => cmp.set(have, 0),
                     Colors::Multicolor => (have.count_ones() >= 2) == (*cmp != Cmp::Ne),
                     Colors::Count(n) => cmp.num(f64::from(have.count_ones()), f64::from(*n)),
+                };
+                if *identity {
+                    test(mask(&card.identity))
+                } else if card.face_colors.is_empty() {
+                    test(mask(card.colors.as_deref().unwrap_or(&[])))
+                } else {
+                    // A double-faced card is all its faces' colours together (Scryfall matches
+                    // each face on its own instead).
+                    test(card.face_colors.iter().fold(0, |m, f| m | mask(f)))
                 }
             }
             Term::Is(is) => match is {
@@ -893,6 +901,24 @@ mod tests {
         assert_eq!(hits("id:r t:instant"), vec!["Lightning Bolt", "Valakut Awakening"]); // fits mono-red
         assert_eq!(hits("id<=rw t:instant").len(), 3);
         assert_eq!(hits("id>r"), vec!["Boros Charm"]);
+    }
+
+    #[test]
+    fn a_double_faced_card_is_all_its_faces_colours() {
+        let mut plargg = card("Plargg, Dean of Chaos // Augusta, Dean of Order", "Legendary Creature", "");
+        plargg.layout = "modal_dfc".into();
+        plargg.colors = Some(vec!["R".into()]);
+        plargg.face_colors = vec![vec!["R".into()], vec!["W".into()]];
+        plargg.identity = vec!["R".into(), "W".into()];
+        let matches = |q: &str| Query::parse(q).unwrap().matches(&plargg);
+        // Red on one face and white on the other make a red-white card. Scryfall answers the
+        // other way round for each of these, matching each face on its own.
+        for q in ["c=rw", "c=2", "c>=rw", "c:m", "c:w", "id=rw"] {
+            assert!(matches(q), "{q} should match: Plargg // Augusta is red and white");
+        }
+        for q in ["c=r", "c=w", "c=1", "-c:w"] {
+            assert!(!matches(q), "{q} shouldn't match: Plargg // Augusta isn't one colour");
+        }
     }
 
     #[test]

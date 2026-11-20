@@ -10,6 +10,10 @@ What changed in each version, newest first. How versions are numbered: see *Vers
   playing the card most come first, sharing the `--commanders` slots with the theme ones.
 - Colour searches take a number, as on Scryfall: `c=3` is exactly three colours, `c>=4` four or
   more, and `-T 'c>=wu c=3=5+'` asks for five three-colour cards with white and blue.
+- A colour search (`c=w`, `c=3`) takes a double-faced card as all its faces' colours together:
+  Plargg // Augusta (red, then white) is red-white, and Gwen Stacy // Ghost-Spider (red, then
+  white, blue and red) a three-colour card. It was the front face's alone. Scryfall matches each
+  face on its own instead. The card database rebuilds itself once from the download on disk.
 - In a `-T` like `'t:creature mv=3'` or `'c>=wu c=3'`, the last `=` is part of the search, as it
   already was when the search was only `mv=3`; it was taken for the range (exactly 3) and the
   search for `t:creature mv`, where a bare `mv` means a name containing "mv".
