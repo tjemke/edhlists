@@ -18,13 +18,14 @@
 
 use std::collections::{BTreeMap, HashSet};
 
+use edh_data::deck::{Bracket, BracketRange};
 use edh_data::edhrec::TableRow;
 
 use crate::filters::{Prior, TypeFilter};
 
 #[derive(Clone, Debug)]
 pub struct SelectOptions {
-    pub brackets: (u8, u8),
+    pub brackets: BracketRange,
     pub declared_only: bool,
     pub max_price: Option<f64>,
     /// Also cap price at the declared decks' 90th percentile (off unless asked for: a deck's price
@@ -73,9 +74,8 @@ fn quantile(sorted: &[f64], q: f64) -> f64 {
 }
 
 /// The 90th percentile of salt and price among decks declared within the target brackets.
-pub fn calibrate(rows: &[TableRow], brackets: (u8, u8)) -> Option<Ceiling> {
-    let declared: Vec<&TableRow> =
-        rows.iter().filter(|r| r.bracket.is_some_and(|b| (brackets.0..=brackets.1).contains(&b))).collect();
+pub fn calibrate(rows: &[TableRow], brackets: BracketRange) -> Option<Ceiling> {
+    let declared: Vec<&TableRow> = rows.iter().filter(|r| r.bracket.is_some_and(|b| brackets.contains(b))).collect();
     if declared.len() < 20 {
         return None;
     }
@@ -97,7 +97,7 @@ fn tercile(sorted: &[f64], x: f64) -> u8 {
 }
 
 pub fn select<'a>(rows: &'a [TableRow], opts: &SelectOptions, is_cached: impl Fn(&str) -> bool) -> Selection<'a> {
-    let in_target = |b: u8| (opts.brackets.0..=opts.brackets.1).contains(&b);
+    let in_target = |b: Bracket| opts.brackets.contains(b);
     let ceiling = calibrate(rows, opts.brackets);
     let tags: Vec<String> = opts.tags.iter().map(|t| t.to_lowercase()).collect();
     let mut seen_signatures = HashSet::new();
@@ -250,7 +250,7 @@ mod tests {
             artifact: 10,
             enchantment: 4,
             land: 36,
-            bracket,
+            bracket: bracket.map(Bracket),
             tags: tags.iter().map(|s| s.to_string()).collect(),
             ..Default::default()
         }
@@ -258,7 +258,7 @@ mod tests {
 
     fn opts(budget: usize) -> SelectOptions {
         SelectOptions {
-            brackets: (2, 3),
+            brackets: BracketRange::new(2, 3),
             declared_only: false,
             max_price: None,
             price_ceiling: false,

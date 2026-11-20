@@ -7,6 +7,7 @@ use anyhow::{Result, bail};
 
 use crate::analysis::Score;
 use crate::select::weighted_order;
+use edh_data::deck::BracketRange;
 use edhpl::level_band;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
@@ -117,7 +118,7 @@ pub fn parse_range<T: FromStr + PartialOrd + Copy>(s: &str) -> Result<(T, T)> {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Target {
-    pub brackets: (u8, u8),
+    pub brackets: BracketRange,
     /// EDHPowerLevel score band `(lo, hi]`.
     pub band: (f64, f64),
     /// Was the band given explicitly (instead of derived from the brackets)?
@@ -125,17 +126,13 @@ pub struct Target {
 }
 
 impl Target {
-    pub fn new(brackets: (u8, u8), band: Option<(f64, f64)>) -> Self {
-        let derived = level_band(brackets.0, brackets.1);
+    pub fn new(brackets: BracketRange, band: Option<(f64, f64)>) -> Self {
+        let derived = level_band(brackets.lo.0, brackets.hi.0);
         Self { brackets, band: band.unwrap_or(derived), custom_band: band.is_some() }
     }
 
     pub fn describe(&self) -> String {
-        let b = if self.brackets.0 == self.brackets.1 {
-            format!("B{}", self.brackets.0)
-        } else {
-            format!("B{}–{}", self.brackets.0, self.brackets.1)
-        };
+        let b = self.brackets;
         let hi = if self.band.1.is_finite() { format!("{:.1}", self.band.1) } else { "10".into() };
         format!("{b} · power {:.1}–{hi}", self.band.0)
     }
@@ -144,9 +141,9 @@ impl Target {
     /// level is in the band and the rules floor doesn't exceed the top bracket).
     pub fn fits(&self, s: &Score) -> bool {
         if self.custom_band {
-            s.power > self.band.0 && s.power <= self.band.1 && s.floor <= self.brackets.1
+            s.power > self.band.0 && s.power <= self.band.1 && s.floor <= self.brackets.hi
         } else {
-            (self.brackets.0..=self.brackets.1).contains(&s.bracket)
+            self.brackets.contains(s.bracket)
         }
     }
 
@@ -266,10 +263,11 @@ pub fn hoist(ranking: Vec<Ranked>, first: impl Fn(usize) -> bool) -> Vec<Ranked>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use edh_data::deck::Bracket;
 
     #[test]
     fn hoisting_moves_favorites_up_and_keeps_both_orders() {
-        let t = Target::new((2, 3), None);
+        let t = Target::new(BracketRange::new(2, 3), None);
         let decks: Vec<Score> =
             [6.2, 9.5, 6.0, 5.9, 9.0].iter().map(|&l| analysis(l, if l > 8.0 { 5 } else { 3 }, 50.0)).collect();
         let refs: Vec<&Score> = decks.iter().collect();
@@ -283,7 +281,7 @@ mod tests {
     }
 
     fn analysis(level: f64, bracket: u8, salt: f64) -> Score {
-        Score { power: level, bracket, floor: 1, salt: Some(salt), ..Default::default() }
+        Score { power: level, bracket: Bracket(bracket), floor: Bracket(1), salt: Some(salt), ..Default::default() }
     }
 
     #[test]
@@ -325,7 +323,7 @@ mod tests {
 
     #[test]
     fn default_target_is_edhpl_bracket_band() {
-        let t = Target::new((2, 3), None);
+        let t = Target::new(BracketRange::new(2, 3), None);
         assert_eq!(t.band, (4.7, 7.7));
         assert!((t.power_fit(6.2) - 1.0).abs() < 1e-9);
         assert!((t.power_fit(7.7) - 0.5).abs() < 1e-9);
@@ -337,7 +335,7 @@ mod tests {
         let a = analysis(8.5, 4, 60.0);
         let b = analysis(7.5, 3, 50.0);
         let c = analysis(6.2, 3, 70.0);
-        let t = Target::new((2, 3), None);
+        let t = Target::new(BracketRange::new(2, 3), None);
         let r = rank(&[&a, &b, &c], &t, RankMode::Fit, &Weights::default());
         assert_eq!(r.iter().map(|x| x.index).collect::<Vec<_>>(), vec![2, 1, 0]);
         let r = rank(&[&a, &b, &c], &t, RankMode::Salt, &Weights::default());
@@ -347,7 +345,7 @@ mod tests {
     #[test]
     fn mixing_interleaves_commanders_by_weight_and_keeps_fits_first() {
         // Decks 0-5 belong to commander 0, 6-7 to commander 1; deck 7 misses the target.
-        let t = Target::new((2, 3), None);
+        let t = Target::new(BracketRange::new(2, 3), None);
         let decks: Vec<Score> = [6.2, 6.1, 6.0, 5.9, 5.8, 5.7, 5.5, 9.5]
             .iter()
             .map(|&l| analysis(l, if l > 8.0 { 5 } else { 3 }, 50.0))
@@ -368,7 +366,7 @@ mod tests {
         let b = analysis(8.5, 4, 50.0);
         let c = analysis(7.5, 3, 50.0);
         let d = analysis(9.5, 5, 50.0);
-        let t = Target::new((2, 3), None);
+        let t = Target::new(BracketRange::new(2, 3), None);
         let r = rank(&[&a, &b, &c, &d], &t, RankMode::Power, &Weights::default());
         assert_eq!(r.iter().map(|x| x.index).collect::<Vec<_>>(), vec![2, 0, 3, 1]);
     }

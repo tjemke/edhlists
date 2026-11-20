@@ -78,7 +78,17 @@ fn scored_with(id: &str, power: f64, commander: &str, cards: &[&str]) -> (Deck, 
         meta: DeckMeta { edhrec_url: Some(format!("https://edhrec.com/deckpreview/{id}")), ..Default::default() },
     };
     let bracket = if power > 7.7 { 5 } else { 3 };
-    (deck, Score { power, bracket, floor: 1, structure: 0.8, synergy: None, salt: Some(30.0) })
+    (
+        deck,
+        Score {
+            power,
+            bracket: edh_data::deck::Bracket(bracket),
+            floor: edh_data::deck::Bracket(1),
+            structure: 0.8,
+            synergy: None,
+            salt: Some(30.0),
+        },
+    )
 }
 
 /// The browser, driven by keys and read back as the list it shows.
@@ -141,7 +151,7 @@ impl<'a> Browser<'a> {
         }
         let settings = Settings {
             title: "test".into(),
-            target: Target::new((2, 3), None),
+            target: Target::new(edh_data::deck::BracketRange::new(2, 3), None),
             mode: RankMode::Fit,
             weights: Weights::default(),
             export_dir: world.dir.path().join("export"),

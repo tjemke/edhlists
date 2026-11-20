@@ -59,7 +59,7 @@ pub fn ranked_table(
     for (pos, r) in ranking.iter().take(top).enumerate() {
         let Entry { deck, score: s, matches } = &decks[r.index];
         let dim = |c: Cell| if r.fits { c } else { c.fg(Color::DarkGrey) };
-        let b = format!("B{}", s.bracket);
+        let b = s.bracket.to_string();
         let mut row = vec![
             dim(Cell::new(if favorites.contains(&deck.id) {
                 format!("★ {}", pos + 1)
@@ -120,13 +120,17 @@ mod tests {
     fn entry(id: &str) -> Entry {
         let meta = DeckMeta { edhrec_url: Some(format!("https://edhrec.com/deckpreview/{id}")), ..Default::default() };
         let deck = Deck { id: id.into(), commanders: vec!["Alpha One".into()], meta, ..Default::default() };
-        Entry { deck, score: Score { power: 6.0, bracket: 3, ..Default::default() }, matches: Vec::new() }
+        Entry {
+            deck,
+            score: Score { power: 6.0, bracket: edh_data::deck::Bracket(3), ..Default::default() },
+            matches: Vec::new(),
+        }
     }
 
     #[test]
     fn favorites_are_starred_in_the_plain_table() {
         let decks = vec![entry("aaa"), entry("bbb")];
-        let target = Target::new((2, 3), None);
+        let target = Target::new(edh_data::deck::BracketRange::new(2, 3), None);
         let ranking =
             rank(&decks.iter().map(|e| &e.score).collect::<Vec<_>>(), &target, RankMode::Fit, &Weights::default());
         let favorites = HashSet::from(["bbb".to_string()]);

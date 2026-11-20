@@ -475,7 +475,7 @@ impl<'a> App<'a> {
                     Cell::from(format!("{:>num_w$}", pos + 1)),
                     Cell::from(format!("{:>5}", s.power_label()))
                         .style(Style::new().fg(power_color(&self.settings.target, s.power)).bold()),
-                    Cell::from(format!("B{}", s.bracket)).style(Style::new().fg(if r.fits { GOOD } else { BAD })),
+                    Cell::from(s.bracket.to_string()).style(Style::new().fg(if r.fits { GOOD } else { BAD })),
                     Cell::from(s.salt.map(|s| format!("{s:>4.0}")).unwrap_or("   –".into()))
                         .style(Style::new().fg(score_color(r.scores.salt))),
                     Cell::from(format!("{:>5.0}%", s.structure * 100.0))

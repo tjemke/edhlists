@@ -1,10 +1,67 @@
 //! The deck model and decklist text parsing.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::sync::LazyLock;
 
+use anyhow::{Result, anyhow, bail};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+
+/// A Commander bracket, 1 (Exhibition) to 5 (cEDH). Shown as "B3"; stored as the number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Bracket(pub u8);
+
+/// The lowest bracket.
+impl Default for Bracket {
+    fn default() -> Self {
+        Bracket(1)
+    }
+}
+
+impl fmt::Display for Bracket {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "B{}", self.0)
+    }
+}
+
+/// Brackets `lo` to `hi`, both included. Shown as "B3" or "B2–3".
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BracketRange {
+    pub lo: Bracket,
+    pub hi: Bracket,
+}
+
+impl BracketRange {
+    /// The brackets between `a` and `b`, in either order.
+    pub fn new(a: u8, b: u8) -> Self {
+        Self { lo: Bracket(a.min(b)), hi: Bracket(a.max(b)) }
+    }
+
+    /// "3" or "2-3" (either order), within 1 to 5.
+    pub fn parse(s: &str) -> Result<Self> {
+        let num = |x: &str| x.trim().parse::<u8>().map_err(|_| anyhow!("'{}' is not a bracket number", x.trim()));
+        let r = match s.split_once('-') {
+            Some((a, b)) => Self::new(num(a)?, num(b)?),
+            None => Self::new(num(s)?, num(s)?),
+        };
+        if r.lo.0 < 1 || r.hi.0 > 5 {
+            bail!("brackets run from 1 to 5");
+        }
+        Ok(r)
+    }
+
+    pub fn contains(self, b: Bracket) -> bool {
+        (self.lo..=self.hi).contains(&b)
+    }
+}
+
+impl fmt::Display for BracketRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.lo == self.hi { write!(f, "{}", self.lo) } else { write!(f, "{}–{}", self.lo, self.hi.0) }
+    }
+}
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct DeckMeta {
@@ -18,7 +75,7 @@ pub struct DeckMeta {
     #[serde(default)]
     pub tags: Vec<String>,
     /// The bracket the deck's owner declared on EDHREC, if any.
-    pub declared_bracket: Option<u8>,
+    pub declared_bracket: Option<Bracket>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -110,6 +167,18 @@ pub fn parse_decklist(text: &str, commanders: &[String]) -> Deck {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn brackets_read_from_one_number_or_a_range_and_show_as_b() {
+        assert_eq!(BracketRange::parse("3").unwrap().to_string(), "B3");
+        assert_eq!(BracketRange::parse("3-2").unwrap(), BracketRange::new(2, 3), "either order");
+        assert_eq!(BracketRange::parse(" 2 - 3 ").unwrap().to_string(), "B2–3");
+        assert!(BracketRange::parse("0-3").is_err() && BracketRange::parse("6").is_err(), "brackets run from 1 to 5");
+        assert!(BracketRange::parse("three").is_err());
+        let r = BracketRange::new(2, 3);
+        assert!(r.contains(Bracket(2)) && r.contains(Bracket(3)) && !r.contains(Bracket(4)));
+        assert_eq!(serde_json::to_string(&Bracket(4)).unwrap(), "4", "stored as the number");
+    }
 
     fn names(d: &Deck) -> Vec<(&str, u32)> {
         d.cards.iter().map(|(n, q)| (n.as_str(), *q)).collect()

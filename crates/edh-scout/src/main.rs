@@ -8,7 +8,7 @@ use clap::{Args, Parser, Subcommand};
 use edh_data::cards::CardDb;
 use edh_data::combos::ComboDb;
 use edh_data::config::Paths;
-use edh_data::deck::{Deck, parse_decklist};
+use edh_data::deck::{BracketRange, Deck, parse_decklist};
 use edh_data::edhrec::{self, ListedCommander};
 use edh_data::http::{Http, OfflineMiss, summarize_counts};
 use edh_data::progress::{Lines, Progress};
@@ -221,10 +221,7 @@ struct SyncArgs {
 }
 
 fn target_from(args: &TargetArgs) -> Result<Target> {
-    let brackets: (u8, u8) = parse_range(&args.brackets).context("--brackets")?;
-    if brackets.0 < 1 || brackets.1 > 5 {
-        bail!("brackets run from 1 to 5");
-    }
+    let brackets = BracketRange::parse(&args.brackets).context("--brackets")?;
     let band = args.power.as_deref().map(parse_range::<f64>).transpose().context("--power")?;
     Ok(Target::new(brackets, band))
 }

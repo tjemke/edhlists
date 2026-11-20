@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::config::{EDHREC_JSON, EDHREC_SITE, TTL_COMMANDER_PAGE, TTL_DECK_TABLE, TTL_SALT};
-use crate::deck::{Deck, DeckMeta};
+use crate::deck::{Bracket, Deck, DeckMeta};
 use crate::http::{Http, Ttl};
 use crate::text::slugify;
 
@@ -37,7 +37,7 @@ pub struct TableRow {
     pub battle: u32,
     pub planeswalker: u32,
     pub land: u32,
-    pub bracket: Option<u8>,
+    pub bracket: Option<Bracket>,
     pub tags: Vec<String>,
 }
 
@@ -472,7 +472,7 @@ mod tests {
         assert_eq!(t.table.len(), 400);
         let r = &t.table[1];
         assert_eq!(r.urlhash, "8K2SZWMbz80NrhCJmt9DsA");
-        assert_eq!(r.bracket, Some(4));
+        assert_eq!(r.bracket, Some(Bracket(4)));
         assert!((98..=101).contains(&r.card_count()));
         assert!(t.table.iter().any(|r| r.bracket.is_none()));
     }

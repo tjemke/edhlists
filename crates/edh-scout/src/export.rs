@@ -10,7 +10,7 @@ use crate::analysis::Analysis;
 use crate::filters::CountColumn;
 use crate::rank::{RankMode, Ranked, Target};
 use crate::scout::Entry;
-use edh_data::deck::Deck;
+use edh_data::deck::{Bracket, Deck};
 use edh_data::text::front_face;
 use edhpl::edhpowerlevel_url;
 
@@ -122,11 +122,11 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
         let rel = file.strip_prefix(dir).unwrap_or(&file).display().to_string();
         writeln!(
             md,
-            "| [{n}](#deck-{n}){star} | {fit} | {pl} | B{b} | {salt} | {st:.0}% | {syn} |{price}{cmdr}{counts} {tags} | [{rel}]({rel}) |",
+            "| [{n}](#deck-{n}){star} | {fit} | {pl} | {b} | {salt} | {st:.0}% | {syn} |{price}{cmdr}{counts} {tags} | [{rel}]({rel}) |",
             n = pos + 1,
             fit = if r.fits { "✓" } else { "✗" },
             pl = a.power.label(),
-            b = a.bracket.bracket,
+            b = Bracket(a.bracket.bracket),
             salt = fmt_opt(a.salt, 0),
             st = a.structure.score * 100.0,
             syn = fmt_opt(a.synergy.as_ref().map(|s| s.average * 100.0), 1),
@@ -152,13 +152,13 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
         writeln!(md, "{}\n", links.join(" · "))?;
         writeln!(
             md,
-            "- **Power {}** (impact {:.0} × efficiency {:.2}) → **bracket {}** (rules floor B{}, power alone B{})",
+            "- **Power {}** (impact {:.0} × efficiency {:.2}) → **bracket {}** (rules floor {}, power alone {})",
             a.power.label(),
             a.power.impact,
             a.power.efficiency,
             a.bracket.bracket,
-            a.bracket.floor,
-            a.bracket.from_level
+            Bracket(a.bracket.floor),
+            Bracket(a.bracket.from_level)
         )?;
         let reasons = a.bracket.reasons();
         if !reasons.is_empty() {
@@ -251,10 +251,14 @@ mod tests {
             let meta =
                 DeckMeta { edhrec_url: Some(format!("https://edhrec.com/deckpreview/{id}")), ..Default::default() };
             let deck = Deck { id: id.into(), commanders: vec!["Alpha One".into()], meta, ..Default::default() };
-            Entry { deck, score: Score { power: 6.0, bracket: 3, ..Default::default() }, matches: Vec::new() }
+            Entry {
+                deck,
+                score: Score { power: 6.0, bracket: edh_data::deck::Bracket(3), ..Default::default() },
+                matches: Vec::new(),
+            }
         };
         let decks = vec![entry("aaa"), entry("bbb")];
-        let target = Target::new((2, 3), None);
+        let target = Target::new(edh_data::deck::BracketRange::new(2, 3), None);
         let ranking =
             rank(&decks.iter().map(|e| &e.score).collect::<Vec<_>>(), &target, RankMode::Fit, &Weights::default());
         let favorites = std::collections::HashSet::from(["bbb".to_string()]);

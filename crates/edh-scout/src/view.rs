@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use edh_data::cards::CardDb;
-use edh_data::deck::Deck;
+use edh_data::deck::{Bracket, Deck};
 use edh_data::flags::Flag;
 use edh_data::http::host_of;
 use edh_data::mana::{Color as Mtg, ColorSet};
@@ -172,16 +172,16 @@ pub fn detail_lines(
     let mut b = vec![
         label("Bracket"),
         Span::styled(
-            format!("B{}", a.bracket.bracket),
+            Bracket(a.bracket.bracket).to_string(),
             Style::new().bold().fg(if ranked.is_none_or(|r| r.fits) { GOOD } else { BAD }),
         ),
         Span::styled(
-            format!("   power alone B{} · rules floor B{}", a.bracket.from_level, a.bracket.floor),
+            format!("   power alone {} · rules floor {}", Bracket(a.bracket.from_level), Bracket(a.bracket.floor)),
             Style::new().fg(DIM),
         ),
     ];
     if let Some(declared) = deck.meta.declared_bracket {
-        b.push(Span::styled(format!(" · owner says B{declared}"), Style::new().fg(DIM)));
+        b.push(Span::styled(format!(" · owner says {declared}"), Style::new().fg(DIM)));
     }
     out.push(Line::from(b));
     let reasons = a.bracket.reasons();

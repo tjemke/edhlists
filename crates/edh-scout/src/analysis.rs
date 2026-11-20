@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use edh_data::cards::{Card, CardDb};
 use edh_data::combos::{self as spellbook, ComboDb, bracket_tag_name};
-use edh_data::deck::Deck;
+use edh_data::deck::{Bracket, Deck};
 use edh_data::edhrec::{CommanderPage, EdhrecCombo};
 use edh_data::flags::Flag;
 use edh_data::text::{fold, front_face};
@@ -101,9 +101,9 @@ fn fingerprint(bytes: impl IntoIterator<Item = u8>) -> i64 {
 pub struct Score {
     /// EDHPowerLevel's 0-10 power level.
     pub power: f64,
-    pub bracket: u8,
+    pub bracket: Bracket,
     /// The bracket EDHPowerLevel's rules alone set.
-    pub floor: u8,
+    pub floor: Bracket,
     /// Closeness to the deckbuilding template, 0-1.
     pub structure: f64,
     /// Average EDHREC synergy with the commander, when its page was there to compare with.
@@ -116,8 +116,8 @@ impl Score {
     pub fn of(a: &Analysis) -> Self {
         Self {
             power: a.power.level,
-            bracket: a.bracket.bracket,
-            floor: a.bracket.floor,
+            bracket: Bracket(a.bracket.bracket),
+            floor: Bracket(a.bracket.floor),
             structure: a.structure.score,
             synergy: a.synergy.as_ref().map(|s| s.average),
             salt: a.salt,
@@ -310,7 +310,7 @@ mod tests {
         };
         let s = Score::of(&analyze(&deck, &ctx));
         assert_eq!(SCORER_VERSION, 1, "update the pinned score below along with the version");
-        let pinned = (0.365_377_042_483_660_15, 4, 4, 0.066_666_666_666_666_65);
+        let pinned = (0.365_377_042_483_660_15, Bracket(4), Bracket(4), 0.066_666_666_666_666_65);
         assert!(
             (s.power - pinned.0).abs() < 1e-9
                 && s.bracket == pinned.1

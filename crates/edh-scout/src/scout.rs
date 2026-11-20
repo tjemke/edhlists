@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Result, bail};
 use edh_data::cards::CardDb;
 use edh_data::combos::ComboDb;
-use edh_data::deck::Deck;
+use edh_data::deck::{Bracket, Deck};
 use edh_data::edhrec::{self, CommanderPage, EdhrecCombo, ListedCommander, TableRow};
 use edh_data::http::{HostBlocked, Http, OfflineMiss};
 use edh_data::progress::Progress;
@@ -576,8 +576,8 @@ impl Scorer<'_> {
             epoch: *epoch,
             synergy_src: self.synergy_src(deck),
             power: s.power,
-            bracket: s.bracket,
-            floor: s.floor,
+            bracket: s.bracket.0,
+            floor: s.floor.0,
             structure: s.structure,
             synergy: s.synergy,
         });
@@ -615,8 +615,8 @@ impl Scorer<'_> {
 fn stored_score(k: &StoredScore, deck: &Deck) -> Score {
     Score {
         power: k.power,
-        bracket: k.bracket,
-        floor: k.floor,
+        bracket: Bracket(k.bracket),
+        floor: Bracket(k.floor),
         structure: k.structure,
         synergy: k.synergy,
         salt: deck.meta.salt,
@@ -1145,7 +1145,7 @@ mod tests {
         let store = DeckStore::open(&dir.path().join("decks.sqlite"), dir.path().join("pages")).unwrap();
         let cards = CardDb::new(vec![creature("Alpha One"), creature("Grizzly Bears")]);
         let combos = ComboDb::empty();
-        let target = crate::rank::Target::new((2, 3), None);
+        let target = crate::rank::Target::new(edh_data::deck::BracketRange::new(2, 3), None);
         let by_power = |s: &[&Score]| crate::rank::rank(s, &target, crate::rank::RankMode::Power, &Default::default());
         // Kept from an older epoch: d3 had the highest power, then d1; d0 and d2 were never scored.
         let old = |power: f64| StoredScore {
