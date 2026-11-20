@@ -3,6 +3,11 @@
 What changed in each version, newest first. How versions are numbered: see *Versioning* in
 `AGENTS.md`.
 
+## 0.3.4
+
+- The card database keeps each card's mana cost and the kinds of mana it makes, for the mana
+  goldfish to come. It rebuilds itself once from the download on disk, with no request.
+
 ## 0.3.3
 
 - Two runs saving the same file at once (the card or combo database during a `sync`, a cached

@@ -147,7 +147,7 @@ pub fn heuristic_roles(card: &Card) -> Vec<Role> {
     let mut out = Vec::new();
     let t = card.front_type();
     let is_spell = t.contains("Instant") || t.contains("Sorcery");
-    if (card.produces_mana && !is_spell) || RAMP.iter().any(|r| r.is_match(&text)) {
+    if (!card.produced.is_empty() && !is_spell) || RAMP.iter().any(|r| r.is_match(&text)) {
         out.push(Role::Ramp);
     }
     let draw_text = OPPONENT_DRAWS.replace_all(&text, "");
@@ -243,6 +243,7 @@ pub fn structure(entries: &[Entry]) -> Structure {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use edh_data::mana::{Mana, ManaSet};
 
     fn card(name: &str, type_line: &str, text: &str) -> Card {
         Card {
@@ -269,10 +270,10 @@ mod tests {
         );
         let mut rock =
             card("Arcane Signet", "Artifact", "{T}: Add one mana of any color in your commander's color identity.");
-        rock.produces_mana = true;
+        rock.produced = ManaSet::from_codes(["W", "U", "B", "R", "G"]);
         assert_eq!(roles(&rock), vec![Role::Ramp]);
         let mut ritual = card("Dark Ritual", "Instant", "Add {B}{B}{B}.");
-        ritual.produces_mana = true;
+        ritual.produced = ManaSet::of(Mana::B);
         assert!(roles(&ritual).is_empty());
         assert_eq!(r("Land", "{T}: Add {G}."), vec![]);
     }

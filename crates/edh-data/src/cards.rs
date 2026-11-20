@@ -8,13 +8,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::mana::ColorSet;
+use crate::flags::EnumSet;
+use crate::mana::{ColorSet, ManaCost, ManaSet};
 use crate::storage::{open_maybe_gz, read_json_gz, write_json_gz};
 use crate::tags::RoleTags;
 use crate::text::{fold, front_face};
 
 /// Bump when [`Card`] changes shape; `sync` rebuilds from the kept raw bulk file without downloading.
-pub const CARDS_SCHEMA: u32 = 4;
+pub const CARDS_SCHEMA: u32 = 5;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Card {
@@ -27,6 +28,11 @@ pub struct Card {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flavor_name: Option<String>,
     pub mv: f64,
+    /// What each face costs to cast, like `oracle` (one entry for single-faced cards); `None` for
+    /// a face without a mana cost (lands, Ancestral Vision, a transformed back face) and for the
+    /// few Un-card symbols [`ManaCost`] doesn't read.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mana_cost: Vec<Option<ManaCost>>,
     /// Full type line; multi-face cards are joined with " // ".
     pub type_line: String,
     /// Oracle text per face (one entry for single-faced cards), exactly as EDHPowerLevel sees it.
@@ -50,8 +56,9 @@ pub struct Card {
     pub game_changer: bool,
     #[serde(default)]
     pub banned: bool,
-    #[serde(default)]
-    pub produces_mana: bool,
+    /// The kinds of mana it can make, as Scryfall lists them (`produced_mana`).
+    #[serde(default, skip_serializing_if = "EnumSet::is_empty")]
+    pub produced: ManaSet,
     /// Scryfall Tagger role bits ([`crate::tags`]): ramp, draw, removal, wipe.
     #[serde(default)]
     pub roles: u8,
@@ -245,6 +252,8 @@ struct RawFace {
     #[serde(default)]
     oracle_text: Option<String>,
     #[serde(default)]
+    mana_cost: Option<String>,
+    #[serde(default)]
     colors: Option<Vec<String>>,
 }
 
@@ -268,6 +277,8 @@ struct RawCard {
     set_type: String,
     #[serde(default)]
     cmc: f64,
+    #[serde(default)]
+    mana_cost: Option<String>,
     #[serde(default)]
     type_line: Option<String>,
     #[serde(default)]
@@ -310,6 +321,11 @@ fn convert(c: RawCard) -> Option<Card> {
     } else {
         vec![c.oracle_text.clone().unwrap_or_default()]
     };
+    let cost = |s: &Option<String>| s.as_deref().and_then(|s| s.parse::<ManaCost>().ok());
+    // Split and adventure cards also have a joined top-level cost ("{R} // {U}"); the faces' are
+    // the ones to cast.
+    let mana_cost =
+        if multi { c.card_faces.iter().map(|f| cost(&f.mana_cost)).collect() } else { vec![cost(&c.mana_cost)] };
     let type_line = c.type_line.clone().unwrap_or_else(|| {
         c.card_faces.iter().map(|f| f.type_line.clone().unwrap_or_default()).collect::<Vec<_>>().join(" // ")
     });
@@ -331,6 +347,7 @@ fn convert(c: RawCard) -> Option<Card> {
         faces: if multi { c.card_faces.iter().map(|f| f.name.clone()).collect() } else { vec![] },
         flavor_name: c.flavor_name,
         mv: c.cmc,
+        mana_cost,
         type_line,
         oracle,
         layout: c.layout,
@@ -342,7 +359,7 @@ fn convert(c: RawCard) -> Option<Card> {
         reserved: c.reserved,
         game_changer: c.game_changer,
         banned: legal == "banned",
-        produces_mana: c.produced_mana.is_some_and(|m| !m.is_empty()),
+        produced: ManaSet::from_codes(c.produced_mana.iter().flatten().map(String::as_str)),
         roles: 0,
         tagged: false,
         keywords: c.keywords,
@@ -453,6 +470,23 @@ mod tests {
         assert!(fire_ice.face_colors.is_empty(), "a split card's colours are the card's: {:?}", fire_ice.face_colors);
         let bolt = raw(r#"{"name": "Lightning Bolt", "layout": "normal", "colors": ["R"]}"#);
         assert!(bolt.face_colors.is_empty());
+    }
+
+    #[test]
+    fn each_face_keeps_its_own_mana_cost_and_cards_keep_what_mana_they_make() {
+        let raw = |json: &str| convert(serde_json::from_str(json).unwrap()).unwrap();
+        let costs = |c: &Card| c.mana_cost.iter().map(|m| m.as_ref().map(|m| m.to_string())).collect::<Vec<_>>();
+        let tower = raw(r#"{"name": "Command Tower", "layout": "normal", "mana_cost": "",
+                "produced_mana": ["W", "U", "B", "R", "G"]}"#);
+        assert_eq!(costs(&tower), vec![None], "a land has no mana cost, not {{0}}");
+        assert_eq!(tower.produced.to_string(), "WUBRG");
+        let sol = raw(r#"{"name": "Sol Ring", "layout": "normal", "mana_cost": "{1}", "produced_mana": ["C"]}"#);
+        assert_eq!((costs(&sol), sol.produced.to_string()), (vec![Some("{1}".to_string())], "C".to_string()));
+        let fire_ice = raw(r#"{"name": "Fire // Ice", "layout": "split", "mana_cost": "{1}{R} // {1}{U}",
+                "card_faces": [{"name": "Fire", "mana_cost": "{1}{R}"}, {"name": "Ice", "mana_cost": "{1}{U}"}]}"#);
+        assert_eq!(costs(&fire_ice), vec![Some("{1}{R}".to_string()), Some("{1}{U}".to_string())]);
+        let bolt = raw(r#"{"name": "Lightning Bolt", "layout": "normal", "mana_cost": "{R}"}"#);
+        assert!(bolt.produced.is_empty(), "makes no mana: {:?}", bolt.produced);
     }
 
     fn card(name: &str, faces: &[&str]) -> Card {

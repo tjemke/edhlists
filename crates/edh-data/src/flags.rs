@@ -94,10 +94,11 @@ impl<T: Flag> EnumSet<T> {
     pub fn insert(&mut self, v: T) {
         self.bits |= 1 << v.index();
     }
-    pub fn is_empty(self) -> bool {
+    // By reference, so `#[serde(skip_serializing_if = "EnumSet::is_empty")]` takes it.
+    pub fn is_empty(&self) -> bool {
         self.bits == 0
     }
-    pub fn len(self) -> u32 {
+    pub fn len(&self) -> u32 {
         self.bits.count_ones()
     }
     /// Every value of `self` is in `other`.
