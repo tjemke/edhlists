@@ -3,6 +3,11 @@
 What changed in each version, newest first. How versions are numbered: see *Versioning* in
 `AGENTS.md`.
 
+## 0.3.1
+
+- The Aetherspark counts as an artifact, as EDHREC files it, not a planeswalker: in the decklist's
+  grouping and in which decks a `-T` fetches first.
+
 ## 0.3.0
 
 Breaking: the deck database moves to schema 3 (for favorites), and older versions refuse it from

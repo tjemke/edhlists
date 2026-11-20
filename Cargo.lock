@@ -558,7 +558,7 @@ dependencies = [
 
 [[package]]
 name = "edh-data"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "directories",
@@ -574,7 +574,7 @@ dependencies = [
 
 [[package]]
 name = "edh-scout"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -596,7 +596,7 @@ dependencies = [
 
 [[package]]
 name = "edh-store"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "edh-data",
@@ -609,7 +609,7 @@ dependencies = [
 
 [[package]]
 name = "edhpl"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "percent-encoding",
  "regex",

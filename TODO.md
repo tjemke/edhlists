@@ -102,6 +102,11 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   them); EDHREC's own counts (`creatures=..5`) need the deck-table row, which isn't stored, so
   they'd be an error as in `check`, or counted from the type line. Touches `run_favorites` in
   `main.rs`. *Small.*
+- [ ] **The last 0.5% of EDHREC's instant and sorcery counts.** Counted the way EDHREC files cards
+  (`Card::primary_type`), 99.5% of 24,696 stored decks match EDHREC's instant and sorcery counts,
+  and at least 99.9% for every other type. Find the cards behind the rest (split cards, adventures,
+  something EDHREC files apart?) with the deck tables in the HTTP cache, as for The Aetherspark.
+  Touches `edh-data/src/cards.rs`. *Small; only matters to the count columns and fetch order.*
 - [ ] **Keep the favorites somewhere deleting the deck database can't reach.** They're a table in
   `decks.sqlite` (schema 3), the one file the README says can be deleted and rebuilt; deleting it
   now loses them. A plain `favorites.txt` of ids in the state dir would survive that and is easy
@@ -115,6 +120,15 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   testable pieces or keeping fixture databases. What they're built from is covered (pool, ranking,
   browser scenarios, plain table, report); what's left is wiring. *Medium.*
 
+- **Counting `planeswalkers`, `artifacts`, … by type line, like `t:planeswalker`.** The bare words
+  are EDHREC's counts, which the deck table answers for free before fetching; the type line counts
+  more (both faces, every main type: artifact creatures, MDFC lands, adventures), which only the
+  decklist can tell. On 297,811 deck-table rows, `planeswalkers=8+` leaves 305 decks to fetch
+  while `t:planeswalker=8+`'s bound leaves all of them (flip-walkers sit in the creature column,
+  The Aetherspark in the artifact one). The answers differ often: of 24,696 stored decks, the type
+  line gives another count in 82% for artifacts, 37% for sorceries, 29% for lands, 12% for
+  planeswalkers; `t:artifact=25+` matches 3,613 decks `artifacts=25+` doesn't, and `t:land=..30`
+  rejects 527 of 1,187 decks `lands=..30` lets through. So both stay, with `t:` for the type line.
 - Searching every stored deck regardless of commander: cross-commander searches already read the
   stored decks of each commander they scan, for free.
 - EDHREC deck tags as a fetch-order hint: 82% of decks are untagged, and `Prior` already finds the
