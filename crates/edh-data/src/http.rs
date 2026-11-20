@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
-use std::fs::{self, File};
+use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,7 +21,7 @@ use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
 
 use crate::config::{host_gap, user_agent};
-use crate::storage::atomic_write;
+use crate::storage::{atomic_write, atomic_write_with};
 
 /// `--offline` was given and the thing asked for isn't cached.
 #[derive(Debug)]
@@ -237,16 +237,12 @@ impl Http {
     pub fn download(&self, url: &str, dest: &Path) -> Result<u64> {
         let _one_at_a_time = lock(&self.in_flight);
         let resp = self.send(url)?;
-        if let Some(dir) = dest.parent() {
-            fs::create_dir_all(dir)?;
-        }
-        let tmp = dest.with_extension("part");
-        let mut out = File::create(&tmp)?;
         let mut reader = resp.into_body().into_reader();
-        let n = io::copy(&mut reader, &mut out)?;
-        out.flush()?;
-        fs::rename(&tmp, dest)?;
-        Ok(n)
+        atomic_write_with(dest, |out| {
+            let n = io::copy(&mut reader, out)?;
+            out.flush()?;
+            Ok(n)
+        })
     }
 
     fn cache_path(&self, key: &str) -> PathBuf {

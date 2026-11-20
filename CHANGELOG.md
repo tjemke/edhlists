@@ -3,6 +3,12 @@
 What changed in each version, newest first. How versions are numbered: see *Versioning* in
 `AGENTS.md`.
 
+## 0.3.3
+
+- Two runs saving the same file at once (the card or combo database during a `sync`, a cached
+  page, a download) no longer leave it with both runs' bytes mixed together, or fail: each writes
+  a temporary file of its own, and the last to finish replaces the file whole.
+
 ## 0.3.2
 
 - Searching across commanders with a `-T` that asks for one particular card
