@@ -24,6 +24,41 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   digits of the visible list's length. *Small.*
 - [ ] **Browser header overflow.** Long filter descriptions push the run summary off the header
   ("5 didn't m" at 200 columns); shorten or wrap it in `tui.rs` `draw_header`. *Small.*
+- [ ] **Pick and weight commanders by their expected count** when searching across commanders.
+  A commander page's inclusion rates give each commander's expected count of a filter's cards
+  (sum over listed matching cards); use it to (1) weight the fetch budget by √eligible × P(pass)
+  instead of √eligible, (2) update P(pass) from fetched decks (Beta prior worth ~6 decks; this
+  folds in "learn each commander's match rate"), and (3) widen the candidates when the outlook is
+  poor: matching cards that separate high- from low-fit commanders (Game Changers and >30%
+  staples left out) → their EDHREC card pages (`cards/<slug>.json`: top 24 + 5 new commanders
+  with inclusion) → those commanders' pages → keep the good ones. Use the target brackets' pages
+  (`commanders/<slug>/core.json` = B2, `upgraded.json` = B3) where possible.
+  Measured for `otag:ramp=25+`: the estimate is within ±1.3 of the real mean on 24.4k stored
+  decks (Captain America, Cloud, Vivi); the 29 Ramp-theme commanders range from 10.8 to 29.4
+  expected, but √eligible gave the most fetches to The Ur-Dragon, Teval, Pantlaza (~15); 8 seed
+  cards found 148 commanders, of the top 25 new ones 8 expect 24+ (theme list: 5 of 29), e.g.
+  Kozilek the Great Distortion 30.8, Ulalek 25.1 (28k decks); Kinnan drops from 24.0 (all decks)
+  to 19.8/19.0 on its B3/B2 pages. A rough model gives ~2× the matches from the same 60
+  fetches. Nothing in it is ramp-specific (only `CompiledFilter`'s matching cards); checked on
+  12 filters × Captain America, Cloud, Vivi (24.4k stored decks): the raw estimate runs ~18% low
+  (pages list 70–88% of the matching cards decks play), and dividing by the page's overall
+  coverage (listed inclusion over an average deck's nonbasic cards, 82–87%) leaves 10% error,
+  −2% bias. Spread within a commander ≈ max(√mean, 0.3·mean) (real/predicted median 0.99, 22 of
+  33 within ±33%); wider for price filters (2–2.6×) and off-theme cards, narrower on-theme, so
+  learn it from decks seen. Breaks for cards run in multiples (inclusion counts presence:
+  `t:basic` estimated 2–3, real 11–20) and leans high for bracket-skewed ones (`usd>=10` on
+  Vivi: 15.6 vs 7.3; bracket pages). Fit the settings from stored decks at the start of each
+  search (no requests): a random-effects split of page error against deck noise over 30
+  commanders says a commander's own decks outweigh its page after ~2 (price), 3.8 (ramp), 5.9
+  (equipment) up to 59 (draw) decks, and the share of variation that comes from the commander
+  (27% for draw and wipes, ~78% for equipment and auras) says whether expanding can help. A ridge
+  model of count from the deck-table row, anchored on `Prior`, matches or beats `Prior` from ~50
+  of a commander's decks (rank correlation with all decks: ramp 0.27→0.38, draw 0.12→0.36, price
+  −0.07→0.92); correct for earlier searches' fetch order with it. In simulation, learning from
+  counts only beats v1's pass/fail where pages are unreliable (+4% at doubled page error, 300
+  decks). Touches `edhrec.rs` (card pages, bracket pages), `filters.rs` (expected count,
+  seed cards), `scout.rs` `search` (score → scan → fetch with re-weighting and expansion; needs
+  the filters on the fetch thread, see below), `main.rs` `start_search`. *Medium–large.*
 
 ## Maybe
 
@@ -49,10 +84,6 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   among decks within some margin of the best remaining) may read better; see how it feels first.
   *Small.*
 
-- [ ] **Learn each commander's match rate** in cross-commander searches, giving commanders whose
-  decks keep passing more of the budget. Needs the background fetcher (`search` in `scout.rs`) to
-  check matches itself. Measure first: the per-deck estimate (`filters::Prior`) already gave ~7×
-  on Wyleth `aura=12+`, and the equipment search hit 8 of 8. *Medium.*
 - [ ] **Tell portrait from landscape by pixels.** `PaneLayout::side_by_side` (`config.rs`) takes a
   cell as twice as tall as wide; a font far from 1:2 (or a non-square cell setting) can misjudge a
   near-square terminal. Crossterm's `terminal::window_size()` gives the pixel size where the
@@ -67,6 +98,8 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
 - Searching every stored deck regardless of commander: cross-commander searches already read the
   stored decks of each commander they scan, for free.
 - EDHREC deck tags as a fetch-order hint: 82% of decks are untagged, and `Prior` already finds the
-  likely decks.
+  likely decks. Within a commander they say little even for ramp: on 24.7k stored decks,
+  Ramp-tagged ones average 12.5 `otag:ramp` cards against 10.9 overall (Big Mana: 9.5), while
+  commanders' expected counts range from 10.8 to 29.4.
 - Better fetch order for ramp: ramp spreads over every card type, so the deck table can't predict
   it (rank correlation 0.45, against 0.86–0.93 for equipment and auras).
