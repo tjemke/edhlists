@@ -10,6 +10,8 @@ What changed in each version, newest first. How versions are numbered: see *Vers
 - EDHREC's counts (`-T planeswalkers=10+`, `-T creatures=..5`) get a count column too, like every
   other `-T`: counted in the decklist the way EDHREC files cards, listed in the details and marked
   in the decklist. They still filter on EDHREC's own count.
+- Each `-T` has a colour of its own, for its column, its line in the details and its marks in the
+  decklist; a card several `-T` count gets a mark for each.
 
 ## 0.3.0
 

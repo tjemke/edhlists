@@ -1,7 +1,7 @@
 //! The browser as a user drives it: keys in, what the list shows out.
 //!
 //! Scenarios talk to the browser only through [`Browser`] (`press`, `arrive`, `ids`, `starred`,
-//! `selected`, `status`, `count_columns`, `text`) and never compare whole screens. When the browser's internals
+//! `selected`, `status`, `count_columns`, `marks`, `text`) and never compare whole screens. When the browser's internals
 //! change, fix the driver, not the scenarios; when its look changes, nothing here should break.
 //! What any screen must get right, at any size, is checked by
 //! `the_screen_holds_together_at_every_size`. See "When a test fails" in AGENTS.md.
@@ -17,6 +17,7 @@ use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::style::Color;
 
 use super::{App, Settings};
 use crate::analysis::Score;
@@ -222,6 +223,27 @@ impl<'a> Browser<'a> {
         list[after("Syn") + 1..after("Themes")].to_vec()
     }
 
+    /// The colours of the marks in front of `card` in the decklist (open it first), left to right.
+    fn marks(&mut self, card: &str) -> Vec<Color> {
+        let buf = self.screen(240, 30);
+        let text = lines(&buf);
+        let (y, line) = text.iter().enumerate().find(|(_, l)| l.contains(card)).expect("the card in the decklist");
+        // Every cell here holds one character, so a character's index is its column.
+        let start = line[..line.find(card).unwrap()].chars().count();
+        let quantity = line.chars().take(start - 1).collect::<Vec<_>>();
+        let gutter = quantity.iter().rposition(|c| !c.is_ascii_digit()).map_or(0, |x| x + 1);
+        let mut marks = Vec::new();
+        for x in (0..gutter).rev() {
+            match buf[(x as u16, y as u16)].symbol() {
+                "▸" => marks.push(buf[(x as u16, y as u16)].fg),
+                " " => {}
+                _ => break,
+            }
+        }
+        marks.reverse();
+        marks
+    }
+
     /// The message in the status line, if there is one.
     fn status(&self) -> String {
         self.app.status.as_ref().map(|(msg, _)| msg.clone()).unwrap_or_default()
@@ -400,6 +422,23 @@ fn every_t_gets_a_count_column_in_the_order_given() {
         shows(&details, "creatures  2   Grizzly Bears · Lizard Blades"),
         "counted as EDHREC files cards, an artifact creature is a creature: {details:#?}"
     );
+}
+
+#[test]
+fn the_decklist_marks_each_filters_cards_in_a_colour_of_its_own() {
+    let w = World::new();
+    let deck: &[&str] = &["Bonesplitter", "Lizard Blades", "Sol Ring", "Grizzly Bears"];
+    let mut b = Browser::open_counting(&w, &["equipment=1+", "artifacts=1+"], &[("a", deck)]);
+    b.press("enter");
+    let (equipment, artifact) = (b.marks("Lizard Blades"), b.marks("Sol Ring"));
+    assert_eq!((equipment.len(), artifact.len()), (1, 1), "a card one filter counted has one mark");
+    assert_ne!(equipment, artifact, "the two filters' cards should be told apart by colour");
+    assert_eq!(
+        b.marks("Bonesplitter"),
+        [equipment[0], artifact[0]],
+        "a card both filters count should carry both marks, in the filters' order"
+    );
+    assert!(b.marks("Grizzly Bears").is_empty(), "a card no filter counts has no mark");
 }
 
 /// On the selected row, a stretch of blank cells styled unlike the row is a block of colour; it's

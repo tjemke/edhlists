@@ -1,7 +1,6 @@
 //! The interactive deck browser. Opens at once with the decks already on disk; decks fetched in
 //! the background slot into the ranking as they arrive.
 
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -20,12 +19,12 @@ use ratatui::{DefaultTerminal, Frame};
 use crate::analysis::Analysis;
 use crate::config::PaneLayout;
 use crate::export::{self, ExportFormat, ReportInput};
-use crate::filters::CountColumn;
+use crate::filters::{CountColumn, short_label};
 use crate::rank::{RankMode, Ranked, Target, Weights, hoist, mix, rank};
 use crate::scout::{Entry, Feed, FeedEvent, FetchEvent, Pool};
 use crate::view::{
-    ACCENT, BAD, DIM, GOOD, OK, deck_identity, detail_lines, grouped_list, identity_line, power_color, score_color,
-    wrap_lines,
+    ACCENT, BAD, DIM, GOOD, OK, counted_color, deck_identity, detail_lines, grouped_list, identity_line, power_color,
+    score_color, wrap_lines,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -435,6 +434,7 @@ impl<'a> App<'a> {
         if show_commander {
             headers.extend(["Color".into(), "Commander".into()]);
         }
+        let first_count = headers.len();
         headers.extend(counts.iter().map(|c| c.label.clone()));
         headers.push("Themes".into());
         // Only the rows that fit are built: formatting every deck's row each frame cost 15 ms for
@@ -447,7 +447,12 @@ impl<'a> App<'a> {
         // `#` has room for 3 digits, and grows only once the positions on screen need more.
         let num_w = number_width(self.visible[offset..end].iter().map(|(pos, _)| pos + 1));
         headers[1] = format!("{:>num_w$}", "#");
-        let header = Row::new(headers).style(Style::new().bold().fg(DIM));
+        // Each count column's header in its filter's colour, as in the details and the decklist.
+        let header = Row::new(headers.into_iter().enumerate().map(|(i, h)| {
+            let count = i.checked_sub(first_count).and_then(|c| counts.get(c));
+            Cell::from(h).style(count.map_or(Style::new(), |c| Style::new().fg(counted_color(c.filter))))
+        }))
+        .style(Style::new().bold().fg(DIM));
         let rows: Vec<Row> = self.visible[offset..end]
             .iter()
             .map(|(pos, r)| {
@@ -561,10 +566,26 @@ impl<'a> App<'a> {
     fn draw_decklist(&self, frame: &mut Frame, area: Rect) {
         let Some((title, deck)) = self.pane_title() else { return };
         let Some((_, r)) = self.selected() else { return };
-        // Cards a -T card filter counted are marked.
-        let counted: HashSet<&str> =
-            self.pool.decks[r.index].matches.iter().flat_map(|m| m.cards.iter().map(|(n, _)| n.as_str())).collect();
-        let hint = if counted.is_empty() { " ⏎ details " } else { " ▸ counted by -T · ⏎ details " };
+        // Cards a -T filter counted are marked, in the filter's colour: one slot per filter that
+        // counted any card here, so a card several count has several marks, always in the same order.
+        let matches = &self.pool.decks[r.index].matches;
+        let slots: Vec<usize> = (0..matches.len()).filter(|&i| !matches[i].cards.is_empty()).collect();
+        let counted_by = |name: &str| -> Vec<bool> {
+            slots.iter().map(|&i| matches[i].cards.iter().any(|(n, _)| n == name)).collect()
+        };
+        let mut hint: Vec<Span> = vec![Span::raw(" ")];
+        for &i in &slots {
+            let style = Style::new().fg(counted_color(i));
+            hint.extend([
+                Span::styled("▸ ", style),
+                Span::styled(short_label(&matches[i].label, i), style),
+                " ".into(),
+            ]);
+        }
+        if !slots.is_empty() {
+            hint.push("· ".into());
+        }
+        hint.push("⏎ details ".into());
         let block = Block::bordered().title(title.bold()).title_bottom(Line::from(hint).right_aligned());
         let inner = block.inner(area);
         frame.render_widget(block, area);
@@ -573,14 +594,24 @@ impl<'a> App<'a> {
             let n: u32 = cards.iter().map(|(q, _)| q).sum();
             lines.push(Line::from(Span::styled(format!("{group} ({n})"), Style::new().bold().fg(ACCENT))));
             for (q, name) in cards {
-                lines.push(if counted.contains(name.as_str()) {
-                    Line::from(vec![
-                        Span::styled("▸", Style::new().fg(GOOD)),
-                        Span::styled(format!("{q} {name}"), Style::new().fg(GOOD)),
-                    ])
-                } else {
-                    Line::from(format!(" {q} {name}"))
-                });
+                let by = counted_by(&name);
+                let mut spans: Vec<Span> = slots
+                    .iter()
+                    .zip(&by)
+                    .map(
+                        |(&i, &yes)| {
+                            if yes { Span::styled("▸", Style::new().fg(counted_color(i))) } else { " ".into() }
+                        },
+                    )
+                    .collect();
+                if spans.is_empty() {
+                    spans.push(" ".into());
+                }
+                // The name in the colour of the first filter that counted it.
+                let first = slots.iter().zip(&by).find(|(_, yes)| **yes).map(|(&i, _)| i);
+                let style = first.map_or(Style::new(), |i| Style::new().fg(counted_color(i)));
+                spans.push(Span::styled(format!("{q} {name}"), style));
+                lines.push(Line::from(spans));
             }
             lines.push(Line::default());
         }

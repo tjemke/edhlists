@@ -20,6 +20,16 @@ pub const BAD: Color = Color::Red;
 pub const DIM: Color = Color::DarkGray;
 pub const ACCENT: Color = Color::Cyan;
 
+/// The colours that tell `-T` filters apart, by the filter's position (the first is [`GOOD`]).
+const COUNTED: [Color; 6] =
+    [Color::Green, Color::Yellow, Color::Magenta, Color::LightBlue, Color::LightRed, Color::LightCyan];
+
+/// The `i`th `-T` filter's colour, for its label, its column and the marks on the cards it counted.
+/// They repeat after six.
+pub fn counted_color(i: usize) -> Color {
+    COUNTED[i % COUNTED.len()]
+}
+
 /// A deck's colour identity: the union of its commanders' identities, in WUBRG order. Commanders
 /// missing from the card database add nothing.
 pub fn deck_identity(deck: &Deck, cards: &CardDb) -> Vec<&'static str> {
@@ -289,8 +299,8 @@ pub fn detail_lines(
 }
 
 /// One `-T` card filter's count and the cards that make it up; a long filter is shown under its
-/// short label (`Q1`) and spelled out before the cards. The count is green within the filter's
-/// range, red (with the range) outside it, uncoloured without one.
+/// short label (`Q1`), in the filter's colour, and spelled out before the cards. The count is green
+/// within the filter's range, red (with the range) outside it, uncoloured without one.
 pub fn matched_line(m: &Matched, i: usize) -> Line<'static> {
     let short = short_label(&m.label, i);
     let color = match (&m.wanted, m.passes) {
@@ -298,7 +308,10 @@ pub fn matched_line(m: &Matched, i: usize) -> Line<'static> {
         (Some(_), true) => GOOD,
         (Some(_), false) => BAD,
     };
-    let mut l = vec![label(&short), Span::styled(format!("{:<4}", m.count), Style::new().bold().fg(color))];
+    let mut l = vec![
+        Span::styled(format!("{short:<LABEL_WIDTH$}"), Style::new().fg(counted_color(i))),
+        Span::styled(format!("{:<4}", m.count), Style::new().bold().fg(color)),
+    ];
     if let (Some(wanted), false) = (&m.wanted, m.passes) {
         l.push(Span::styled(format!("wants {wanted}  "), Style::new().fg(BAD)));
     }
@@ -469,6 +482,12 @@ pub fn to_ansi(lines: &[Line], color: bool) -> String {
                     Color::Cyan => "36",
                     Color::Gray => "37",
                     Color::DarkGray => "90",
+                    Color::LightRed => "91",
+                    Color::LightGreen => "92",
+                    Color::LightYellow => "93",
+                    Color::LightBlue => "94",
+                    Color::LightMagenta => "95",
+                    Color::LightCyan => "96",
                     _ => "",
                 };
                 if !c.is_empty() {

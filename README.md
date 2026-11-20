@@ -117,9 +117,9 @@ in the deck store, so any later search reads them for free. `-n` still counts de
 matches; the browser keeps fetching past it, and a plain run tells you when running again would
 help. In the browser, each `-T` gets a count column (except one that lets a single count through,
 like `sagas=0` or `lands=36`, since every deck shown has it), the detail pane lists the cards it
-counted, and the decklist marks them with `▸`. EDHREC's counts are counted in the decklist for
-this too, filing each card under its main type the way EDHREC does; they still filter on EDHREC's
-own count.
+counted, and the decklist marks them with `▸`, each filter in a colour of its own (a card several
+count gets a mark for each). EDHREC's counts are counted in the decklist for this too, filing each
+card under its main type the way EDHREC does; they still filter on EDHREC's own count.
 
 The deck table still helps pick which decks to fetch for a minimum. Matching cards only sit in some
 of its type columns (equipment are counted as artifacts, or creatures for the few that are both),
