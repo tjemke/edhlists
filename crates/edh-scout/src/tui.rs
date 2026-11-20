@@ -597,26 +597,8 @@ impl<'a> App<'a> {
                 Line::from(Span::styled(format!(" {msg}"), Style::new().fg(if *err { BAD } else { GOOD })))
             }
             None => {
-                let mut keys = vec![
-                    ("↑↓", "move"),
-                    ("⏎", "list/details"),
-                    ("J/K", "scroll"),
-                    ("r", "rank"),
-                    ("f", "fits only"),
-                    ("o", "EDHREC"),
-                    ("s", "source"),
-                    ("p", "EDHPowerLevel"),
-                    ("e", "export deck"),
-                    ("E", "export report"),
-                    ("q", "quit"),
-                ];
-                if self.pool.keeps_favorites() {
-                    keys.insert(5, ("*", "favorite"));
-                    keys.insert(6, ("F", "favorites only"));
-                }
-                if self.settings.show_commander {
-                    keys.insert(5, ("m", "mix commanders"));
-                }
+                let keys =
+                    footer_keys(usize::from(area.width), self.pool.keeps_favorites(), self.settings.show_commander);
                 let mut spans = vec![Span::raw(" ")];
                 for (k, what) in keys {
                     spans.push(Span::styled(k, Style::new().bold().fg(ACCENT)));
@@ -627,6 +609,46 @@ impl<'a> App<'a> {
         };
         frame.render_widget(Paragraph::new(line), area);
     }
+}
+
+/// The key hints for a footer `width` columns wide, in display order. The arrow keys go without
+/// saying; when the rest don't fit, the least needed ones are left out, and `q quit` always
+/// stays. `favorites`: `*` and `F` work; `mix`: so does `m` (across commanders).
+fn footer_keys(width: usize, favorites: bool, mix: bool) -> Vec<(&'static str, &'static str)> {
+    // (key, what, how readily it's left out: lowest first, 0 never)
+    let mut keys: Vec<(&str, &str, u8)> = vec![
+        ("⏎", "list/details", 2),
+        ("J/K", "scroll", 13),
+        ("r", "rank", 4),
+        ("f", "fits only", 5),
+        ("o", "EDHREC", 10),
+        ("s", "source", 12),
+        ("p", "EDHPowerLevel", 11),
+        ("e", "export deck", 6),
+        ("E", "export report", 9),
+        ("q", "quit", 0),
+    ];
+    if favorites {
+        keys.insert(4, ("*", "favorite", 3));
+        keys.insert(5, ("F", "★ only", 7));
+    }
+    if mix {
+        keys.insert(4, ("m", "mix", 8));
+    }
+    // Most needed first, each if it still fits: a leading space, then "k what  " per key.
+    let mut by_need: Vec<usize> = (0..keys.len()).collect();
+    by_need.sort_by_key(|&i| keys[i].2);
+    let mut used = 1;
+    let mut shown = vec![false; keys.len()];
+    for i in by_need {
+        let (k, what, rank) = keys[i];
+        let w = k.chars().count() + what.chars().count() + 3;
+        if rank == 0 || used + w <= width {
+            used += w;
+            shown[i] = true;
+        }
+    }
+    keys.into_iter().zip(shown).filter(|(_, s)| *s).map(|((k, w, _), _)| (k, w)).collect()
 }
 
 /// The first row to show in a window of `height` rows over `len`: the previous one, moved just
@@ -687,7 +709,29 @@ pub fn run(app: &mut App) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::window_offset;
+    use super::{footer_keys, window_offset};
+
+    #[test]
+    fn the_footer_fits_its_width_and_keeps_quit() {
+        let width = |keys: &[(&str, &str)]| {
+            1 + keys.iter().map(|(k, w)| k.chars().count() + w.chars().count() + 3).sum::<usize>()
+        };
+        // Every key fits 160 columns, one commander or many.
+        for (favorites, mix) in [(true, false), (true, true), (false, false)] {
+            let all = footer_keys(usize::MAX, favorites, mix);
+            assert_eq!(footer_keys(160, favorites, mix), all);
+            assert!(width(&all) <= 160, "{}", width(&all));
+        }
+        // Narrower, the most needed stay, in their places, and quit stays last; a short hint
+        // further down takes room a long one left.
+        let narrow = footer_keys(80, true, true);
+        assert!(width(&narrow) <= 80);
+        let names: Vec<&str> = narrow.iter().map(|(k, _)| *k).collect();
+        assert_eq!(names, vec!["⏎", "r", "f", "m", "*", "e", "q"]);
+        let names: Vec<&str> = footer_keys(90, true, false).iter().map(|(k, _)| *k).collect();
+        assert_eq!(names, vec!["⏎", "r", "f", "*", "F", "e", "q"]);
+        assert_eq!(footer_keys(0, true, true), vec![("q", "quit")]);
+    }
 
     #[test]
     fn the_window_follows_the_selection_and_stays_in_range() {

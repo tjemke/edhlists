@@ -12,6 +12,8 @@ pages last, and the favorites are lost.
 - Mark decks as favorites with `*` in the browser: they come first in every scout that includes
   them, and `F` shows only them.
 - `edh-scout favorites` lists every favorite, across commanders.
+- The browser's key hints fit the terminal: `↑↓` dropped, two shortened, and the least needed left
+  out when it's narrow.
 
 ## 0.2.0
 
