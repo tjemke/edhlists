@@ -44,6 +44,45 @@ impl BasicLandType {
     }
 }
 
+flags! {
+    /// How a card's faces are laid out, as Scryfall names it. Layouts that aren't cards
+    /// (tokens, art cards, planes) never reach the card database; ones Scryfall adds later read
+    /// as `Other`.
+    #[derive(Default)]
+    pub enum Layout {
+        #[default]
+        Normal = "normal",
+        Split = "split",
+        Flip = "flip",
+        Transform = "transform",
+        ModalDfc = "modal_dfc",
+        Meld = "meld",
+        Leveler = "leveler",
+        Class = "class",
+        Case = "case",
+        Saga = "saga",
+        Adventure = "adventure",
+        Mutate = "mutate",
+        Prototype = "prototype",
+        Prepare = "prepare",
+        Host = "host",
+        Augment = "augment",
+        Other = "other",
+    }
+}
+
+impl Layout {
+    /// Scryfall's name for a layout; `Other` for one this doesn't know.
+    pub fn from_scryfall(name: &str) -> Layout {
+        Layout::from_code(name).unwrap_or(Layout::Other)
+    }
+
+    /// A card with two faces on two sides: transforming, modal and meld cards.
+    pub fn is_double_faced(self) -> bool {
+        matches!(self, Layout::Transform | Layout::ModalDfc | Layout::Meld)
+    }
+}
+
 /// The types that make a card a permanent.
 pub fn permanent_types() -> EnumSet<CardType> {
     [
@@ -136,6 +175,14 @@ mod tests {
     fn only_lands_have_basic_land_types() {
         assert!(Types::parse("Creature — Forest Dryad").land_types.is_empty(), "Forest only counts on a land");
         assert_eq!(Types::parse("Land Creature — Forest Dryad").land_types, BasicLandType::Forest.into());
+    }
+
+    #[test]
+    fn layouts_scryfall_adds_later_read_as_other() {
+        assert_eq!(Layout::from_scryfall("modal_dfc"), Layout::ModalDfc);
+        assert_eq!(Layout::from_scryfall("some_new_layout"), Layout::Other);
+        assert!(Layout::Transform.is_double_faced() && !Layout::Adventure.is_double_faced());
+        assert_eq!(serde_json::to_string(&Layout::ModalDfc).unwrap(), r#""modal_dfc""#, "written as Scryfall names it");
     }
 
     #[test]

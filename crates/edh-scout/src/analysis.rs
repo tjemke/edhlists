@@ -6,6 +6,7 @@ use edh_data::cards::{Card, CardDb};
 use edh_data::combos::{self as spellbook, ComboDb, bracket_tag_name};
 use edh_data::deck::Deck;
 use edh_data::edhrec::{CommanderPage, EdhrecCombo};
+use edh_data::flags::Flag;
 use edh_data::text::{fold, front_face};
 use edhpl::{BracketReport, PowerLevel};
 use serde::{Deserialize, Serialize};
@@ -141,7 +142,7 @@ pub fn edhpl_card(card: &Card, quantity: u32, is_commander: bool) -> edhpl::Deck
         reserved: card.reserved,
         // EDHPowerLevel reads colours as Scryfall writes them; it only asks which and how many.
         colors: card.colors.map(|set| set.iter().map(|c| c.to_string()).collect()),
-        layout: card.layout.clone(),
+        layout: card.layout.code().to_string(),
         type_line: card.type_line.clone(),
         oracle_text: card.oracle.clone(),
         game_changer: card.game_changer,
@@ -268,7 +269,6 @@ mod tests {
             rank: Some(rank),
             type_line: type_line.into(),
             oracle: vec![oracle.into()],
-            layout: "normal".into(),
             colors: Some(ColorSet::of(Color::G)),
             identity: ColorSet::of(Color::G),
             ..Default::default()

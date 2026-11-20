@@ -13,7 +13,7 @@ use crate::mana::{ColorSet, ManaCost, ManaSet};
 use crate::storage::{open_maybe_gz, read_json_gz, write_json_gz};
 use crate::tags::{RoleTags, Roles};
 use crate::text::{fold, front_face};
-use crate::types::{CardType, Supertype, Types};
+use crate::types::{CardType, Layout, Supertype, Types};
 
 /// Bump when [`Card`] changes shape; `sync` rebuilds from the kept raw bulk file without downloading.
 pub const CARDS_SCHEMA: u32 = 6;
@@ -38,7 +38,7 @@ pub struct Card {
     pub type_line: String,
     /// Oracle text per face (one entry for single-faced cards), exactly as EDHPowerLevel sees it.
     pub oracle: Vec<String>,
-    pub layout: String,
+    pub layout: Layout,
     /// `None` when Scryfall has no colors at all; EDHPowerLevel treats that differently from `[]`.
     pub colors: Option<ColorSet>,
     /// Each face's colours, for cards whose faces have their own and the card none (transforming
@@ -88,7 +88,7 @@ impl Card {
         self.types().is(CardType::Land)
     }
     pub fn is_mdfc(&self) -> bool {
-        self.layout == "modal_dfc"
+        self.layout == Layout::ModalDfc
     }
     pub fn is_basic(&self) -> bool {
         self.types().supertypes.contains(Supertype::Basic)
@@ -343,7 +343,7 @@ fn convert(c: RawCard) -> Option<Card> {
         mana_cost,
         type_line,
         oracle,
-        layout: c.layout,
+        layout: Layout::from_scryfall(&c.layout),
         colors,
         face_colors,
         identity: ColorSet::from_codes(c.color_identity.iter().map(String::as_str)),
@@ -488,7 +488,6 @@ mod tests {
             faces: faces.iter().map(|s| s.to_string()).collect(),
             type_line: "Legendary Creature — Elf".into(),
             oracle: vec![String::new()],
-            layout: "normal".into(),
             ..Default::default()
         }
     }

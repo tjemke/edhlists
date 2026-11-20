@@ -348,8 +348,8 @@ impl Term {
                 Is::Reserved => card.reserved,
                 Is::Historic => ["Legendary", "Artifact", "Saga"].iter().any(|t| card.type_line.contains(t)),
                 Is::Permanent => card.types().is_permanent(),
-                Is::Mdfc => card.layout == "modal_dfc",
-                Is::Dfc => matches!(card.layout.as_str(), "transform" | "modal_dfc" | "meld"),
+                Is::Mdfc => card.is_mdfc(),
+                Is::Dfc => card.layout.is_double_faced(),
             },
             Term::Tag { ids, .. } => ids.as_ref().is_some_and(|ids| ids.contains(&card.oracle_id)),
         }
@@ -761,7 +761,6 @@ mod tests {
             oracle_id: name.to_lowercase(),
             type_line: type_line.into(),
             oracle: vec![oracle.into()],
-            layout: "normal".into(),
             ..Default::default()
         }
     }
@@ -811,7 +810,7 @@ mod tests {
             "As Valakut Stoneforge enters, you may pay 3 life. If you don't, it enters tapped.\n{T}: Add {R}.".into(),
         );
         mdfc.faces = vec!["Valakut Awakening".into(), "Valakut Stoneforge".into()];
-        mdfc.layout = "modal_dfc".into();
+        mdfc.layout = crate::types::Layout::ModalDfc;
         mdfc.mv = 3.0;
         mdfc.colors = Some(cs("R"));
         mdfc.identity = cs("R");
@@ -902,7 +901,7 @@ mod tests {
     #[test]
     fn a_double_faced_card_is_all_its_faces_colours() {
         let mut plargg = card("Plargg, Dean of Chaos // Augusta, Dean of Order", "Legendary Creature", "");
-        plargg.layout = "modal_dfc".into();
+        plargg.layout = crate::types::Layout::ModalDfc;
         plargg.colors = Some(cs("R"));
         plargg.face_colors = vec![cs("R"), cs("W")];
         plargg.identity = cs("RW");

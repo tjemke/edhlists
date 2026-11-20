@@ -213,13 +213,7 @@ mod tests {
     use edh_data::mana::{Mana, ManaSet};
 
     fn card(name: &str, type_line: &str, text: &str) -> Card {
-        Card {
-            name: name.into(),
-            type_line: type_line.into(),
-            oracle: vec![text.into()],
-            layout: "normal".into(),
-            ..Default::default()
-        }
+        Card { name: name.into(), type_line: type_line.into(), oracle: vec![text.into()], ..Default::default() }
     }
 
     fn r(type_line: &str, text: &str) -> Vec<Role> {

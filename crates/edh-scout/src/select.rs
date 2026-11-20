@@ -365,7 +365,6 @@ mod tests {
             name: name.into(),
             type_line: type_line.into(),
             oracle: vec![String::new()],
-            layout: "normal".into(),
             rank: Some(rank),
             ..Default::default()
         };

@@ -845,7 +845,6 @@ mod tests {
             oracle_id: name.into(),
             type_line: type_line.into(),
             oracle: vec![oracle.into()],
-            layout: "normal".into(),
             tagged: true,
             ..Default::default()
         }

@@ -1055,7 +1055,6 @@ mod tests {
             name: name.into(),
             type_line: "Legendary Creature — Human".into(),
             oracle: vec![String::new()],
-            layout: "normal".into(),
             ..Default::default()
         }
     }

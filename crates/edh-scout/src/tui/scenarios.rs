@@ -41,7 +41,6 @@ impl World {
             name: name.into(),
             type_line: type_line.into(),
             oracle: vec![String::new()],
-            layout: "normal".into(),
             ..Default::default()
         };
         Self {
