@@ -19,6 +19,14 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   with. *Value high, cost medium–large.*
 - [ ] **Rank by a filter's count.** An extra `r` mode in `rank.rs`: most equipment first, decks in
   the target still first; left out of the cycle when there are no card filters. *Small.*
+- [ ] **Don't let a one-card filter flatten the fetch order.** `select` (`select.rs`) orders each
+  tier by `likelihood`, the *minimum* over the filters' `Prior::score`, in tenths. A single-card
+  filter (`name:aetherspark=1`) scores ~0.01 on every deck (one card's Zipf weight over the whole
+  artifact column), so the minimum floors to 0 everywhere and the other filters' ordering
+  (`equipment=10+`, which tracks the artifact count) is thrown away. Combine the scores so a
+  filter that is flat across decks doesn't hide one that isn't: rank by the product of
+  per-filter pass estimates, or leave out filters whose score barely varies within the table.
+  Seen with `scout -T planeswalkers=15+ -T equipment=10+ -T name:aetherspark=1`. *Small.*
 - [ ] **Browser header overflow.** Long filter descriptions push the run summary off the header
   ("5 didn't m" at 200 columns); shorten or wrap it in `tui.rs` `draw_header`. *Small.*
 - [ ] **Keep a commander's favorites past the deck-table checks.** A favorite only shows up in
