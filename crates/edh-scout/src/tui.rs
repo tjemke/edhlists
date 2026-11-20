@@ -489,7 +489,7 @@ impl<'a> App<'a> {
                     ));
                 }
                 if show_commander {
-                    cells.push(Cell::from(identity_line(&deck_identity(deck, self.pool.cards()))));
+                    cells.push(Cell::from(identity_line(deck_identity(deck, self.pool.cards()))));
                     let names: Vec<&str> = deck.commanders.iter().map(|c| front_face(c)).collect();
                     cells.push(Cell::from(names.join(" + ")).style(Style::new().fg(ACCENT)));
                 }

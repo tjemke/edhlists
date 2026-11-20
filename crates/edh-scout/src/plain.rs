@@ -78,7 +78,7 @@ pub fn ranked_table(
         }
         if columns.commander {
             let identity = view::deck_identity(deck, cards);
-            row.push(Cell::new(if identity.is_empty() { "C".to_string() } else { identity.concat() }));
+            row.push(Cell::new(if identity.is_empty() { "C".to_string() } else { identity.to_string() }));
             let names: Vec<&str> = deck.commanders.iter().map(|c| front_face(c)).collect();
             row.push(Cell::new(names.join(" + ")).fg(Color::Cyan));
         }

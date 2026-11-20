@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use edh_data::cards::CardDb;
 use edh_data::deck::Deck;
 use edh_data::http::host_of;
+use edh_data::mana::{Color as Mtg, ColorSet};
 use edh_data::text::front_face;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -32,27 +33,23 @@ pub fn counted_color(i: usize) -> Color {
 
 /// A deck's colour identity: the union of its commanders' identities, in WUBRG order. Commanders
 /// missing from the card database add nothing.
-pub fn deck_identity(deck: &Deck, cards: &CardDb) -> Vec<&'static str> {
-    let commanders: Vec<_> = deck.commanders.iter().filter_map(|c| cards.get(c)).collect();
-    WUBRG.into_iter().filter(|c| commanders.iter().any(|card| card.identity.iter().any(|x| x == c))).collect()
+pub fn deck_identity(deck: &Deck, cards: &CardDb) -> ColorSet {
+    deck.commanders.iter().filter_map(|c| cards.get(c)).fold(ColorSet::empty(), |id, card| id | card.identity)
 }
 
-const WUBRG: [&str; 5] = ["W", "U", "B", "R", "G"];
-
 /// Colour identity as coloured WUBRG letters (C for colourless).
-pub fn identity_line(identity: &[impl AsRef<str>]) -> Line<'static> {
-    let spans: Vec<Span> = WUBRG
-        .into_iter()
-        .filter(|c| identity.iter().any(|x| x.as_ref() == *c))
+pub fn identity_line(identity: ColorSet) -> Line<'static> {
+    let spans: Vec<Span> = identity
+        .iter()
         .map(|c| {
             let color = match c {
-                "W" => Color::Yellow,
-                "U" => Color::Blue,
-                "B" => Color::Magenta,
-                "R" => Color::Red,
-                _ => Color::Green,
+                Mtg::W => Color::Yellow,
+                Mtg::U => Color::Blue,
+                Mtg::B => Color::Magenta,
+                Mtg::R => Color::Red,
+                Mtg::G => Color::Green,
             };
-            Span::styled(c, Style::new().fg(color).add_modifier(Modifier::BOLD))
+            Span::styled(c.to_string(), Style::new().fg(color).add_modifier(Modifier::BOLD))
         })
         .collect();
     if spans.is_empty() { Line::from(Span::styled("C", Style::new().fg(DIM))) } else { Line::from(spans) }
@@ -543,17 +540,17 @@ mod tests {
 
     #[test]
     fn deck_identity_is_the_commanders_union_in_wubrg_order() {
-        let card = |name: &str, id: &[&str]| edh_data::cards::Card {
+        let card = |name: &str, id: &str| edh_data::cards::Card {
             name: name.into(),
-            identity: id.iter().map(|s| s.to_string()).collect(),
+            identity: ColorSet::from_letters(id).unwrap(),
             ..Default::default()
         };
-        let cards =
-            CardDb::new(vec![card("Green One", &["G"]), card("Esper One", &["U", "W", "B"]), card("Rock", &[])]);
+        let cards = CardDb::new(vec![card("Green One", "G"), card("Esper One", "UWB"), card("Rock", "")]);
         let deck = |cs: &[&str]| Deck { commanders: cs.iter().map(|s| s.to_string()).collect(), ..Default::default() };
-        assert_eq!(deck_identity(&deck(&["Green One", "Esper One"]), &cards), ["W", "U", "B", "G"]);
+        assert_eq!(deck_identity(&deck(&["Green One", "Esper One"]), &cards).to_string(), "WUBG");
         assert!(deck_identity(&deck(&["Rock", "Unknown"]), &cards).is_empty());
-        assert_eq!(text(&[identity_line(&deck_identity(&deck(&["Rock"]), &cards))]), ["C"]);
+        assert_eq!(text(&[identity_line(deck_identity(&deck(&["Rock"]), &cards))]), ["C"]);
+        assert_eq!(text(&[identity_line(deck_identity(&deck(&["Green One", "Esper One"]), &cards))]), ["WUBG"]);
     }
 
     #[test]

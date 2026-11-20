@@ -112,7 +112,7 @@ impl<'a> Picker<'a> {
                 let c = self.pool[i].0;
                 Row::new(vec![
                     Cell::from(Span::styled(c.name.clone(), Style::new().add_modifier(Modifier::BOLD))),
-                    Cell::from(identity_line(&c.identity)),
+                    Cell::from(identity_line(c.identity)),
                     Cell::from(Span::styled(
                         c.rank.map(|r| format!("#{r}")).unwrap_or_else(|| "–".into()),
                         Style::new().fg(DIM),

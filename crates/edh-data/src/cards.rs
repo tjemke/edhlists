@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::mana::ColorSet;
 use crate::storage::{open_maybe_gz, read_json_gz, write_json_gz};
 use crate::tags::RoleTags;
 use crate::text::{fold, front_face};
@@ -32,14 +33,14 @@ pub struct Card {
     pub oracle: Vec<String>,
     pub layout: String,
     /// `None` when Scryfall has no colors at all; EDHPowerLevel treats that differently from `[]`.
-    pub colors: Option<Vec<String>>,
+    pub colors: Option<ColorSet>,
     /// Each face's colours, for cards whose faces have their own and the card none (transforming
     /// and modal double-faced cards: Plargg // Augusta is red, then white); empty otherwise. A `c`
     /// search takes such a card as all its faces' colours together (red-white).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub face_colors: Vec<Vec<String>>,
+    pub face_colors: Vec<ColorSet>,
     #[serde(default)]
-    pub identity: Vec<String>,
+    pub identity: ColorSet,
     /// Cheapest non-foil USD price across real printings (what EDHPowerLevel prices cards at).
     pub usd: f64,
     pub rank: Option<u32>,
@@ -312,10 +313,11 @@ fn convert(c: RawCard) -> Option<Card> {
     let type_line = c.type_line.clone().unwrap_or_else(|| {
         c.card_faces.iter().map(|f| f.type_line.clone().unwrap_or_default()).collect::<Vec<_>>().join(" // ")
     });
-    let colors = c.colors.clone().or_else(|| c.card_faces.first().and_then(|f| f.colors.clone()));
+    let set = |codes: &Vec<String>| ColorSet::from_codes(codes.iter().map(String::as_str));
+    let colors = c.colors.as_ref().or_else(|| c.card_faces.first().and_then(|f| f.colors.as_ref())).map(set);
     // Split, adventure and flip cards have the card's colours and none per face; double-faced
     // cards the other way round.
-    let face_colors = match c.card_faces.iter().map(|f| f.colors.clone()).collect::<Option<Vec<_>>>() {
+    let face_colors = match c.card_faces.iter().map(|f| f.colors.as_ref().map(set)).collect::<Option<Vec<_>>>() {
         Some(faces) if c.colors.is_none() && multi => faces,
         _ => vec![],
     };
@@ -334,7 +336,7 @@ fn convert(c: RawCard) -> Option<Card> {
         layout: c.layout,
         colors,
         face_colors,
-        identity: c.color_identity,
+        identity: ColorSet::from_codes(c.color_identity.iter().map(String::as_str)),
         usd: 0.0,
         rank: c.edhrec_rank,
         reserved: c.reserved,
@@ -434,6 +436,7 @@ pub fn display_name(card: &Card) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mana::Color;
 
     #[test]
     fn double_faced_cards_keep_each_faces_colours() {
@@ -442,8 +445,8 @@ mod tests {
                 "color_identity": ["R", "W"], "card_faces": [
                     {"name": "Plargg, Dean of Chaos", "colors": ["R"]},
                     {"name": "Augusta, Dean of Order", "colors": ["W"]}]}"#);
-        assert_eq!(plargg.face_colors, vec![vec!["R".to_string()], vec!["W".to_string()]]);
-        assert_eq!(plargg.colors, Some(vec!["R".to_string()]), "colors stays the front face's, as scoring reads it");
+        assert_eq!(plargg.face_colors, vec![ColorSet::of(Color::R), ColorSet::of(Color::W)]);
+        assert_eq!(plargg.colors, Some(ColorSet::of(Color::R)), "colors stays the front face's, as scoring reads it");
         let fire_ice =
             raw(r#"{"name": "Fire // Ice", "layout": "split", "colors": ["U", "R"], "color_identity": ["U", "R"],
                 "card_faces": [{"name": "Fire"}, {"name": "Ice"}]}"#);

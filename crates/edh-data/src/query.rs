@@ -29,6 +29,7 @@ use anyhow::{Result, anyhow, bail};
 use regex::Regex;
 
 use crate::cards::{Card, search_key};
+use crate::mana::ColorSet;
 use crate::tags::{TagIndex, tag_slug};
 use crate::text::{fold, front_face, strip_reminder};
 
@@ -68,8 +69,7 @@ enum Cmp {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Colors {
-    /// WUBRG bits.
-    Set(u8),
+    Set(ColorSet),
     Colorless,
     Multicolor,
     /// How many colours (`c=3`, `id>=2`), 0 to 5.
@@ -269,10 +269,10 @@ impl Cmp {
         }
     }
 
-    /// Colour sets as bitmasks: `<=` is "within", `>=` is "includes".
-    fn set(self, card: u8, q: u8) -> bool {
-        let within = card & !q == 0;
-        let includes = q & !card == 0;
+    /// Colour sets: `<=` is "within", `>=` is "includes".
+    fn set(self, card: ColorSet, q: ColorSet) -> bool {
+        let within = card.is_subset(q);
+        let includes = q.is_subset(card);
         match self {
             Cmp::Eq => card == q,
             Cmp::Ne => card != q,
@@ -282,12 +282,6 @@ impl Cmp {
             Cmp::Gt => includes && card != q,
         }
     }
-}
-
-const WUBRG: [&str; 5] = ["W", "U", "B", "R", "G"];
-
-fn mask(colors: &[String]) -> u8 {
-    WUBRG.iter().enumerate().filter(|(_, c)| colors.iter().any(|x| x == *c)).fold(0, |m, (i, _)| m | 1 << i)
 }
 
 /// What a card's rules text may call itself (all of which `~` stands for, as on Scryfall): its
@@ -332,20 +326,20 @@ impl Term {
             // Cards without a price never match a price comparison (as on Scryfall).
             Term::Usd(cmp, x) => card.usd > 0.0 && cmp.num(card.usd, *x),
             Term::Color { identity, cmp, colors } => {
-                let test = |have: u8| match colors {
+                let test = |have: ColorSet| match colors {
                     Colors::Set(q) => cmp.set(have, *q),
-                    Colors::Colorless => cmp.set(have, 0),
-                    Colors::Multicolor => (have.count_ones() >= 2) == (*cmp != Cmp::Ne),
-                    Colors::Count(n) => cmp.num(f64::from(have.count_ones()), f64::from(*n)),
+                    Colors::Colorless => cmp.set(have, ColorSet::empty()),
+                    Colors::Multicolor => (have.len() >= 2) == (*cmp != Cmp::Ne),
+                    Colors::Count(n) => cmp.num(f64::from(have.len()), f64::from(*n)),
                 };
                 if *identity {
-                    test(mask(&card.identity))
+                    test(card.identity)
                 } else if card.face_colors.is_empty() {
-                    test(mask(card.colors.as_deref().unwrap_or(&[])))
+                    test(card.colors.unwrap_or_default())
                 } else {
                     // A double-faced card is all its faces' colours together (Scryfall matches
                     // each face on its own instead).
-                    test(card.face_colors.iter().fold(0, |m, f| m | mask(f)))
+                    test(card.face_colors.iter().fold(ColorSet::empty(), |m, f| m | *f))
                 }
             }
             Term::Is(is) => match is {
@@ -637,7 +631,7 @@ fn cmp(op: Op) -> Cmp {
 
 fn colors(value: &str) -> Option<Colors> {
     let v = value.to_lowercase();
-    let set = |s: &str| Colors::Set(s.chars().fold(0, |m, c| m | 1 << "wubrg".find(c).expect("colour letter")));
+    let set = |s: &str| Colors::Set(ColorSet::from_letters(s).expect("colour letters"));
     Some(match v.as_str() {
         "c" | "colorless" | "colourless" => Colors::Colorless,
         "m" | "multicolor" | "multicolour" => Colors::Multicolor,
@@ -759,6 +753,10 @@ fn term(key: &str, op: Op, val: Val) -> Result<Expr> {
 mod tests {
     use super::*;
 
+    fn cs(letters: &str) -> ColorSet {
+        ColorSet::from_letters(letters).unwrap()
+    }
+
     fn card(name: &str, type_line: &str, oracle: &str) -> Card {
         Card {
             name: name.into(),
@@ -774,7 +772,7 @@ mod tests {
         let mut bonesplitter = card("Bonesplitter", "Artifact — Equipment", "Equipped creature gets +2/+0.\nEquip {1}");
         bonesplitter.keywords = vec!["Equip".into()];
         bonesplitter.mv = 1.0;
-        bonesplitter.colors = Some(vec![]);
+        bonesplitter.colors = Some(ColorSet::empty());
         bonesplitter.usd = 0.5;
         let mut lizard = card(
             "Lizard Blades",
@@ -783,28 +781,28 @@ mod tests {
         );
         lizard.keywords = vec!["Double strike".into(), "Reconfigure".into()];
         lizard.mv = 2.0;
-        lizard.colors = Some(vec!["R".into()]);
-        lizard.identity = vec!["R".into()];
+        lizard.colors = Some(cs("R"));
+        lizard.identity = cs("R");
         let mut saga = card(
             "History of Benalia",
             "Enchantment — Saga",
             "(As this Saga enters and after your draw step, add a lore counter.)\nI, II — Create a 2/2 white Knight creature token with vigilance.",
         );
         saga.mv = 3.0;
-        saga.colors = Some(vec!["W".into()]);
-        saga.identity = vec!["W".into()];
+        saga.colors = Some(cs("W"));
+        saga.identity = cs("W");
         let mut krenko = card(
             "Krenko, Mob Boss",
             "Legendary Creature — Goblin Warrior",
             "{T}: Create X 1/1 red Goblin creature tokens, where X is the number of Goblins you control.",
         );
         krenko.mv = 4.0;
-        krenko.colors = Some(vec!["R".into()]);
-        krenko.identity = vec!["R".into()];
+        krenko.colors = Some(cs("R"));
+        krenko.identity = cs("R");
         let mut bolt = card("Lightning Bolt", "Instant", "Lightning Bolt deals 3 damage to any target.");
         bolt.mv = 1.0;
-        bolt.colors = Some(vec!["R".into()]);
-        bolt.identity = vec!["R".into()];
+        bolt.colors = Some(cs("R"));
+        bolt.identity = cs("R");
         bolt.usd = 1.0;
         let mut mdfc = card(
             "Valakut Awakening // Valakut Stoneforge",
@@ -817,15 +815,15 @@ mod tests {
         mdfc.faces = vec!["Valakut Awakening".into(), "Valakut Stoneforge".into()];
         mdfc.layout = "modal_dfc".into();
         mdfc.mv = 3.0;
-        mdfc.colors = Some(vec!["R".into()]);
-        mdfc.identity = vec!["R".into()];
+        mdfc.colors = Some(cs("R"));
+        mdfc.identity = cs("R");
         let mut rings = card(
             "Boros Charm",
             "Instant",
             "Choose one —\n• Boros Charm deals 4 damage to target player or planeswalker.",
         );
-        rings.colors = Some(vec!["R".into(), "W".into()]);
-        rings.identity = vec!["R".into(), "W".into()];
+        rings.colors = Some(cs("RW"));
+        rings.identity = cs("RW");
         rings.game_changer = true;
         vec![bonesplitter, lizard, saga, krenko, bolt, mdfc, rings]
     }
@@ -907,9 +905,9 @@ mod tests {
     fn a_double_faced_card_is_all_its_faces_colours() {
         let mut plargg = card("Plargg, Dean of Chaos // Augusta, Dean of Order", "Legendary Creature", "");
         plargg.layout = "modal_dfc".into();
-        plargg.colors = Some(vec!["R".into()]);
-        plargg.face_colors = vec![vec!["R".into()], vec!["W".into()]];
-        plargg.identity = vec!["R".into(), "W".into()];
+        plargg.colors = Some(cs("R"));
+        plargg.face_colors = vec![cs("R"), cs("W")];
+        plargg.identity = cs("RW");
         let matches = |q: &str| Query::parse(q).unwrap().matches(&plargg);
         // Red on one face and white on the other make a red-white card. Scryfall answers the
         // other way round for each of these, matching each face on its own.

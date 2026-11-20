@@ -139,7 +139,8 @@ pub fn edhpl_card(card: &Card, quantity: u32, is_commander: bool) -> edhpl::Deck
         price: card.usd,
         edhrec_rank: card.rank,
         reserved: card.reserved,
-        colors: card.colors.clone(),
+        // EDHPowerLevel reads colours as Scryfall writes them; it only asks which and how many.
+        colors: card.colors.map(|set| set.iter().map(|c| c.to_string()).collect()),
         layout: card.layout.clone(),
         type_line: card.type_line.clone(),
         oracle_text: card.oracle.clone(),
@@ -257,6 +258,7 @@ pub fn analyze(deck: &Deck, ctx: &Context) -> Analysis {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use edh_data::mana::{Color, ColorSet};
 
     fn card(name: &str, mv: f64, usd: f64, rank: u32, type_line: &str, oracle: &str) -> Card {
         Card {
@@ -267,8 +269,8 @@ mod tests {
             type_line: type_line.into(),
             oracle: vec![oracle.into()],
             layout: "normal".into(),
-            colors: Some(vec!["G".into()]),
-            identity: vec!["G".into()],
+            colors: Some(ColorSet::of(Color::G)),
+            identity: ColorSet::of(Color::G),
             ..Default::default()
         }
     }
