@@ -84,34 +84,50 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   commanders, most with no 15-walker decks; Bolas, Carth, Jace and Chandra now wait in reserve
   and are scanned once the search widens.
 
+- [ ] **Read Forge's card scripts for the mana goldfish, instead of guessing from oracle text.**
+  `crates/edh-goldfish/src/profile.rs` reads mana abilities, enters-tapped rules, land searches
+  and draws from oracle text with patterns. Every round of checking three new decks card by card
+  against their oracle text (2026-11-20, twice) found 8-10 more misreads, mostly in the cards a
+  deck is built around, and each fix risks the next (filter lands losing their colours, pain
+  lands reading as colourless, Loran of the Third Path losing its draw were all caught only by
+  diffing every card's reading before and after). Forge (GPL-3.0) has a hand-written script for
+  nearly every card that says the same things as data: `A:AB$ Mana | Cost$ … | Produced$ … |
+  Amount$ …`, `R:Event$ Moved … ReplaceWith$ ETBTapped` with its condition, `S:Mode$ ReduceCost`,
+  `K:Affinity`, `K:Suspend`, `T:Mode$ …` triggers; the Python prototype read them for mana. Plan:
+  `sync` fetches Forge's `res/cardsfolder` (about 34,000 small files; from Card-Forge's GitHub
+  release, cached like the Scryfall bulk file) and edh-data indexes it by name; `profile.rs`
+  builds a profile from the script when there is one and from oracle text otherwise; Scryfall
+  stays the source of costs, colours and roles. Check it on `tests/data/decks` (`cargo test
+  --release -p edh-goldfish --test corpus -- --ignored --nocapture`) and by diffing every card's
+  reading against the oracle-text reader: the numbers should move only where the script reads a
+  card better. Licence: fetching the scripts at run time for one's own use is fine; publishing
+  edh-scout with them, or code derived from Forge's, needs a decision, and the repo has no
+  licence yet. *Medium-large.*
+
 ## Maybe
 
-- [ ] **Teach the mana goldfish more cards.** `crates/edh-goldfish/src/profile.rs` reads lands,
-  rocks/dorks, land-ramp and draw; everything else is a spell of its cost. Left out, roughly by how
-  much they'd move the numbers: Treasure makers and rituals (one-shot mana: no ramp now); counter
-  mana (Pentad Prism, Crystalline Crawler: not counted; Sphere of the Suns: three uses, counted as
-  a rock for good); tutors for lands or rocks; Fabled Passage's untap with four lands (counted
-  tapped); Exotic Orchard and Fellwar Stone (taken to make any of the deck's colours); commanders
-  cast again after dying. Mana only some spells may use counts as any mana (Lord of the Forsaken:
-  spells from the graveyard; Gwenna, Inga and Esika, Ixalli's Lorekeeper, Eldrazi Temple:
-  creatures, Dinosaurs, Eldrazi). Not counting it was tried and was worse: the commander is often
-  what it pays for (Pantlaza is a Dinosaur), and commander-by-T4 fell 2-5 points in three of the
-  nine decks; a unit that knows what it may pay for would do it right. Ramp is cast before the
-  commander whatever it costs: Lord of the Forsaken (5) goes ahead of Kotis (3), 1.2 points of
-  Sultai Arisen's commander-by-T4. Each is a pattern in `profile.rs` plus an `Effect` the game
-  applies (`game.rs`), with a test. Found by playing sim decks against the Python prototype at
-  2,000,000 games and reading every card of three EDHREC decks against its oracle text
-  (2026-11-20). *Small* each.
-
-- [ ] **Play the engines decks are built around in the mana goldfish.** Each deck tested had one the
-  goldfish can't see, so its mana is undercounted where it matters most: Swamp doublers (Crypt
-  Ghast, Nirkana Revenant, Bubbling Muck) and Forsaken Monument's {C}; cost reducers (Etherium
-  Sculptor, Foundry Inspector, Ugin the Ineffable, Goreclaw, Urza's Incubator) and affinity or
-  improvise (Thoughtcast, Thought Monitor, Kappa Cannoneer, Inspiring Statuary); Blinkmoth Urn;
-  extra land drops and lands from the library's top (Oracle of Mul Daya, Augur of Autumn);
-  commanders' own mana (Urza's "tap an artifact: add {U}", K'rrik's life for {B}). Needs a cost
-  step before `pay()` (`pay.rs`) and per-turn effects in `game.rs`, read from oracle text in
-  `profile.rs`. *Medium.*
+- [ ] **Keep the mana goldfish to mana development, and add a mechanic only when it moves the
+  numbers.** Its scope is lands, mana sources and what they cost, colours, land drops and plain
+  card counts; combat, opponents, graveyards, the stack and commanders' own abilities are out
+  (Ramp and draw it doesn't play are named in the Mana block as not counted). A mechanic earns
+  its place when it moves commander-by-T4 by more than 2 points or mana on T4 by more than 0.2
+  on some deck in `tests/data/decks` (add the deck that shows it). Within scope and not read
+  yet, roughly by how much they'd move the numbers: Treasure makers and rituals (one-shot mana);
+  extra land drops (Oracle of Mul Daya, Mina and Denn, The Gitrog Monster, Druid Class) and lands
+  from the library's top or graveyard (Augur of Autumn, Crucible of Worlds, Life from the Loam);
+  exile-and-play counted as draw (Embrace the Unknown is 2 cards, Ignite the Future 3, Prosper's
+  and Bonehoard Dracosaur's every turn); suspend (Mox Tantalite, Sol Talisman: never cast now);
+  counter mana (Pentad Prism, Crystalline Crawler: not counted; Sphere of the Suns: three uses,
+  counted for good); untapping a snow land (Sculptor of Winter, Rime Tender); "or one mana of the
+  chosen color" (Thriving lands make only their own); lands that fetch as they enter (Riveteers
+  Overlook) or enter tapped before fetching (Rocky Tar Pit); snow-only searches (Into the North
+  finds any land); tutors for lands or rocks; Fabled Passage's untap with four lands; Exotic
+  Orchard and Fellwar Stone (taken to make any of the deck's colours). Mana only some spells may
+  use counts as any mana (Lord of the Forsaken, Gwenna, Ixalli's Lorekeeper): not counting it was
+  tried and was worse, since the commander is often what it pays for; a unit that knows what it
+  may pay for would do it right. Ramp is cast before the commander whatever it costs (Lord of
+  the Forsaken at 5 ahead of Kotis at 3: 1.2 points of Sultai Arisen's commander-by-T4). Most of
+  these come for free with Forge's scripts (above). *Small* each.
 
 - [ ] **`check` finds no commander in edh-scout's own exported decklists.** The plain export writes
   the commander first with no section (what MPCFill and proxy printers take), so `check` on it
@@ -167,6 +183,16 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   `edh-store/src/lib.rs` and the README's table. *Small.*
 
 ## Considered, probably not
+
+- **Play the engines decks are built around in the mana goldfish.** Swamp doublers (Crypt Ghast,
+  Nirkana Revenant, Bubbling Muck), Forsaken Monument's {C}, cost reducers (Etherium Sculptor,
+  Foundry Inspector, Ugin the Ineffable), affinity and improvise (Thoughtcast, Kappa Cannoneer),
+  Blinkmoth Urn, Koth's Mountain mana, commanders' own mana (Urza's "tap an artifact: add {U}",
+  K'rrik's life for {B}). Out of the goldfish's scope (see the item on keeping to mana
+  development): they need board state and per-turn effects in `game.rs`, which is where it would
+  turn into a rules engine. The Mana block names the ones in a deck as not counted, so its numbers
+  aren't taken for more than they are. Cost reductions (`S:Mode$ ReduceCost`) and affinity may
+  come cheaply with Forge's scripts.
 
 - **End-to-end tests for `scout` and `favorites`.** `run_scout`/`run_favorites` (`main.rs`) need
   the full card database and the network or its cache, so testing them means splitting them into
