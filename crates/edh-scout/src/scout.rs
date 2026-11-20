@@ -855,6 +855,13 @@ impl Feed {
         Self { rx, stop }
     }
 
+    /// A feed with no thread behind it, whose events a test sends itself.
+    #[cfg(test)]
+    pub(crate) fn for_test() -> (Sender<FeedEvent>, Self) {
+        let (tx, rx) = mpsc::channel();
+        (tx, Self { rx, stop: Arc::new(AtomicBool::new(false)) })
+    }
+
     /// The next event if one is waiting.
     pub fn try_next(&self) -> Option<FeedEvent> {
         self.rx.try_recv().ok()

@@ -243,6 +243,48 @@ mod tests {
     use edh_data::deck::parse_decklist;
 
     #[test]
+    fn favorites_are_starred_in_the_report() {
+        use crate::analysis::Score;
+        use crate::rank::{Weights, rank};
+        use edh_data::deck::DeckMeta;
+        let entry = |id: &str| {
+            let meta =
+                DeckMeta { edhrec_url: Some(format!("https://edhrec.com/deckpreview/{id}")), ..Default::default() };
+            let deck = Deck { id: id.into(), commanders: vec!["Alpha One".into()], meta, ..Default::default() };
+            Entry { deck, score: Score { power: 6.0, bracket: 3, ..Default::default() }, matches: Vec::new() }
+        };
+        let decks = vec![entry("aaa"), entry("bbb")];
+        let target = Target::new((2, 3), None);
+        let ranking =
+            rank(&decks.iter().map(|e| &e.score).collect::<Vec<_>>(), &target, RankMode::Fit, &Weights::default());
+        let favorites = std::collections::HashSet::from(["bbb".to_string()]);
+        let dir = tempfile::tempdir().unwrap();
+        let input = ReportInput {
+            title: "test",
+            target: &target,
+            mode: RankMode::Fit,
+            decks: &decks,
+            analyze: &|_| Analysis::default(),
+            ranking: &ranking,
+            favorites: &favorites,
+            limit: 10,
+            format: ExportFormat::Plain,
+            show_price: false,
+            count_columns: &[],
+        };
+        let md = fs::read_to_string(write_report(dir.path(), &input).unwrap()).unwrap();
+        let position = |id: &str| ranking.iter().position(|r| decks[r.index].deck.id == id).unwrap() + 1;
+        let (fav, other) = (position("bbb"), position("aaa"));
+        let heading = |n: usize| md.lines().find(|l| l.starts_with(&format!("## Deck {n} "))).unwrap().to_string();
+        let row = |n: usize| md.lines().find(|l| l.starts_with(&format!("| [{n}](#deck-{n})"))).unwrap().to_string();
+        assert!(heading(fav).ends_with('★') && row(fav).contains('★'), "the favorite should be starred:\n{md}");
+        assert!(
+            !heading(other).contains('★') && !row(other).contains('★'),
+            "only the favorite should be starred:\n{md}"
+        );
+    }
+
+    #[test]
     fn plain_export_is_proxy_friendly() {
         let mut d = parse_decklist("Commander\n1 Krenko, Mob Boss\nDeck\n10 Mountain\n1 Sol Ring\n", &[]);
         d.id = "abc/../x".into();

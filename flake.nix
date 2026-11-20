@@ -25,6 +25,8 @@
               ./Cargo.toml
               ./Cargo.lock
               ./crates
+              # Read by a test that keeps the changelog in step with the version.
+              ./CHANGELOG.md
             ];
           };
           cargoLock.lockFile = ./Cargo.lock;

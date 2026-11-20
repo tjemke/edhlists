@@ -717,6 +717,9 @@ pub fn run(app: &mut App) -> Result<()> {
 }
 
 #[cfg(test)]
+mod scenarios;
+
+#[cfg(test)]
 mod tests {
     use super::{footer_keys, number_width, window_offset};
 

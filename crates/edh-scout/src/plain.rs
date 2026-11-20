@@ -109,3 +109,34 @@ pub fn legend(target: &Target, mode: RankMode) -> String {
         target.describe()
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analysis::Score;
+    use crate::rank::{Weights, rank};
+    use edh_data::deck::{Deck, DeckMeta};
+
+    fn entry(id: &str) -> Entry {
+        let meta = DeckMeta { edhrec_url: Some(format!("https://edhrec.com/deckpreview/{id}")), ..Default::default() };
+        let deck = Deck { id: id.into(), commanders: vec!["Alpha One".into()], meta, ..Default::default() };
+        Entry { deck, score: Score { power: 6.0, bracket: 3, ..Default::default() }, matches: Vec::new() }
+    }
+
+    #[test]
+    fn favorites_are_starred_in_the_plain_table() {
+        let decks = vec![entry("aaa"), entry("bbb")];
+        let target = Target::new((2, 3), None);
+        let ranking =
+            rank(&decks.iter().map(|e| &e.score).collect::<Vec<_>>(), &target, RankMode::Fit, &Weights::default());
+        let favorites = HashSet::from(["bbb".to_string()]);
+        let mut table =
+            ranked_table(&decks, &CardDb::new(vec![]), &ranking, &favorites, &target, 10, &Columns::default());
+        // As wide as it needs, whatever terminal the tests run in (a build sandbox's is tiny).
+        let table = table.set_width(400).to_string();
+        let row =
+            |id: &str| table.lines().find(|l| l.contains(id)).unwrap_or_else(|| panic!("no row for {id}:\n{table}"));
+        assert!(row("bbb").contains('★'), "the favorite's row should be starred:\n{table}");
+        assert!(!row("aaa").contains('★'), "only the favorite's row should be starred:\n{table}");
+    }
+}

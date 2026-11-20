@@ -8,6 +8,18 @@ under *Worth doing*, *Maybe* or *Considered, probably not*, and say which files 
 how big it is, and why (with measurements, if there are any). Tick off or remove items once they're
 done.
 
+## Tests
+
+Tests are named after the behaviour they protect, and their messages say what went wrong. When one
+fails, first decide whether that behaviour was meant to change. If not, fix the code. If it was,
+update the test, and say so in the commit message.
+
+The browser's tests (`crates/edh-scout/src/tui/scenarios.rs`) drive it like a user, through a small
+driver (`press`, `arrive`, `ids`, `selected`, `status`, …), and check what any screen must get right
+at any size rather than what it looks like. When the browser's internals change, fix the driver,
+not the scenarios. A new browser feature gets a scenario; don't add tests that compare whole
+screens.
+
 ## Versioning
 
 The version (`[workspace.package]` in `Cargo.toml`; the flake reads it from there) follows SemVer

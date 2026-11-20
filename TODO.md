@@ -110,6 +110,11 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
 
 ## Considered, probably not
 
+- **End-to-end tests for `scout` and `favorites`.** `run_scout`/`run_favorites` (`main.rs`) need
+  the full card database and the network or its cache, so testing them means splitting them into
+  testable pieces or keeping fixture databases. What they're built from is covered (pool, ranking,
+  browser scenarios, plain table, report); what's left is wiring. *Medium.*
+
 - Searching every stored deck regardless of commander: cross-commander searches already read the
   stored decks of each commander they scan, for free.
 - EDHREC deck tags as a fetch-order hint: 82% of decks are untagged, and `Prior` already finds the
