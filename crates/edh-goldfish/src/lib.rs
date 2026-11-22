@@ -103,4 +103,6 @@ pub fn run(entries: &[DeckEntry], games: u32, seed: u64) -> ManaReport {
 }
 
 #[cfg(test)]
+mod census;
+#[cfg(test)]
 mod tests;

@@ -580,6 +580,7 @@ dependencies = [
  "edh-data",
  "rayon",
  "regex",
+ "serde_json",
 ]
 
 [[package]]
