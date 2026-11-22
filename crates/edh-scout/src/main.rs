@@ -306,8 +306,13 @@ struct Show<'a> {
     layout: PaneLayout,
     /// For the browser's status line on opening (see [`filters::count_only_notice`]).
     notice: Option<String>,
-    /// Games the mana goldfish plays per deck (`[goldfish] games`).
-    goldfish_games: u32,
+    /// The mana goldfish (`[goldfish]`).
+    goldfish: mana::Goldfish,
+}
+
+/// The mana goldfish as the config file sets it up.
+fn goldfish(config: &Config, paths: &Paths) -> mana::Goldfish {
+    mana::Goldfish::new(config.goldfish.games, paths, config.goldfish.forge_cards.as_deref())
 }
 
 fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) -> Result<()> {
@@ -388,7 +393,7 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
         output: &args.output,
         layout: config.tui.layout,
         notice,
-        goldfish_games: config.goldfish.games,
+        goldfish: goldfish(config, paths),
     };
     finish(http, session, &show, target)
 }
@@ -743,7 +748,7 @@ fn run_favorites(http: &Arc<Http>, paths: &Paths, config: &Config, args: Favorit
         output: &args.output,
         layout: config.tui.layout,
         notice: None,
-        goldfish_games: config.goldfish.games,
+        goldfish: goldfish(config, paths),
     };
     finish(http, session, &show, target)
 }
@@ -774,7 +779,7 @@ fn finish(http: &Arc<Http>, session: Session, show: &Show, target: Target) -> Re
                 layout: show.layout,
                 source: source.clone(),
                 notice: show.notice.clone(),
-                goldfish_games: show.goldfish_games,
+                goldfish: show.goldfish.clone(),
             };
             let mut app = tui::App::new(settings, pool, feed, Some(http));
             tui::run(&mut app)?;
@@ -840,7 +845,7 @@ fn print_plain(
             mode: show.rank,
             decks: &pool.decks,
             analyze: &|i| pool.details(i),
-            mana: &|i| mana::report(&pool.decks[i].deck, pool.cards(), show.goldfish_games),
+            mana: &|i| mana::report(&pool.decks[i].deck, pool.cards(), &show.goldfish),
             ranking: &ranking,
             favorites,
             limit: output.top,
@@ -856,6 +861,12 @@ fn print_plain(
 
 fn run_check(http: &Http, paths: &Paths, config: &Config, args: CheckArgs) -> Result<()> {
     let target = target_from(&args.target)?;
+    let goldfish = goldfish(config, paths);
+    if goldfish.games > 0
+        && let Err(why) = goldfish.scripts()
+    {
+        eprintln!("note: {why}; the mana goldfish reads cards from their oracle text");
+    }
     let text = std::fs::read_to_string(&args.file).with_context(|| format!("reading {}", args.file.display()))?;
     let parsed: Vec<Filter> = args.types.iter().map(|t| t.parse()).collect::<Result<_>>().context("-T")?;
     let (table, card_filters) = filters::split(parsed);
@@ -911,13 +922,13 @@ fn run_check(http: &Http, paths: &Paths, config: &Config, args: CheckArgs) -> Re
             layout: config.tui.layout,
             source: Some("local decklist".into()),
             notice,
-            goldfish_games: config.goldfish.games,
+            goldfish,
         };
         tui::run(&mut tui::App::new(settings, pool, None, None))?;
     } else {
         let (deck, a) = (&pool.decks[0].deck, pool.details(0));
         let fits = target.fits(&pool.decks[0].score);
-        let report = mana::report(deck, &cards, config.goldfish.games);
+        let report = mana::report(deck, &cards, &goldfish);
         let mana = report.as_ref().map_or(view::ManaView::Off, view::ManaView::Ready);
         let mut lines = view::detail_lines(deck, &a, &target, None, args.price, mana);
         if let Some(width) = terminal_width() {

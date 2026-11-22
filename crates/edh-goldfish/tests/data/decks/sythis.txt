@@ -1,0 +1,79 @@
+Commander
+1 Sythis, Harvest's Hand
+
+Deck
+1 Abundant Growth
+1 Ajani's Chosen
+1 Alseid of Life's Bounty
+1 Archon of Sun's Grace
+1 Authority of the Consuls
+1 Blossoming Sands
+1 Canopy Vista
+1 Command Tower
+1 Conviction
+1 Cultivate
+1 Destiny Spinner
+1 Eiganjo Dynastorian
+1 Elvish Mystic
+1 Enchantress's Presence
+1 Ethereal Armor
+1 Evolving Wilds
+1 Farewell
+1 Federation Resupply
+1 Felidar Retreat
+1 Fertile Ground
+1 Flickering Ward
+13 Forest
+1 Generous Gift
+1 Grasp of Fate
+1 Graypelt Refuge
+1 Idyllic Tutor
+1 Incubation Druid
+1 Intangible Virtue
+1 Jukai Naturalist
+1 Karametra's Blessing
+1 Kenrith's Transformation
+1 Kor Spiritdancer
+1 Krosan Verge
+1 Light-Paws, Emperor's Voice
+1 Lignify
+1 Llanowar Elves
+1 Mesa Enchantress
+1 Moon-Blessed Cleric
+1 Myriad Landscape
+1 Oblivion Ring
+1 Ossification
+1 Overgrowth
+1 Paradise Druid
+1 Pia, Aether Ascetic
+13 Plains
+1 Rancor
+1 Sanctum Weaver
+1 Satyr Enchanter
+1 Seal of Cleansing
+1 Seal of Primordium
+1 Selesnya Sanctuary
+1 Setessan Champion
+1 Setessan Training
+1 Shardmage's Rescue
+1 Sheltered by Ghosts
+1 Sigil of the Empty Throne
+1 Siona, Captain of the Pyleas
+1 Snakeskin Veil
+1 Sol Ring
+1 Solitary Confinement
+1 Spirited Companion
+1 Starfield Mystic
+1 Sterling Grove
+1 Swords to Plowshares
+1 Sylvan Caryatid
+1 Tamiyo's Safekeeping
+1 Terramorphic Expanse
+1 Timely Ward
+1 Tranquil Expanse
+1 Utopia Sprawl
+1 Weaver of Harmony
+1 Whip Silk
+1 Wild Growth
+1 Winds of Rath
+1 Wolfwillow Haven

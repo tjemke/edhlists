@@ -11,7 +11,7 @@ use edh_data::text::front_face;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use edh_goldfish::ManaReport;
+use edh_goldfish::{Confidence, ManaReport};
 
 use crate::analysis::Analysis;
 use crate::filters::{Matched, short_label};
@@ -354,6 +354,56 @@ pub fn mana_left_out(m: &ManaReport) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join(", "))
 }
 
+/// Why the goldfish's numbers may be off, when they may be: "≈ rough: leaves out the
+/// commander's own mana and 2 mana engines (Crypt Ghast, Bubbling Muck)". `None` when they're
+/// good ([`edh_goldfish::Doubts`]). Shared with the report.
+pub fn mana_doubt(m: &ManaReport) -> Option<String> {
+    let d = &m.doubts;
+    let word = match d.confidence {
+        Confidence::Good => return None,
+        Confidence::Rough => "rough",
+        Confidence::Poor => "poor",
+    };
+    let some = |names: &[String]| {
+        let shown: Vec<&str> = names.iter().take(3).map(|n| front_face(n)).collect();
+        format!("{}{}", shown.join(", "), if names.len() > 3 { ", …" } else { "" })
+    };
+    let counted = |names: &[String], what: &str, plural: &str| {
+        (!names.is_empty()).then(|| {
+            let what = if names.len() == 1 { what } else { plural };
+            format!("{} {what} ({})", names.len(), some(names))
+        })
+    };
+    let mut left_out: Vec<String> = Vec::new();
+    match d.commander_ramp.len() {
+        0 => {}
+        1 => left_out.push("the commander's own mana".into()),
+        _ => left_out.push("the commanders' own mana".into()),
+    }
+    left_out.extend(counted(&d.engines, "mana engine", "mana engines"));
+    left_out.extend(counted(&d.one_shot, "one-shot mana", "one-shot mana"));
+    left_out.extend(counted(&d.other_ramp, "other ramp", "other ramp"));
+    let mut why = Vec::new();
+    if let Some((last, rest)) = left_out.split_last() {
+        let and = if rest.is_empty() { last.clone() } else { format!("{} and {last}", rest.join(", ")) };
+        why.push(format!("leaves out {and}"));
+    }
+    if !d.growing.is_empty() {
+        let counted = match d.growing.len() {
+            1 => "1 source as one mana, though it grows".to_string(),
+            n => format!("{n} sources as one mana each, though they grow"),
+        };
+        why.push(format!("counts {counted} with the board ({})", some(&d.growing)));
+    }
+    if !d.unread.is_empty() {
+        why.push(format!("couldn't read {}", some(&d.unread)));
+    }
+    if !d.scripts {
+        why.push("read every card from its oracle text, without Forge's scripts (`edh-scout sync --forge`)".into());
+    }
+    Some(format!("≈ {word}: {}", why.join("; ")))
+}
+
 fn mana_lines(mana: ManaView) -> Vec<Line<'static>> {
     match mana {
         ManaView::Off => vec![],
@@ -362,7 +412,19 @@ fn mana_lines(mana: ManaView) -> Vec<Line<'static>> {
         }
         ManaView::Ready(m) => {
             let (summary, stuck) = mana_summary(m);
-            let mut out = vec![Line::from(vec![label("Mana"), Span::raw(summary)])];
+            // How far to trust it, in colour, right under the numbers.
+            let doubt = mana_doubt(m).map(|why| {
+                let color = if m.doubts.confidence == Confidence::Poor { BAD } else { OK };
+                (why, color)
+            });
+            let mana = match &doubt {
+                Some((_, color)) => Span::styled(format!("{:<LABEL_WIDTH$}", "Mana"), Style::new().bold().fg(*color)),
+                None => label("Mana"),
+            };
+            let mut out = vec![Line::from(vec![mana, Span::raw(summary)])];
+            if let Some((why, color)) = doubt {
+                out.push(Line::from(vec![label(""), Span::styled(why, Style::new().fg(color))]));
+            }
             if !stuck.is_empty() {
                 out.push(Line::from(vec![
                     label(""),
@@ -370,7 +432,7 @@ fn mana_lines(mana: ManaView) -> Vec<Line<'static>> {
                     Span::styled(stuck.join(", "), Style::new().fg(OK)),
                 ]));
             }
-            if let Some(left_out) = mana_left_out(m) {
+            if let Some(left_out) = mana_left_out(m).filter(|_| m.doubts.confidence == Confidence::Good) {
                 out.push(Line::from(vec![
                     label(""),
                     Span::styled(format!("not played, so not counted: {left_out}"), Style::new().fg(DIM)),
@@ -593,6 +655,81 @@ mod tests {
         lines.iter().map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect()).collect()
     }
 
+    /// Numbers the goldfish has no doubts about.
+    fn trusted() -> edh_goldfish::Doubts {
+        edh_goldfish::Doubts {
+            confidence: Confidence::Good,
+            commander_ramp: vec![],
+            engines: vec![],
+            one_shot: vec![],
+            other_ramp: vec![],
+            growing: vec![],
+            unread: vec![],
+            scripts: true,
+        }
+    }
+
+    #[test]
+    fn mana_says_plainly_when_its_numbers_are_rough_and_why() {
+        let names = |n: &[&str]| n.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let rough = ManaReport {
+            games: 1,
+            mulligan: 0.0,
+            commander_by_t4: Some(0.5),
+            colour_delayed: None,
+            capacity: [4.0; 8],
+            spent_by_t8: 0.0,
+            stuck: vec![],
+            unplayed: vec![("Crypt Ghast".into(), Role::Ramp), ("Skullclamp".into(), Role::Draw)],
+            doubts: edh_goldfish::Doubts {
+                confidence: Confidence::Rough,
+                engines: names(&["Crypt Ghast", "Bubbling Muck"]),
+                ..trusted()
+            },
+        };
+        assert_eq!(mana_doubt(&rough).unwrap(), "≈ rough: leaves out 2 mana engines (Crypt Ghast, Bubbling Muck)");
+        let lines = mana_lines(ManaView::Ready(&rough));
+        assert_eq!(text(&lines)[1].trim(), "≈ rough: leaves out 2 mana engines (Crypt Ghast, Bubbling Muck)");
+        assert_eq!(lines[0].spans[0].style.fg, Some(OK), "the Mana label is in the warning's colour");
+        assert_eq!(lines.len(), 2, "the warning replaces the list of what isn't played");
+        let poor = ManaReport {
+            doubts: edh_goldfish::Doubts {
+                confidence: Confidence::Poor,
+                commander_ramp: names(&["Urza, Lord High Artificer"]),
+                one_shot: names(&["Dark Ritual"]),
+                unread: names(&["Urza's Saga"]),
+                ..trusted()
+            },
+            ..rough.clone()
+        };
+        assert_eq!(
+            mana_doubt(&poor).unwrap(),
+            "≈ poor: leaves out the commander's own mana and 1 one-shot mana (Dark Ritual); couldn't read Urza's Saga"
+        );
+        assert_eq!(mana_lines(ManaView::Ready(&poor))[1].spans[1].style.fg, Some(BAD));
+        let unscripted =
+            ManaReport { doubts: edh_goldfish::Doubts { scripts: false, ..rough.doubts.clone() }, ..rough };
+        assert!(mana_doubt(&unscripted).unwrap().ends_with("without Forge's scripts (`edh-scout sync --forge`)"));
+        let growing = |names: &[&str]| ManaReport {
+            doubts: edh_goldfish::Doubts {
+                growing: names.iter().map(|s| s.to_string()).collect(),
+                ..rough.doubts.clone()
+            },
+            ..poor.clone()
+        };
+        assert!(
+            mana_doubt(&growing(&["Priest of Titania"]))
+                .unwrap()
+                .ends_with("; counts 1 source as one mana, though it grows with the board (Priest of Titania)")
+        );
+        assert!(mana_doubt(&growing(&["Priest of Titania", "Marwyn, the Nurturer"])).unwrap().ends_with(
+            "; counts 2 sources as one mana each, though they grow with the board (Priest of Titania, Marwyn, the Nurturer)"
+        ));
+        let good = ManaReport { doubts: trusted(), ..poor };
+        assert_eq!(mana_doubt(&good), None);
+        assert_eq!(mana_lines(ManaView::Ready(&good))[0].spans[0].style.fg, Some(DIM));
+    }
+
     #[test]
     fn mana_mentions_cards_stuck_on_colours_only_when_it_happens_more_than_now_and_then() {
         let report = ManaReport {
@@ -604,6 +741,7 @@ mod tests {
             spent_by_t8: 30.0,
             stuck: vec![("Reanimate".into(), 0.032), ("Entomb".into(), 0.006), ("Careful Study".into(), 0.005)],
             unplayed: vec![],
+            doubts: trusted(),
         };
         let (summary, stuck) = mana_summary(&report);
         assert_eq!(summary, "commander by T4 80% · 5.3 mana on T4, +1.3 over a land a turn");
@@ -627,6 +765,7 @@ mod tests {
             spent_by_t8: 0.0,
             stuck: vec![],
             unplayed: unplayed.into_iter().map(|(n, r)| (n.to_string(), r)).collect(),
+            doubts: trusted(),
         };
         assert_eq!(mana_left_out(&report(vec![])), None);
         let ghast = report(vec![

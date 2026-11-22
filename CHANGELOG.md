@@ -5,6 +5,26 @@ What changed in each version, newest first. How versions are numbered: see *Vers
 
 ## 0.3.6
 
+- The mana goldfish reads what cards do for mana from Forge's card scripts: what a mana ability
+  costs and makes, when a land enters tapped, what a land search puts onto the battlefield and into
+  hand, what a land fetches or returns as it enters. Across the 3,700 lands and ramp cards this
+  changes about 250 readings, nearly all for the better: Thriving lands and Gates make the colour
+  chosen for them, Burnished Hart costs its {3} to activate, Overgrowth adds {G}{G}, lands that
+  enter tapped unless you control a basic land do, the New Capenna lands that sacrifice themselves
+  for a basic (Riveteers Overlook) fetch it instead of making nothing, Selvala, Heart of the Wilds
+  makes at least her own power, Castle Garenbrig's six {G} wait for the lands to pay for them, a
+  search for someone else's land (Path to Exile) isn't ramp, and a storage land's or energy's mana
+  isn't counted every turn (Crucible of the Spirit Dragon, Conversion Apparatus). `sync` downloads
+  the scripts from Forge's latest release (~250 MB, only when Forge has released since; `sync
+  --forge` for them alone); a Nix build reads nixpkgs' `forge-mtg` instead, and `[goldfish]
+  forge_cards` or `EDH_SCOUT_FORGE_CARDS` can point at any. Without them, cards are read from
+  oracle text as before.
+- The details pane, `check` and the report say when the goldfish's numbers are doubtful, and why:
+  the Mana label turns yellow (`≈ rough`) or red (`≈ poor`) when the ramp it doesn't play (mana
+  engines, one-shot mana, the commander's own mana) or the mana sources it couldn't read would
+  likely move the mana on turn 4 by more than 0.2. Cost reducers count among the engines, by their
+  Forge scripts, though Scryfall's tags don't call them ramp (Animar, Goreclaw, Etherium
+  Sculptor).
 - The mana goldfish no longer counts a card drawn "whenever you attack" (Bonny Pall, Clearcutter)
   as a card every turn: a goldfish doesn't attack.
 

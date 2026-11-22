@@ -1,0 +1,92 @@
+Commander
+1 Animar, Soul of Elements
+
+Deck
+1 Apex Devastator
+1 Artisan of Kozilek
+1 Ashnod's Altar
+1 Beast Within
+1 Blasphemous Act
+1 Branching Evolution
+1 Cascade Bluffs
+1 Chandra's Ignition
+1 Cinder Glade
+1 Cloud of Faeries
+1 Command Tower
+1 Copper Myr
+1 Counterspell
+1 Cultivate
+1 Double Major
+1 Dreamroot Cascade
+1 Etherium Sculptor
+1 Evolving Wilds
+1 Exotic Orchard
+1 Farseek
+1 Fierce Empath
+1 Flooded Grove
+1 Footfall Crater
+6 Forest
+1 Forgotten Ancient
+1 Foundry Inspector
+1 Garruk's Uprising
+1 Ghalta the Unstoppable
+1 Glen Elendra Archmage
+1 Hardened Scales
+1 Haywire Mite
+1 Hinterland Harbor
+1 Impact Tremors
+1 Iron Myr
+6 Island
+1 Jhoira's Familiar
+1 Jhoira, Weatherlight Captain
+1 Junk Diver
+1 Kappa Cannoneer
+1 Karplusan Forest
+1 Kuldotha Forgemaster
+1 Liberator, Urza's Battlethopter
+1 Meria, Scholar of Antiquity
+1 Meteor Golem
+1 Molten Gatekeeper
+2 Mountain
+1 Myr Battlesphere
+1 Myr Convert
+1 Myr Retriever
+1 Ornithopter
+1 Ornithopter of Paradise
+1 Peregrine Drake
+1 Power Depot
+1 Primordial Sage
+1 Reckless Fireweaver
+1 Rhythm of the Wild
+1 Rockfall Vale
+1 Rootbound Crag
+1 Sai, Master Thopterist
+1 Scrap Trawler
+1 Scuttlemutt
+1 Sheltered Thicket
+1 Shimmer Dragon
+1 Shimmer Myr
+1 Shivan Dragon
+1 Shivan Reef
+1 Silver Myr
+1 Silverbluff Bridge
+1 Skyscanner
+1 Slagwoods Bridge
+1 Sojourner's Companion
+1 Sol Ring
+1 Solemn Simulacrum
+1 Spellbook
+1 Spire of Industry
+1 Sulfur Falls
+1 Swan Song
+1 Synth Infiltrator
+1 Tamiyo's Safekeeping
+1 Tanglepool Bridge
+1 Temur Ascendancy
+1 Terramorphic Expanse
+1 Tree of Tales
+1 Vizier of the Menagerie
+1 Walking Ballista
+1 Wizard Class
+1 Worldly Tutor
+1 Yavimaya Coast

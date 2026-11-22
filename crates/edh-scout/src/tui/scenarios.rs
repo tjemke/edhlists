@@ -12,6 +12,7 @@ use std::sync::mpsc::Sender;
 use edh_data::cards::{Card, CardDb};
 use edh_data::combos::ComboDb;
 use edh_data::deck::{Deck, DeckMeta};
+use edh_data::forge::ForgeDb;
 use edh_store::DeckStore;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -43,6 +44,13 @@ impl World {
             oracle: vec![String::new()],
             ..Default::default()
         };
+        // Ramp by Scryfall Tagger that the goldfish doesn't play: mana engines, by their scripts.
+        let engine = |name: &str| Card {
+            mana_cost: vec![Some("{1}{B}".parse().unwrap())],
+            roles: edh_data::tags::Role::Ramp.into(),
+            tagged: true,
+            ..card(name, "Creature — Spirit")
+        };
         Self {
             cards: CardDb::new(vec![
                 card("Alpha One", "Legendary Creature — Human"),
@@ -52,10 +60,25 @@ impl World {
                 card("Lizard Blades", "Artifact Creature — Equipment Lizard"),
                 card("Sol Ring", "Artifact"),
                 card("Jace Beleren", "Legendary Planeswalker — Jace"),
+                engine("Swamp Doubler"),
+                engine("Swamp Tripler"),
             ]),
             combos: ComboDb::empty(),
             dir: tempfile::tempdir().unwrap(),
         }
+    }
+
+    /// Forge's scripts for every card: the engines' make mana when Swamps do, the rest's say only
+    /// what the card is.
+    fn scripts(&self) -> ForgeDb {
+        let files = self.cards.cards.iter().map(|c| {
+            let mut script = format!("Name:{}\nTypes:{}\n", c.name, c.type_line.replace(" — ", " "));
+            if c.name.starts_with("Swamp ") {
+                script += "T:Mode$ TapsForMana | ValidCard$ Swamp | Execute$ TrigMana | Static$ True\nSVar:TrigMana:DB$ Mana | Produced$ B\n";
+            }
+            (format!("x/{}.txt", c.name), script)
+        });
+        ForgeDb::new("test".into(), files.collect::<Vec<_>>())
     }
 
     fn store(&self) -> DeckStore {
@@ -165,7 +188,7 @@ impl<'a> Browser<'a> {
             source: (!stored).then(|| "local decklist".to_string()),
             notice: filters::count_only_notice(counts.iter().map(|f| &f.filter)),
             // Enough to play every deck, few enough to be quick.
-            goldfish_games: 200,
+            goldfish: crate::mana::Goldfish::with_scripts(200, world.scripts()),
         };
         let (arrivals, feed) = if stored {
             let (tx, feed) = Feed::for_test();
@@ -266,9 +289,14 @@ impl<'a> Browser<'a> {
         let text = self.text(240, 60);
         let at = text.iter().position(|l| l.contains("Mana ")).expect("a Mana line in the details");
         let mut out = vec![text[at].clone()];
-        out.extend(text[at + 1..].iter().take_while(|l| l.contains("stuck on colours")).cloned());
+        let more = |l: &&String| l.contains("stuck on colours") || l.contains("≈");
+        out.extend(text[at + 1..].iter().take_while(more).cloned());
         out.iter()
-            .map(|l| l.split('│').filter(|s| s.contains("Mana") || s.contains("stuck")).collect::<String>())
+            .map(|l| {
+                l.split('│')
+                    .filter(|s| s.contains("Mana") || s.contains("stuck") || s.contains("≈"))
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -329,6 +357,21 @@ fn the_details_say_how_the_selected_decks_mana_develops() {
     b.press("j");
     let next = b.mana();
     assert!(next.contains("mana on T4"), "the next deck gets its own: {next}");
+}
+
+#[test]
+fn the_details_warn_when_the_goldfish_leaves_out_a_decks_mana_engines() {
+    let w = World::new();
+    let decks = [
+        scored_with("engines", 6.2, "Alpha One", &["Swamp Doubler", "Swamp Tripler"]),
+        scored("plain", 6.0, "Alpha One"),
+    ];
+    let mut b = Browser::build(&w, decks.into(), true, false, &[]);
+    let engines = b.mana();
+    assert!(engines.contains("≈ rough") && engines.contains("2 mana engines"), "deck with engines: {engines}");
+    b.press("j");
+    let plain = b.mana();
+    assert!(plain.contains("mana on T4") && !plain.contains("≈"), "a deck without: {plain}");
 }
 
 #[test]

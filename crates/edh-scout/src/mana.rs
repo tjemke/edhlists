@@ -2,15 +2,63 @@
 //! the browser) in the background.
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, OnceLock};
 
 use edh_data::cards::{Card, CardDb};
+use edh_data::config::Paths;
 use edh_data::deck::Deck;
+use edh_data::forge::{ForgeDb, ForgeSource};
 use edh_goldfish::{DeckEntry, ManaReport};
 
-/// The goldfish's games for `deck`, cards the database doesn't know left out; `None` for 0 games.
-pub fn report(deck: &Deck, cards: &CardDb, games: u32) -> Option<ManaReport> {
-    (games > 0).then(|| play(&deck.id, &resolved(deck, cards), games))
+/// How the goldfish plays: how many games, with which card scripts.
+#[derive(Clone)]
+pub struct Goldfish {
+    /// Games per deck; 0 turns the goldfish off.
+    pub games: u32,
+    source: ForgeSource,
+    db: PathBuf,
+    /// The download the database is rebuilt from when it's of an older schema.
+    raw: PathBuf,
+    /// Forge's card scripts, read the first time a deck is played; why there are none if not.
+    scripts: Arc<OnceLock<Result<ForgeDb, String>>>,
+}
+
+impl Goldfish {
+    /// `configured`: the config file's `[goldfish] forge_cards`.
+    pub fn new(games: u32, paths: &Paths, configured: Option<&Path>) -> Self {
+        let scripts = Arc::new(OnceLock::new());
+        Goldfish { games, source: ForgeSource::find(configured), db: paths.forge_db(), raw: paths.forge_raw(), scripts }
+    }
+
+    /// Reading cards with these scripts (tests).
+    #[cfg(test)]
+    pub fn with_scripts(games: u32, scripts: ForgeDb) -> Self {
+        Goldfish {
+            games,
+            source: ForgeSource::Download,
+            db: PathBuf::new(),
+            raw: PathBuf::new(),
+            scripts: Arc::new(OnceLock::from(Ok(scripts))),
+        }
+    }
+
+    /// Forge's card scripts, or why there are none (read on first use, which takes a moment).
+    pub fn scripts(&self) -> Result<&ForgeDb, &str> {
+        let loaded = self.scripts.get_or_init(|| match self.source.load(&self.db, &self.raw) {
+            Ok(Some(db)) => Ok(db),
+            Ok(None) => Err("no Forge card scripts yet (`edh-scout sync --forge` downloads them)".to_string()),
+            Err(e) => Err(format!("Forge's card scripts couldn't be read: {e:#}")),
+        });
+        loaded.as_ref().map_err(String::as_str)
+    }
+}
+
+/// The goldfish's games for `deck`, cards the database doesn't know left out; `None` when it's
+/// off.
+pub fn report(deck: &Deck, cards: &CardDb, goldfish: &Goldfish) -> Option<ManaReport> {
+    (goldfish.games > 0).then(|| play(&deck.id, &resolved(deck, cards), goldfish))
 }
 
 /// The deck's cards, copied, so another thread can play them.
@@ -18,10 +66,18 @@ fn resolved(deck: &Deck, cards: &CardDb) -> Vec<(Card, u32, bool)> {
     deck.entries().filter_map(|(name, qty, commander)| cards.get(name).map(|c| (c.clone(), qty, commander))).collect()
 }
 
-fn play(id: &str, cards: &[(Card, u32, bool)], games: u32) -> ManaReport {
-    let entries: Vec<DeckEntry> =
-        cards.iter().map(|(card, qty, commander)| DeckEntry { card, qty: *qty, commander: *commander }).collect();
-    edh_goldfish::run(&entries, games, edh_goldfish::seed_for(id))
+fn play(id: &str, cards: &[(Card, u32, bool)], goldfish: &Goldfish) -> ManaReport {
+    let scripts = goldfish.scripts().ok();
+    let entries: Vec<DeckEntry> = cards
+        .iter()
+        .map(|(card, qty, commander)| DeckEntry {
+            card,
+            qty: *qty,
+            commander: *commander,
+            script: scripts.and_then(|db| db.get(&card.name)),
+        })
+        .collect();
+    edh_goldfish::run(&entries, goldfish.games, edh_goldfish::seed_for(id))
 }
 
 struct Job {
@@ -41,7 +97,8 @@ pub struct Background {
 
 impl Background {
     /// `None` for 0 games: the goldfish is off.
-    pub fn start(games: u32) -> Option<Self> {
+    pub fn start(goldfish: Goldfish) -> Option<Self> {
+        let games = goldfish.games;
         if games == 0 {
             return None;
         }
@@ -55,7 +112,7 @@ impl Background {
                     while let Ok(later) = todo.try_recv() {
                         job = later;
                     }
-                    let report = play(&job.id, &job.cards, games);
+                    let report = play(&job.id, &job.cards, &goldfish);
                     if finished.send((job.id, report)).is_err() {
                         break;
                     }

@@ -1,9 +1,11 @@
-//! What a card does for a deck's mana, read from its oracle text, types and mana cost.
+//! What a card does for a deck's mana: read from its Forge script ([`crate::forge_profile`]) when
+//! there is one, else from its oracle text, types and mana cost.
 
 use std::sync::LazyLock;
 
 use edh_data::cards::Card;
 use edh_data::flags::{EnumSet, Flag};
+use edh_data::forge::Script;
 use edh_data::mana::{ColorSet, Mana, ManaCost, ManaSet, Pip};
 use edh_data::tags::Role;
 use edh_data::text::{front_face, strip_reminder};
@@ -24,8 +26,43 @@ pub struct Profile {
     pub lands: Vec<LandFace>,
     pub spell: Option<Spell>,
     /// What Scryfall Tagger says it does that the goldfish doesn't play: ramp that isn't a land,
-    /// rock or land search (Crypt Ghast, Dark Ritual), or draw it reads as a plain spell.
+    /// rock or land search (Crypt Ghast, Dark Ritual), or draw it reads as a plain spell. A cost
+    /// reducer is ramp too, when its Forge script shows it (Animar, Goreclaw: Tagger doesn't say).
     pub unplayed: Option<Role>,
+    /// How it was read.
+    pub fidelity: Fidelity,
+    /// What kind of ramp it is, when it's ramp the goldfish doesn't play and its script says.
+    pub left_out: Option<LeftOut>,
+    /// Its mana is counted as less than it grows to: one for "{G} for each Elf", none of what it
+    /// gives other permanents.
+    pub undercounted: bool,
+}
+
+/// What ramp the goldfish doesn't play does, by its Forge script.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LeftOut {
+    /// Mana every turn from what's on the battlefield: doubling lands' mana (Crypt Ghast),
+    /// reducing costs, extra land drops (Explore), untapping lands, mana given to others.
+    Engine,
+    /// Mana once: Treasure, Eldrazi Scions, rituals, a source sacrificed or out of counters.
+    OneShot,
+    /// Something else Scryfall Tagger calls ramp, with no mana the goldfish could count early:
+    /// a land search that needs an attack, a free spell, mana for an opponent.
+    Other,
+}
+
+/// How well the goldfish read what a card does for the deck's mana.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Fidelity {
+    /// From its Forge script, as it is.
+    Exact,
+    /// From its Forge script, with this simplification.
+    Approximate(&'static str),
+    /// From its oracle text: there's no Forge script for it.
+    NoScript,
+    /// From its oracle text, because its script says something about mana the reader doesn't
+    /// understand (this).
+    Unreadable(&'static str),
 }
 
 #[derive(Clone, Debug)]
@@ -122,15 +159,14 @@ impl Spell {
         self.extra
     }
 
-    fn new(cost: ManaCost, effect: Effect, text: &str) -> Spell {
+    /// `kick`: the generic mana of one multikick (Everflowing Chalice's 2), if it has one.
+    pub(crate) fn new(cost: ManaCost, effect: Effect, kick: u32) -> Spell {
         let mut spell = Spell { cost, effect, extra: 0 };
         if spell.x_rock() {
             spell.extra += spell.cost.pips.iter().filter(|p| **p == Pip::X).count() as u32;
         }
-        if let Effect::Rock { .. } = spell.effect
-            && let Some(k) = MULTIKICKER.captures(text)
-        {
-            spell.extra += k[1].parse::<u32>().unwrap_or(0);
+        if let Effect::Rock { .. } = spell.effect {
+            spell.extra += kick;
         }
         if let Effect::LandRamp { activation, .. } = spell.effect {
             spell.extra += activation;
@@ -234,7 +270,7 @@ static UNLESS_CONTROL: LazyLock<Regex> =
 static REVEAL: LazyLock<Regex> =
     LazyLock::new(|| re(r"you may reveal an? (\w+)(?: or an? (\w+)| or (\w+))? card from your hand"));
 
-fn number(word: &str) -> u8 {
+pub(crate) fn number(word: &str) -> u8 {
     match word {
         "two" => 2,
         "three" => 3,
@@ -260,7 +296,16 @@ fn land_types_in(text: &str) -> EnumSet<BasicLandType> {
 
 impl Profile {
     /// `identity`: the deck's colours, which "any colour" mana is narrowed to.
-    pub fn of(card: &Card, identity: ColorSet) -> Profile {
+    pub fn of(card: &Card, script: Option<&Script>, identity: ColorSet) -> Profile {
+        let oracle = Profile::from_oracle(card, identity);
+        match script {
+            Some(script) => crate::forge_profile::read(card, script, identity, oracle),
+            None => oracle,
+        }
+    }
+
+    /// Read from oracle text alone.
+    pub(crate) fn from_oracle(card: &Card, identity: ColorSet) -> Profile {
         let faces: Vec<Types> = card.face_types().collect();
         let allowed: ManaSet = identity.iter().map(Mana::from).chain([Mana::C]).collect();
         let mut lands = Vec::new();
@@ -277,12 +322,16 @@ impl Profile {
         let spell = if front_is_land {
             None
         } else {
-            card.mana_cost
-                .first()
-                .cloned()
-                .flatten()
-                .map(|cost| Spell::new(cost, effect(card, &faces[0], allowed), &text(card, 0)))
+            card.mana_cost.first().cloned().flatten().map(|cost| {
+                let kick = MULTIKICKER.captures(&text(card, 0)).map_or(0, |k| k[1].parse::<u32>().unwrap_or(0));
+                Spell::new(cost, effect(card, &faces[0], allowed), kick)
+            })
         };
+        Profile::new(card, lands, spell, Fidelity::NoScript)
+    }
+
+    /// A card read as these lands and this spell, with what Tagger says it does that they don't.
+    pub(crate) fn new(card: &Card, lands: Vec<LandFace>, spell: Option<Spell>, fidelity: Fidelity) -> Profile {
         let effect = spell.as_ref().map(|s| &s.effect);
         let played_as = |r: Role| match r {
             Role::Ramp => !lands.is_empty() || matches!(effect, Some(Effect::Rock { .. } | Effect::LandRamp { .. })),
@@ -290,7 +339,17 @@ impl Profile {
         };
         let unplayed =
             [Role::Ramp, Role::Draw].into_iter().find(|&r| card.tagged && card.roles.contains(r) && !played_as(r));
-        Profile { name: card.name.clone(), type_words: card.front_type_line().to_lowercase(), lands, spell, unplayed }
+        let type_words = card.front_type_line().to_lowercase();
+        Profile {
+            name: card.name.clone(),
+            type_words,
+            lands,
+            spell,
+            unplayed,
+            fidelity,
+            left_out: None,
+            undercounted: false,
+        }
     }
 }
 
@@ -371,7 +430,7 @@ fn mana_units(text: &str, produced: ManaSet, allowed: ManaSet) -> Makes {
 
 /// The ability making the most mana; if each makes one, one unit of any of theirs, or of the
 /// colours `lent` by abilities that only turn mana into others.
-fn strongest(abilities: Vec<Vec<Unit>>, lent: Unit) -> Vec<Unit> {
+pub(crate) fn strongest(abilities: Vec<Vec<Unit>>, lent: Unit) -> Vec<Unit> {
     match abilities.iter().map(Vec::len).max() {
         None => vec![],
         Some(1) => vec![abilities.iter().flatten().fold(lent, |a, u| a | *u)],
@@ -452,7 +511,7 @@ fn enters(t: &str) -> Enters {
     Enters::Tapped
 }
 
-fn effect(card: &Card, types: &Types, allowed: ManaSet) -> Effect {
+pub(crate) fn effect(card: &Card, types: &Types, allowed: ManaSet) -> Effect {
     let t = text(card, 0);
     let permanent = types.is_permanent();
     let can_tap = permanent && !types.is(CardType::Planeswalker);

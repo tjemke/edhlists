@@ -59,8 +59,8 @@ pub struct Settings {
     /// Shown in the status line on opening (a `-T` that only counts though it looks like a
     /// filter: [`filters::count_only_notice`](crate::filters::count_only_notice)).
     pub notice: Option<String>,
-    /// Games the mana goldfish plays for the selected deck; 0 leaves it out.
-    pub goldfish_games: u32,
+    /// The mana goldfish, for the selected deck; 0 games leaves it out.
+    pub goldfish: mana::Goldfish,
 }
 
 pub struct App<'a> {
@@ -97,7 +97,7 @@ const TICK: Duration = Duration::from_millis(120);
 impl<'a> App<'a> {
     pub fn new(settings: Settings, pool: Pool<'a>, feed: Option<Feed>, http: Option<&'a Http>) -> Self {
         let status = settings.notice.clone().map(|n| (n, true));
-        let mana = mana::Background::start(settings.goldfish_games);
+        let mana = mana::Background::start(settings.goldfish.clone());
         let mut app = Self {
             settings,
             pool,
@@ -357,7 +357,7 @@ impl<'a> App<'a> {
                     mana: &|i| {
                         let deck = &self.pool.decks[i].deck;
                         let kept = self.mana.as_ref().and_then(|m| m.get(&deck.id).cloned());
-                        kept.or_else(|| mana::report(deck, self.pool.cards(), self.settings.goldfish_games))
+                        kept.or_else(|| mana::report(deck, self.pool.cards(), &self.settings.goldfish))
                     },
                     ranking: &ranking,
                     favorites: self.pool.favorites(),

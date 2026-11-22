@@ -12,13 +12,18 @@
 //! A deck always gets the same report for the same seed ([`seed_for`] its id), however many
 //! threads play the games.
 
+mod doubts;
+mod forge_profile;
 mod game;
 mod pay;
 mod profile;
 
 use edh_data::cards::Card;
+use edh_data::forge::Script;
 use edh_data::tags::Role;
 use rayon::prelude::*;
+
+pub use crate::doubts::{Confidence, Doubts};
 
 /// One line of a decklist.
 #[derive(Clone, Copy)]
@@ -26,6 +31,8 @@ pub struct DeckEntry<'a> {
     pub card: &'a Card,
     pub qty: u32,
     pub commander: bool,
+    /// Its Forge script ([`edh_data::forge`]); without one, it's read from its oracle text.
+    pub script: Option<&'a Script>,
 }
 
 /// Turns played per game.
@@ -55,8 +62,11 @@ pub struct ManaReport {
     pub stuck: Vec<(String, f64)>,
     /// Ramp and draw in the deck the goldfish doesn't play, by Scryfall Tagger's roles (ramp that
     /// isn't a land, rock or land search, like Crypt Ghast or Dark Ritual; draw it reads as a
-    /// plain spell), ramp first: its numbers leave them out.
+    /// plain spell) and cost reducers by their Forge scripts, ramp first: its numbers leave them
+    /// out.
     pub unplayed: Vec<(String, Role)>,
+    /// How far to trust these numbers, and why.
+    pub doubts: Doubts,
 }
 
 impl ManaReport {

@@ -210,9 +210,12 @@ pub fn write_report(dir: &Path, input: &ReportInput) -> Result<PathBuf> {
             let stuck =
                 if stuck.is_empty() { String::new() } else { format!(" — stuck on colours: {}", stuck.join(", ")) };
             let left_out = crate::view::mana_left_out(&m)
+                .filter(|_| m.doubts.confidence == edh_goldfish::Confidence::Good)
                 .map(|l| format!(" — not played, so not counted: {l}"))
                 .unwrap_or_default();
-            writeln!(md, "- Mana ({} solitaire games): {summary}{stuck}{left_out}", m.games)?;
+            let doubt =
+                crate::view::mana_doubt(&m).map(|d| format!(", {}", d.trim_start_matches("≈ "))).unwrap_or_default();
+            writeln!(md, "- Mana ({} solitaire games{doubt}): {summary}{stuck}{left_out}", m.games)?;
         }
         if let Some(syn) = &a.synergy {
             let sig: Vec<String> =

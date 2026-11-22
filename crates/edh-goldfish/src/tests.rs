@@ -5,7 +5,7 @@ use edh_data::mana::{ColorSet, ManaSet};
 use edh_data::tags::Role;
 use edh_data::types::{BasicLandType, Layout};
 
-use crate::profile::{Effect, Enters, Land, LandFilter, LandKind, Profile};
+use crate::profile::{Effect, Enters, Fidelity, Land, LandFilter, LandKind, Profile};
 use crate::{DeckEntry, run, seed_for};
 
 /// A card as the card database has it: `cost` and `produced` in Scryfall's notation ("{1}{U}",
@@ -35,7 +35,7 @@ fn basic(kind: &str, color: &str) -> Card {
 }
 
 fn profile(c: &Card, identity: &str) -> Profile {
-    Profile::of(c, ColorSet::from_letters(identity).unwrap())
+    Profile::of(c, None, ColorSet::from_letters(identity).unwrap())
 }
 
 fn land(p: &Profile) -> &Land {
@@ -55,8 +55,8 @@ fn rock_units(p: &Profile) -> Vec<String> {
 /// A deck of `cmd` and these cards, `n` of each.
 fn deck<'a>(cmd: &'a [Card], cards: &'a [(Card, u32)]) -> Vec<DeckEntry<'a>> {
     cmd.iter()
-        .map(|c| DeckEntry { card: c, qty: 1, commander: true })
-        .chain(cards.iter().map(|(c, n)| DeckEntry { card: c, qty: *n, commander: false }))
+        .map(|c| DeckEntry { card: c, qty: 1, commander: true, script: None })
+        .chain(cards.iter().map(|(c, n)| DeckEntry { card: c, qty: *n, commander: false, script: None }))
         .collect()
 }
 
@@ -677,6 +677,320 @@ fn ramp_and_draw_it_cant_play_are_marked_as_not_played() {
     let cards = [(ghast, 1), (clamp, 1), (sol, 1), (basic("Swamp", "B"), 40), (filler("{9}"), 56)];
     let r = run(&deck(&cmd, &cards), 10, 1);
     assert_eq!(r.unplayed, [("Crypt Ghast".to_string(), Role::Ramp), ("Skullclamp".to_string(), Role::Draw)]);
+}
+
+// --- read from Forge's scripts --------------------------------------------------------------------
+//
+// The scripts below are written for these tests in the format of Forge's card scripts (see
+// `edh_data::forge`), with only the lines the reader looks at.
+
+/// `c` read with this script (`Key:value` lines, faces split by `ALTERNATE`).
+fn scripted(c: &Card, script: &str, identity: &str) -> Profile {
+    let script = edh_data::forge::Script::parse(script).expect("a script");
+    Profile::of(c, Some(&script), ColorSet::from_letters(identity).unwrap())
+}
+
+fn effect(p: &Profile) -> &Effect {
+    &p.spell.as_ref().expect("a spell").effect
+}
+
+#[test]
+fn a_scripted_land_enters_tapped_as_its_replacement_says() {
+    let land_with = |tap: &str| {
+        let c = card("Some Land", "Land", "", "UB", "");
+        let script = format!(
+            "Name:Some Land\nTypes:Land\nR:Event$ Moved | ValidCard$ Card.Self | Destination$ Battlefield | ReplaceWith$ LandTapped\n\
+             SVar:LandTapped:DB$ Tap | Defined$ Self | ETB$ True{tap}\nA:AB$ Mana | Cost$ T | Produced$ Combo U B\n"
+        );
+        land(&scripted(&c, &script, "UB")).enters.clone()
+    };
+    let check = " | ConditionPresent$ Island.YouCtrl,Swamp.YouCtrl | ConditionCompare$ EQ0";
+    let types = [BasicLandType::Island, BasicLandType::Swamp].into_iter().collect();
+    assert_eq!(land_with(check), Enters::UnlessControl(types), "a check land");
+    let fast = " | ConditionPresent$ Land.YouCtrl | ConditionCompare$ GT2";
+    assert_eq!(land_with(fast), Enters::UnlessLandsAtMost(2), "a fast land: tapped with three other lands");
+    let slow = " | ConditionPresent$ Land.YouCtrl | ConditionCompare$ LT2";
+    assert_eq!(land_with(slow), Enters::UnlessLandsAtLeast(2), "a slow land: tapped with fewer than two");
+    let battle = " | ConditionPresent$ Land.Basic+YouCtrl | ConditionCompare$ LE1";
+    assert_eq!(land_with(battle), Enters::UnlessBasics(2), "a battle land: tapped with one basic or none");
+    assert_eq!(land_with(" | UnlessCost$ PayLife<2> | UnlessPayer$ You"), Enters::PayLife, "a shock land");
+    let snarl = " | UnlessCost$ Reveal<1/Island;Swamp/Island or Swamp> | UnlessPayer$ You";
+    assert_eq!(land_with(snarl), Enters::UnlessReveal(vec!["island".into(), "swamp".into()]), "a snarl");
+    let opponents = " | ConditionCheckSVar$ Foes | ConditionSVarCompare$ LT2\nSVar:Foes:PlayerCountOpponents$Amount";
+    assert_eq!(land_with(opponents), Enters::Untapped, "untapped with two or more opponents: a pod has three");
+    assert_eq!(land_with(""), Enters::Tapped);
+}
+
+#[test]
+fn a_scripted_land_with_basic_land_types_makes_their_colours_besides_its_abilities() {
+    // A Forest with "{T}: Add {W} or {B}" (Murmuring Bosk): its Forest type taps for {G} too.
+    let c = card("Bosk", "Land — Forest Treefolk", "", "WBG", "");
+    let script = "Name:Bosk\nTypes:Land Forest Treefolk\nA:AB$ Mana | Cost$ T | Produced$ Combo W B\n";
+    let p = scripted(&c, script, "WBG");
+    assert_eq!(land(&p).units.iter().map(|u| u.to_string()).collect::<Vec<_>>(), ["WBG"]);
+    assert_eq!(p.fidelity, Fidelity::Exact);
+}
+
+#[test]
+fn mana_for_sacrificing_a_source_isnt_mana_every_turn() {
+    // Crystal Vein: {T}: Add {C}; {T}, sacrifice it: Add {C}{C}.
+    let c = card("Vein", "Land", "", "C", "");
+    let script = "Name:Vein\nTypes:Land\nA:AB$ Mana | Cost$ T | Produced$ C\n\
+                  A:AB$ Mana | Cost$ T Sac<1/CARDNAME> | Produced$ C | Amount$ 2\n";
+    let p = scripted(&c, script, "G");
+    assert_eq!(land(&p).units.len(), 1, "one {{C}} a turn, not the two of sacrificing it");
+    assert!(matches!(p.fidelity, Fidelity::Approximate(_)), "the sacrifice is left out: {:?}", p.fidelity);
+    // A dork that sacrifices a land for {R}{R} each time is no rock.
+    let c = card("Razer", "Creature — Insect", "{2}{R}", "R", "");
+    let script = "Name:Razer\nTypes:Creature Insect\nA:AB$ Mana | Cost$ T Sac<1/Land> | Produced$ R R\n";
+    assert_eq!(effect(&scripted(&c, script, "R")), &Effect::Other);
+}
+
+#[test]
+fn a_scripted_filter_turns_other_mana_into_its_colours() {
+    // A Signet: {1}, {T}: Add {W}{U}, one more than it takes in.
+    let c = card("Signet", "Artifact", "{2}", "WU", "");
+    let script = "Name:Signet\nTypes:Artifact\nA:AB$ Mana | Cost$ 1 T | Produced$ W U\n";
+    assert_eq!(rock_units(&scripted(&c, script, "WU")), ["WU"]);
+}
+
+#[test]
+fn a_scripted_mana_ability_waiting_for_lands_waits() {
+    let c = card("Temple", "Land", "", "C", "");
+    let script = "Name:Temple\nTypes:Land\nA:AB$ Mana | Cost$ T | Produced$ C | Amount$ 2 | IsPresent$ Land.YouCtrl | PresentCompare$ GE5\n";
+    let l = land(&scripted(&c, script, "G")).clone();
+    assert!(l.units.is_empty(), "nothing before five lands: {:?}", l.units);
+    assert_eq!(l.with_lands.map(|(n, u)| (n, u.len())), Some((5, 2)));
+}
+
+#[test]
+fn mana_that_waits_for_a_creature_counts_as_one_of_its_colours() {
+    // {T}: Add {G}; {T}: Add {G}{G}{G}{G}, only with a creature of power 4 or greater.
+    let c = card("Fanatic", "Creature — Snake Druid", "{1}{G}", "G", "");
+    let script = "Name:Fanatic\nTypes:Creature Snake Druid\nA:AB$ Mana | Cost$ T | Produced$ G\n\
+                  A:AB$ Mana | Cost$ T | Produced$ G | Amount$ 4 | IsPresent$ Creature.YouCtrl+powerGE4\n";
+    assert_eq!(rock_units(&scripted(&c, script, "G")), ["G"], "one {{G}}, not four");
+}
+
+#[test]
+fn a_scripted_rock_that_doesnt_untap_is_used_once() {
+    let c = card("Monolith", "Artifact", "{2}", "C", "");
+    let script = "Name:Monolith\nTypes:Artifact\nR:Event$ Untap | ValidCard$ Card.Self | ValidStepTurnToController$ You | Layer$ CantHappen\n\
+                  A:AB$ Mana | Cost$ T | Produced$ C | Amount$ 3\n";
+    assert!(matches!(effect(&scripted(&c, script, "G")), Effect::Rock { once: true, units, .. } if units.len() == 3));
+}
+
+#[test]
+fn a_scripted_dork_with_haste_taps_the_turn_it_arrives() {
+    let script = |kw: &str| format!("Name:Dork\nTypes:Creature Elf\n{kw}A:AB$ Mana | Cost$ T | Produced$ G\n");
+    let c = card("Dork", "Creature — Elf", "{G}", "G", "");
+    assert!(matches!(effect(&scripted(&c, &script(""), "G")), Effect::Rock { next_turn: true, .. }));
+    assert!(matches!(effect(&scripted(&c, &script("K:Haste\n"), "G")), Effect::Rock { next_turn: false, .. }));
+}
+
+#[test]
+fn a_scripted_aura_adds_mana_to_the_land_it_enchants() {
+    let c = card("Growth", "Enchantment — Aura", "{G}", "G", "");
+    let script = "Name:Growth\nTypes:Enchantment Aura\nK:Enchant:Land\n\
+                  T:Mode$ TapsForMana | ValidCard$ Card.AttachedBy | Execute$ TrigMana | Static$ True\n\
+                  SVar:TrigMana:DB$ Mana | Produced$ G G | Defined$ TriggeredCardController\n";
+    assert_eq!(rock_units(&scripted(&c, script, "G")), ["G", "G"]);
+}
+
+#[test]
+fn mana_a_creature_gives_its_kind_counts_for_itself() {
+    // "Creatures you control have {T}: Add one mana of any color": it's a creature too.
+    let c = card("Gods", "Legendary Creature — God", "{2}{G}{U}", "", "");
+    let script = "Name:Gods\nTypes:Legendary Creature God\n\
+                  S:Mode$ Continuous | Affected$ Creature.YouCtrl | AddAbility$ Mana\n\
+                  SVar:Mana:AB$ Mana | Cost$ T | Produced$ Any\n";
+    let p = scripted(&c, script, "GU");
+    assert_eq!(rock_units(&p), ["UG"]);
+    assert!(matches!(p.fidelity, Fidelity::Approximate(_)), "other creatures' mana is left out: {:?}", p.fidelity);
+}
+
+#[test]
+fn a_colour_chosen_as_it_enters_counts_as_any_of_the_decks() {
+    // A Thriving land: {T}: Add {G} or one mana of the chosen color.
+    let c = card("Thriving", "Land", "", "G", "");
+    let script = "Name:Thriving\nTypes:Land\nK:ETBReplacement:Other:ChooseColor\nSVar:ChooseColor:DB$ ChooseColor | Defined$ You\n\
+                  A:AB$ Mana | Cost$ T | Produced$ Combo G Chosen\n";
+    let p = scripted(&c, script, "BG");
+    assert_eq!(land(&p).units.iter().map(|u| u.to_string()).collect::<Vec<_>>(), ["BG"]);
+    assert!(matches!(p.fidelity, Fidelity::Approximate(_)));
+}
+
+#[test]
+fn a_scripted_search_puts_one_land_out_and_one_in_hand_like_cultivate() {
+    let c = card("Cultivation", "Sorcery", "{2}{G}", "", "");
+    let script = "Name:Cultivation\nTypes:Sorcery\n\
+        A:SP$ ChangeZone | Origin$ Library | Destination$ Library | ChangeType$ Land.Basic | ChangeNum$ 2 | RememberChanged$ True | SubAbility$ ToPlay\n\
+        SVar:ToPlay:DB$ ChangeZone | Origin$ Library | Destination$ Battlefield | ChangeType$ Land.IsRemembered | ChangeNum$ 1 | Tapped$ True | SubAbility$ ToHand\n\
+        SVar:ToHand:DB$ ChangeZone | Origin$ Library | Destination$ Hand | ChangeType$ Land.IsRemembered\n";
+    let wanted = Effect::LandRamp {
+        finds: LandFilter { basic: true, types: Default::default() },
+        to_battlefield: 1,
+        to_hand: 1,
+        tapped: true,
+        activation: 0,
+        sacrifice: 0,
+    };
+    assert_eq!(effect(&scripted(&c, script, "G")), &wanted);
+}
+
+#[test]
+fn a_land_someone_else_searches_for_isnt_ramp() {
+    // Exile target creature; its controller may search for a basic land.
+    let c = card("Exile", "Instant", "{W}", "", "");
+    let script = "Name:Exile\nTypes:Instant\n\
+        A:SP$ ChangeZone | Origin$ Battlefield | Destination$ Exile | ValidTgts$ Creature | SubAbility$ Theirs\n\
+        SVar:Theirs:DB$ ChangeZone | Origin$ Library | Destination$ Battlefield | Tapped$ True | ChangeType$ Land.Basic | DefinedPlayer$ TargetedController\n";
+    assert_eq!(effect(&scripted(&c, script, "W")), &Effect::Other);
+}
+
+#[test]
+fn a_land_sacrificed_to_search_comes_off_what_it_finds() {
+    // As it enters, sacrifice a land to put two basics onto the battlefield.
+    let c = card("Druid", "Creature — Elf Druid", "{2}{G}", "", "");
+    let script = "Name:Druid\nTypes:Creature Elf Druid\n\
+        T:Mode$ ChangesZone | Origin$ Any | Destination$ Battlefield | ValidCard$ Card.Self | Execute$ Ramp\n\
+        SVar:Ramp:AB$ ChangeZone | Cost$ Sac<1/Land> | Origin$ Library | Destination$ Battlefield | Tapped$ True | ChangeType$ Land.Basic | ChangeNum$ 2\n";
+    assert!(matches!(effect(&scripted(&c, script, "G")), Effect::LandRamp { to_battlefield: 2, sacrifice: 1, .. }));
+}
+
+#[test]
+fn a_land_that_sacrifices_itself_as_it_enters_for_a_basic_is_a_fetch() {
+    // The New Capenna lands: "When this land enters, sacrifice it. When you do, search your
+    // library for a basic Swamp, Mountain, or Forest card, put it onto the battlefield tapped": the
+    // search is a trigger of its own, run only if the sacrifice was.
+    let c = card("Overlook", "Land", "", "", "");
+    let script = "Name:Overlook\nTypes:Land\n\
+        T:Mode$ ChangesZone | Origin$ Any | Destination$ Battlefield | ValidCard$ Card.Self | Execute$ DBSacrifice\n\
+        SVar:DBSacrifice:DB$ Sacrifice | RememberSacrificed$ True | SubAbility$ DBImmediateTrigger\n\
+        SVar:DBImmediateTrigger:DB$ ImmediateTrigger | ConditionDefined$ Remembered | ConditionPresent$ Card | Execute$ DBChangeZone | SubAbility$ DBCleanup\n\
+        SVar:DBChangeZone:DB$ ChangeZone | Origin$ Library | Destination$ Battlefield | Tapped$ True | ChangeType$ Swamp.Basic,Mountain.Basic,Forest.Basic | SubAbility$ DBGainLife\n\
+        SVar:DBGainLife:DB$ GainLife | Defined$ You | LifeAmount$ 1\nSVar:DBCleanup:DB$ Cleanup | ClearRemembered$ True\n";
+    let p = scripted(&c, script, "BRG");
+    let types = [BasicLandType::Swamp, BasicLandType::Mountain, BasicLandType::Forest].into_iter().collect();
+    match &p.lands[0].kind {
+        LandKind::Fetch { finds, tapped } => {
+            assert_eq!((finds, *tapped), (&LandFilter { basic: true, types }, true), "a basic of its types, tapped")
+        }
+        other => panic!("a fetch, not a land that makes nothing: {other:?}"),
+    }
+    assert_eq!(p.fidelity, Fidelity::Exact);
+}
+
+#[test]
+fn a_land_filter_taking_in_more_than_one_mana_waits_for_the_lands_to_pay_for_it() {
+    // Castle Garenbrig: {T}: Add {G}; {2}{G}{G}, {T}: Add six {G} — two more than tapping it and
+    // four other lands would make, but only once there are four other lands.
+    let c = card("Castle", "Land", "", "G", "");
+    let script = "Name:Castle\nTypes:Land\nA:AB$ Mana | Cost$ T | Produced$ G\n\
+                  A:AB$ Mana | Cost$ 2 G G T | Produced$ G | Amount$ 6\n";
+    let l = land(&scripted(&c, script, "G")).clone();
+    assert_eq!(l.units.len(), 1, "one {{G}} with fewer than five lands");
+    assert_eq!(l.with_lands.map(|(n, u)| (n, u.len())), Some((5, 2)), "two from five lands on");
+}
+
+#[test]
+fn a_dork_making_the_greatest_power_among_your_creatures_makes_at_least_its_own() {
+    // Selvala, Heart of the Wilds: {G}, {T}: Add X mana in any combination of colors, X the greatest
+    // power among creatures you control; she has power 2, so one more than she takes in.
+    let c = card("Selvala", "Legendary Creature — Elf Scout", "{1}{G}{G}", "WUBRG", "");
+    let script = "Name:Selvala\nTypes:Legendary Creature Elf Scout\nPT:2/3\n\
+                  A:AB$ Mana | Cost$ G T | Produced$ Combo Any | Amount$ X\n\
+                  SVar:X:Count$Valid Creature.YouCtrl$GreatestCardPower\n";
+    let p = scripted(&c, script, "G");
+    assert_eq!(rock_units(&p), ["G"], "she nets one mana, not none");
+    assert!(p.undercounted, "with bigger creatures she makes more");
+    // The greatest power among creatures that entered this turn may be none at all.
+    let script = script.replace("Creature.YouCtrl$", "Creature.YouCtrl+ThisTurnEntered$");
+    assert_eq!(effect(&scripted(&c, &script, "G")), &Effect::Other, "{{G}} in, one counted out: nothing gained");
+}
+
+#[test]
+fn a_search_for_a_kind_of_land_it_cant_tell_apart_says_it_finds_more() {
+    // Into the North: a snow land, read as any land.
+    let c = card("North", "Sorcery", "{1}{G}", "", "");
+    let script = "Name:North\nTypes:Sorcery\n\
+        A:SP$ ChangeZone | Origin$ Library | Destination$ Battlefield | ChangeType$ Land.Snow | Tapped$ True | ChangeNum$ 1\n";
+    let p = scripted(&c, script, "G");
+    assert!(matches!(effect(&p), Effect::LandRamp { finds: LandFilter { basic: false, .. }, .. }));
+    match p.fidelity {
+        Fidelity::Approximate(why) => assert!(why.contains("counted as one for any land"), "{why}"),
+        other => panic!("a snow search isn't exact: {other:?}"),
+    }
+}
+
+#[test]
+fn a_mana_ability_that_makes_a_choice_first_is_read_and_one_that_needs_something_isnt() {
+    // Nykthos: {2}, {T}: Choose a color, add mana of it equal to your devotion to it.
+    let c = card("Shrine", "Legendary Land", "", "WUBRGC", "");
+    let script = "Name:Shrine\nTypes:Legendary Land\nA:AB$ Mana | Cost$ T | Produced$ C\n\
+                  A:AB$ ChooseColor | Cost$ 2 T | SubAbility$ DBMana\n\
+                  SVar:DBMana:DB$ Mana | Produced$ Chosen | Amount$ X\nSVar:X:Count$Devotion.Chosen\n";
+    let p = scripted(&c, script, "G");
+    assert!(p.undercounted, "its devotion mana is read, as more than it's counted");
+    assert!(matches!(p.fidelity, Fidelity::Approximate(_)), "{:?}", p.fidelity);
+    // Deathrite Shaman: {T}: Exile target land card from a graveyard, then add one mana of any colour.
+    let c = card("Shaman", "Creature — Elf Shaman", "{B/G}", "WUBRG", "");
+    let script = "Name:Shaman\nTypes:Creature Elf Shaman\n\
+                  A:AB$ ChangeZone | Cost$ T | Origin$ Graveyard | Destination$ Exile | ValidTgts$ Land | SubAbility$ DBMana\n\
+                  SVar:DBMana:DB$ Mana | Produced$ Any\n";
+    assert_eq!(effect(&scripted(&c, script, "BG")), &Effect::Other, "no land in a graveyard, no mana");
+}
+
+#[test]
+fn a_card_that_makes_your_other_spells_cheaper_is_ramp_the_goldfish_doesnt_play() {
+    // Goreclaw: creature spells you cast with power 4 or greater cost {2} less. Tagger doesn't call
+    // that ramp.
+    let c = card("Bear Lord", "Legendary Creature — Bear", "{3}{G}", "", "");
+    let script = "Name:Bear Lord\nTypes:Legendary Creature Bear\n\
+                  S:Mode$ ReduceCost | ValidCard$ Creature.powerGE4 | Type$ Spell | Activator$ You | Amount$ 2\n";
+    let p = scripted(&c, script, "G");
+    assert_eq!(p.unplayed, Some(Role::Ramp));
+    assert_eq!(p.left_out, Some(crate::profile::LeftOut::Engine), "cheaper spells every turn");
+    // Making itself cheaper isn't ramp: it's just a cheaper spell.
+    let c = card("Monitor", "Artifact Creature — Construct", "{6}{U}", "", "");
+    let script = "Name:Monitor\nTypes:Artifact Creature Construct\nK:Affinity:Artifact\n\
+                  S:Mode$ ReduceCost | ValidCard$ Card.Self | Type$ Spell | Amount$ X | EffectZone$ All\n";
+    assert_eq!(scripted(&c, script, "U").unplayed, None);
+}
+
+#[test]
+fn a_commander_that_makes_spells_cheaper_makes_the_numbers_rough() {
+    // Animar: creature spells you cast cost {1} less for each +1/+1 counter on it.
+    let cmd = Card {
+        identity: ColorSet::from_letters("G").unwrap(),
+        ..card("Animar", "Legendary Creature — Elemental", "{G}", "", "")
+    };
+    let reducer = edh_data::forge::Script::parse(
+        "Name:Animar\nTypes:Legendary Creature Elemental\n\
+         S:Mode$ ReduceCost | ValidCard$ Creature | Type$ Spell | Activator$ You | Amount$ X\nSVar:X:Count$CardCounters.P1P1\n",
+    )
+    .unwrap();
+    let forest = basic("Forest", "G");
+    let forest_script = edh_data::forge::Script::parse("Name:Forest\nTypes:Basic Land Forest\n").unwrap();
+    let bear = filler("{2}");
+    let entries = [
+        DeckEntry { card: &cmd, qty: 1, commander: true, script: Some(&reducer) },
+        DeckEntry { card: &forest, qty: 40, commander: false, script: Some(&forest_script) },
+        DeckEntry { card: &bear, qty: 59, commander: false, script: None },
+    ];
+    let r = run(&entries, 200, 1);
+    assert_eq!(r.doubts.commander_ramp, ["Animar"], "its cost reduction isn't played");
+    assert_eq!(r.doubts.confidence, crate::Confidence::Rough);
+}
+
+#[test]
+fn a_script_it_cant_read_leaves_the_card_to_its_oracle_text_and_says_so() {
+    let c = card("Odd Rock", "Artifact", "{3}", "C", "{T}: Add {C}{C}.");
+    let script = "Name:Odd Rock\nTypes:Artifact\nA:AB$ Mana | Cost$ T | Produced$ Special DoubleManaInPool\n";
+    let p = scripted(&c, script, "G");
+    assert_eq!(rock_units(&p), ["C", "C"], "read from oracle text");
+    assert!(matches!(p.fidelity, Fidelity::Unreadable(_)), "{:?}", p.fidelity);
+    assert_eq!(profile(&c, "G").fidelity, Fidelity::NoScript, "without a script, it says there's none");
 }
 
 // --- whole games ----------------------------------------------------------------------------------

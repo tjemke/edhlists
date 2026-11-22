@@ -56,7 +56,7 @@ edh-scout scout krenko --plain --top 15 --export out # table on stdout + report.
 edh-scout favorites                                  # the decks you starred (* in the browser)
 edh-scout check mydeck.txt                           # score a local list (any common export format)
 edh-scout check mydeck.txt -T equipment -T ramp=10+  # ... and count what it runs
-edh-scout sync                                       # refresh prices / Game Changers / combos
+edh-scout sync                                       # refresh prices / Game Changers / combos / Forge's scripts
 ```
 
 Names are matched loosely (any order, case, accents and punctuation ignored: `kraum lud`, `ludevics`).
@@ -220,6 +220,9 @@ threads = 4
 # Games the mana goldfish plays per deck for the details, `check` and report.md (default: 5000,
 # about 0.1 s a deck); 0 turns it off.
 games = 5000
+# Forge's card scripts to read (its res/cardsfolder) instead of the ones `sync` downloads, e.g.
+# from an installed Forge. EDH_SCOUT_FORGE_CARDS overrides it.
+forge_cards = "/usr/share/forge/res/cardsfolder"
 ```
 
 ### Exports (proxies)
@@ -246,9 +249,23 @@ then its biggest spells, paying coloured costs from the lands and rocks that mak
 (check, snarl, fast, slow and shock lands, fetches, bounce lands and modal double-faced cards
 included). It reports how often the commander is out by turn 4, the mana on turn 4 against a land
 a turn, how often colours held the commander up, and the cards most often stuck on colours (more
-than 0.5% of games). It sticks to mana: ramp and draw it doesn't play (Swamp doublers, cost
-reducers, Treasure, draws that need combat or an opponent) are named as not counted. It doesn't
-measure strength: opponents, combat and tutors aren't in it.
+than 0.5% of games). It doesn't measure strength: opponents, combat and tutors aren't in it.
+
+It reads what each card does for mana from [Forge](https://github.com/Card-Forge/forge)'s card
+scripts, which say it as data (what a mana ability costs and makes, when a land enters tapped,
+what a search puts onto the battlefield), and from oracle text where a card has no script or one
+it can't read; card draw is still read from oracle text. `sync` downloads the scripts from Forge's
+latest release (about 250 MB with the rest of its source, kept as 7 MB; again only when Forge has
+released since). A Nix build of edh-scout reads them from nixpkgs' `forge-mtg` instead, and
+`[goldfish] forge_cards` or `EDH_SCOUT_FORGE_CARDS` can point at any Forge's `res/cardsfolder`.
+
+It sticks to mana, and says when that makes its numbers doubtful. Ramp it doesn't play — mana
+engines (Swamp doublers, cost reducers, extra land drops), one-shot mana (Treasure, rituals), a
+commander's own mana — and mana sources it couldn't read are weighed by how much they'd move the
+mana on turn 4. When it's likely more than 0.2, the Mana label turns yellow and the line under the
+numbers says why (`≈ rough: leaves out 2 mana engines (Crypt Ghast, Bubbling Muck)`); red and
+`≈ poor` when it's clearly more, or the commander's own mana is left out on top. Otherwise a dim
+line lists the ramp and draw it doesn't count.
 
 **Target.** `-b 2-3` (default) means "EDHPowerLevel would call it bracket 2 or 3", i.e. power
 4.7–7.7 using the site's own power→bracket curve, with no rule pushing it higher. `-p` sets an
@@ -277,6 +294,7 @@ reused for free, so repeated runs grow the pool.
 | EDHREC | deck tables, deck pages, commander synergy, combo votes, top-salt list, theme list and pages, card pages | 1 table + 2 side pages per commander and 1 salt list (cached 1–14 days); 1 per new deck (kept for good); 1 per theme (+1 for the theme list) and per card a `-T` asks for when searching across commanders |
 | Scryfall | `default_cards` bulk (cheapest printing prices, Game Changers, oracle text) and `oracle_tags` bulk (card roles, `otag:` searches) | 4 per `sync` |
 | Commander Spellbook | full combo dump | 1 per `sync` |
+| Forge (GitHub) | card scripts for the mana goldfish, from the latest release's source | 1 per `sync` (its latest release), +1 when there's a new one (~250 MB) |
 | EDHPowerLevel | nothing — scored locally; links go to the site | 0 |
 
 Requests are strictly sequential with a per-host minimum gap (2 s for EDHREC deck pages, 1 s for
@@ -288,7 +306,7 @@ Where things live (XDG):
 
 | Path | Contents | If deleted |
 |---|---|---|
-| `$XDG_CACHE_HOME/edh-scout` (`~/.cache/…`) | bulk downloads, the card/combo databases built from them, EDHREC pages that expire anyway | re-downloaded by the next `sync` / run |
+| `$XDG_CACHE_HOME/edh-scout` (`~/.cache/…`) | bulk downloads, the card/combo databases and Forge's scripts built from them, EDHREC pages that expire anyway | re-downloaded by the next `sync` / run |
 | `$XDG_CACHE_HOME/edh-scout/pages` | the deck pages as fetched, `<urlhash>.html.gz` (~35 KB each) | nothing lost: the database has every deck |
 | `$XDG_STATE_HOME/edh-scout/decks.sqlite` (`~/.local/state/…`) | every fetched decklist, parsed, with EDHREC's deck data it was read from (~5 KB a deck), and its score; your favorites | rebuilt from the page cache while that lasts; otherwise each deck costs a request again. The favorites are lost |
 | `$XDG_CONFIG_HOME/edh-scout/config.toml` (`~/.config/…`) | optional settings, see [Config file](#config-file) | defaults apply |

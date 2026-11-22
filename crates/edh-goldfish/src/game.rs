@@ -63,7 +63,7 @@ impl Deck {
         let mut deck = Deck { profiles: Vec::new(), library: Vec::new(), commanders: Vec::new(), identity };
         for e in entries {
             let i = deck.profiles.len();
-            deck.profiles.push(Profile::of(e.card, identity));
+            deck.profiles.push(Profile::of(e.card, e.script, identity));
             if e.commander {
                 deck.commanders.push(i);
             } else {
@@ -75,6 +75,10 @@ impl Deck {
 
     pub fn play(&self, rng: Rng) -> Record {
         Game::new(self, rng).play()
+    }
+
+    pub(crate) fn is_commander(&self, profile: usize) -> bool {
+        self.commanders.contains(&profile)
     }
 
     fn identity_kinds(&self) -> ManaSet {
@@ -689,6 +693,7 @@ impl Totals {
                 v.dedup();
                 v
             },
+            doubts: crate::doubts::doubts(deck),
         }
     }
 }
