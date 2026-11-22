@@ -97,6 +97,15 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
 
 ## Maybe
 
+- [ ] **Say how much of a deck synergy could see.** Cards missing from the commander's EDHREC
+  page count as 0, so a deck on a different plan from the page reads as about 0% with nothing
+  saying why. Grand Arbiter Augustin IV deck `WsFaOHEZG81j3vpcqtUclA` (equipment and auras, the
+  page being mostly stax): 4 of its 64 nonland cards are on the page, all mana rocks (−0.05 to
+  +0.05), so it averages −0.09% and shows as "−0.1%". Keep a listed-card count in `Synergy`
+  (`analysis.rs`) and show it next to the average in the detail view (`view.rs`), e.g.
+  "−0.1% (4/64 cards on EDHREC's page)"; perhaps leave a deck out of the synergy percentile
+  below some share listed. *Small*; the percentile part changes rankings.
+
 - [ ] **Keep the mana goldfish to mana development, and add a mechanic only when it moves the
   numbers.** Its scope is lands, mana sources and what they cost, colours, land drops and plain
   card counts; combat, opponents, graveyards, the stack and commanders' own abilities are out.
