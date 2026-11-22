@@ -97,6 +97,7 @@ impl TypeField {
     /// [`name`](Self::name), short enough for a column header.
     pub fn short_name(self) -> &'static str {
         match self {
+            TypeField::Creatures => "creats",
             TypeField::Enchantments => "enchants",
             TypeField::Planeswalkers => "walkers",
             other => other.name(),
@@ -729,26 +730,40 @@ pub fn count_columns(filters: &[CompiledFilter]) -> Vec<CountColumn> {
         .collect()
 }
 
-/// A column header / detail label for the `i`th card filter: the label itself if it is short, a
-/// short name for EDHREC's counts (`walkers`), else the value of a single `key:value` term, else
-/// `Q1`, `Q2`, ...
+/// A column header / detail label for the `i`th card filter: a short name for EDHREC's counts
+/// (`walkers`) and for a few common words (`equip`), else the label itself if it is short, else the
+/// value of a single `key:value` term (shortened the same way), else `Q1`, `Q2`, ...
 pub fn short_label(label: &str, i: usize) -> String {
     const MAX: usize = 9;
-    if label.chars().count() <= MAX {
-        return label.to_string();
-    }
     if let Ok(field) = label.parse::<TypeField>() {
         return field.short_name().to_string();
+    }
+    if let Some(short) = short_word(label) {
+        return short.to_string();
+    }
+    if label.chars().count() <= MAX {
+        return label.to_string();
     }
     if !label.contains(' ')
         && let Some((_, value)) = label.split_once(':')
     {
         let value = value.trim_matches('"');
+        if let Some(short) = short_word(value) {
+            return short.to_string();
+        }
         if !value.is_empty() && value.chars().count() <= MAX {
             return value.to_string();
         }
     }
     format!("Q{}", i + 1)
+}
+
+/// Shorter headers for common type-line words that take up a wide column.
+fn short_word(word: &str) -> Option<&'static str> {
+    match word.to_lowercase().as_str() {
+        "equipment" => Some("equip"),
+        _ => None,
+    }
 }
 
 /// The EDHREC themes whose commanders are worth searching for these table filters (empty: no
@@ -1096,7 +1111,7 @@ mod tests {
         let cols = count_columns(&compiled);
         assert_eq!(
             cols.iter().map(|c| (c.filter, c.label.as_str())).collect::<Vec<_>>(),
-            vec![(1, "equipment"), (3, "treasure")]
+            vec![(1, "equip"), (3, "treasure")]
         );
     }
 
@@ -1123,20 +1138,24 @@ mod tests {
         assert_eq!(describe(&table, &compiled), "10+ planeswalkers, ≤2 artifacts, 36 lands, 1+ equipment");
         assert_eq!(
             count_columns(&compiled).iter().map(|c| (c.filter, c.label.as_str())).collect::<Vec<_>>(),
-            vec![(0, "walkers"), (1, "equipment"), (2, "artifacts")],
+            vec![(0, "walkers"), (1, "equip"), (2, "artifacts")],
             "lands=36 lets a single count through, so it gets no column"
         );
     }
 
     #[test]
     fn labels_for_columns() {
-        assert_eq!(short_label("equipment", 0), "equipment");
+        assert_eq!(short_label("equipment", 0), "equip");
+        assert_eq!(short_label("t:equipment", 0), "equip", "a key:value term's value is shortened too");
+        assert_eq!(short_label("saga", 0), "saga");
         assert_eq!(short_label("otag:sweeper", 0), "sweeper");
         assert_eq!(short_label(r#"o:"treasure""#, 0), "treasure");
         assert_eq!(short_label(r#"o:"create a treasure""#, 1), "Q2");
         assert_eq!(short_label("t:equipment mv<=2", 2), "Q3");
         assert_eq!(short_label("planeswalkers", 3), "walkers");
         assert_eq!(short_label("enchantments", 3), "enchants");
+        assert_eq!(short_label("creatures", 3), "creats");
+        assert_eq!(short_label("creature", 3), "creats");
     }
 
     #[test]

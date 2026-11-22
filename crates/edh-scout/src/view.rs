@@ -833,7 +833,11 @@ mod tests {
         };
         assert_eq!(
             text(&wrap_lines(vec![matched_line(&m, 0)], 40)),
-            ["equipment  3   Bonesplitter · Sword of", "           Fire and Ice · Lizard Blades"]
+            [
+                "equip      3   equipment  Bonesplitter ·",
+                "           Sword of Fire and Ice ·",
+                "           Lizard Blades"
+            ]
         );
         let q = Matched {
             label: r#"o:"create a treasure""#.into(),

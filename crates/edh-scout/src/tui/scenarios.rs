@@ -492,7 +492,7 @@ fn every_t_gets_a_count_column_in_the_order_given() {
     let mut b = Browser::open_counting(&w, &args, &[("a", deck)]);
     assert_eq!(
         b.count_columns(),
-        ["equipment", "walkers", "creatures", "ramp"],
+        ["equip", "walkers", "creats", "ramp"],
         "EDHREC's counts (planeswalker, creatures) need a column like any other -T; only those that \
          let a single count through (bear=1, lands=0) go without, since every deck shown has it"
     );
@@ -502,7 +502,7 @@ fn every_t_gets_a_count_column_in_the_order_given() {
         "the details should list the planeswalkers counted: {details:#?}"
     );
     assert!(
-        shows(&details, "creatures  2   Grizzly Bears · Lizard Blades"),
+        shows(&details, "creats     2   creatures  Grizzly Bears · Lizard Blades"),
         "counted as EDHREC files cards, an artifact creature is a creature: {details:#?}"
     );
 }

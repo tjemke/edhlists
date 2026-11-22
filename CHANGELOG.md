@@ -24,6 +24,8 @@ What changed in each version, newest first. How versions are numbered: see *Vers
   (life gained, a death, an opponent's spell: The Gaffer, Morbid Opportunist, Sensei's Divining
   Top's way back to the library). On the corpus decks it moves mana on turn 4 by up to 0.12 and the
   draw it says it doesn't play by up to four cards.
+- The count columns for `-T equipment` and `-T creatures` are headed `equip` and `creats`, as
+  `planeswalkers` and `enchantments` already were `walkers` and `enchants`.
 
 ## 0.3.6
 
