@@ -252,12 +252,13 @@ a turn, how often colours held the commander up, and the cards most often stuck 
 than 0.5% of games). It doesn't measure strength: opponents, combat and tutors aren't in it.
 
 It reads what each card does for mana from [Forge](https://github.com/Card-Forge/forge)'s card
-scripts, which say it as data (what a mana ability costs and makes, when a land enters tapped,
-what a search puts onto the battlefield), and from oracle text where a card has no script or one
-it can't read; card draw is still read from oracle text. `sync` downloads the scripts from Forge's
-latest release (about 250 MB with the rest of its source, kept as 7 MB; again only when Forge has
-released since). A Nix build of edh-scout reads them from nixpkgs' `forge-mtg` instead, and
-`[goldfish] forge_cards` or `EDH_SCOUT_FORGE_CARDS` can point at any Forge's `res/cardsfolder`.
+scripts, which say it as data (what a mana ability costs and makes, when a land enters tapped, what
+a search puts onto the battlefield), and from oracle text where a card has no script or one it can't
+read; card draw too (what a spell draws, net of what it discards or puts back; whether a permanent
+draws every turn, once, or only on something a goldfish doesn't do). `sync` downloads the scripts
+from Forge's latest release (about 250 MB with the rest of its source, kept as 7 MB; again only when
+Forge has released since). A Nix build of edh-scout reads them from nixpkgs' `forge-mtg` instead,
+and `[goldfish] forge_cards` or `EDH_SCOUT_FORGE_CARDS` can point at any Forge's `res/cardsfolder`.
 
 It sticks to mana, and says when that makes its numbers doubtful. Ramp it doesn't play — mana
 engines (Swamp doublers, cost reducers, extra land drops), one-shot mana (Treasure, rituals), a

@@ -1200,6 +1200,130 @@ fn a_land_creature_enters_as_if_tapped() {
     assert_eq!(land(&scripted(&c, script, "G")).enters, Enters::Tapped);
 }
 
+/// A card Scryfall Tagger says draws, read from this Forge script.
+fn draw_read(type_line: &str, cost: &str, script: &str) -> Effect {
+    let c = Card { tagged: true, roles: Role::Draw.into(), ..card("Drawer", type_line, cost, "", "") };
+    let script = format!("Name:Drawer\nTypes:{}\n{script}", type_line.replace(" — ", " "));
+    scripted(&c, &script, "UB").spell.expect("a spell").effect
+}
+
+#[test]
+fn a_scripted_spell_draws_its_cards_less_what_it_puts_back_or_discards() {
+    let brainstorm = "A:SP$ Draw | NumCards$ 3 | SubAbility$ Back\n\
+                      SVar:Back:DB$ ChangeZone | Origin$ Hand | Destination$ Library | ChangeNum$ 2 | Mandatory$ True\n";
+    assert_eq!(draw_read("Instant", "{U}", brainstorm), Effect::Draw { cards: 1 }, "Brainstorm puts two back");
+    let looting =
+        "A:SP$ Draw | NumCards$ 2 | SubAbility$ Discard\nSVar:Discard:DB$ Discard | NumCards$ 2 | Mode$ TgtChoose\n";
+    assert_eq!(draw_read("Sorcery", "{R}", looting), Effect::Draw { cards: 0 }, "Faithless Looting nets nothing");
+    let cost = "A:SP$ Draw | Cost$ 3 R Discard<1/Card/card> | NumCards$ 2 | Defined$ You\n";
+    assert_eq!(draw_read("Instant", "{3}{R}", cost), Effect::Draw { cards: 1 }, "a card discarded to cast it");
+    let wheel = "A:SP$ Discard | Defined$ Player | Mode$ Hand | SubAbility$ Seven\nSVar:Seven:DB$ Draw | Defined$ Player | NumCards$ 7\n";
+    assert_eq!(draw_read("Sorcery", "{2}{R}", wheel), Effect::Draw { cards: 4 }, "seven for a hand of about three");
+}
+
+#[test]
+fn a_modal_spell_draws_its_best_mode_as_many_times_as_it_may_be_chosen() {
+    // Mystic Confluence: choose three, the same mode more than once.
+    let confluence = "A:SP$ Charm | Choices$ Bounce,Draw | CharmNum$ 3 | CanRepeatModes$ True\n\
+                      SVar:Bounce:DB$ ChangeZone | Origin$ Battlefield | Destination$ Hand | ValidTgts$ Creature\n\
+                      SVar:Draw:DB$ Draw | Defined$ You | NumCards$ 1\n";
+    assert_eq!(draw_read("Instant", "{3}{U}{U}", confluence), Effect::Draw { cards: 3 });
+    // Modes paid for with pawprints can't all be the drawing one.
+    let season = confluence.replace("CanRepeatModes$ True", "CanRepeatModes$ True | Pawprint$ 5");
+    assert_eq!(draw_read("Sorcery", "{4}{U}", &season), Effect::Draw { cards: 1 });
+}
+
+#[test]
+fn a_draw_at_each_upkeep_or_on_your_own_spells_is_an_engine_and_one_that_waits_for_more_isnt() {
+    let upkeep = "T:Mode$ Phase | Phase$ Upkeep | ValidPlayer$ You | TriggerZones$ Battlefield | Execute$ Draw\n\
+                  SVar:Draw:DB$ Draw | Defined$ You | NumCards$ 1\n";
+    assert_eq!(draw_read("Enchantment", "{1}{B}{B}", upkeep), Effect::Engine, "Phyrexian Arena");
+    let spells = "T:Mode$ SpellCast | ValidCard$ Creature | ValidActivatingPlayer$ You | Execute$ Draw | TriggerZones$ Battlefield\n\
+                  SVar:Draw:DB$ Draw | Defined$ You | NumCards$ 1\n";
+    assert_eq!(draw_read("Creature — Elf Druid", "{4}{G}", spells), Effect::Engine, "Beast Whisperer");
+    let it_or_another = "T:Mode$ ChangesZone | Origin$ Any | Destination$ Battlefield | ValidCard$ Card.Self,Enchantment.Other+YouCtrl | Execute$ Draw\n\
+                         SVar:Draw:DB$ Draw | Defined$ You | NumCards$ 1\n";
+    assert_eq!(
+        draw_read("Enchantment Creature — Spirit", "{2}{G}{G}", it_or_another),
+        Effect::Engine,
+        "Eidolon of Blossoms"
+    );
+    let life_gained = "T:Mode$ Phase | Phase$ End of Turn | TriggerZones$ Battlefield | CheckSVar$ Gained | SVarCompare$ GE3 | Execute$ Draw\n\
+                       SVar:Draw:DB$ Draw\nSVar:Gained:Count$LifeYouGainedThisTurn\n";
+    assert_eq!(draw_read("Creature — Halfling", "{2}{W}", life_gained), Effect::Other, "The Gaffer needs life gained");
+    let deaths = "T:Mode$ ChangesZoneAll | TriggerZones$ Battlefield | ValidCards$ Creature.Other | Origin$ Battlefield | Destination$ Graveyard | Execute$ Draw\n\
+                  SVar:Draw:DB$ Draw\n";
+    assert_eq!(
+        draw_read("Creature — Human Rogue", "{2}{B}", deaths),
+        Effect::Other,
+        "Morbid Opportunist needs a death"
+    );
+    let opponents = "T:Mode$ SpellCast | ValidCard$ Card | ValidActivatingPlayer$ Opponent | TriggerZones$ Battlefield | Execute$ Draw\n\
+                     SVar:Draw:DB$ Draw | Defined$ You | UnlessCost$ 1 | UnlessPayer$ TriggeredActivator\n";
+    assert_eq!(draw_read("Enchantment", "{2}{U}", opponents), Effect::Other, "Rhystic Study needs an opponent");
+}
+
+#[test]
+fn a_card_dug_into_hand_each_upkeep_is_a_draw() {
+    // Dark Confidant reveals the top card and puts it into hand.
+    let bob = "T:Mode$ Phase | Phase$ Upkeep | ValidPlayer$ You | TriggerZones$ Battlefield | Execute$ Dig\n\
+               SVar:Dig:DB$ Dig | DigNum$ 1 | Reveal$ True | ChangeNum$ All | ChangeValid$ Card | DestinationZone$ Hand\n";
+    assert_eq!(draw_read("Creature — Human Wizard", "{1}{B}", bob), Effect::Engine);
+}
+
+#[test]
+fn a_tap_draw_is_an_engine_unless_it_discards_or_moves_itself() {
+    let tap = "A:AB$ Draw | Cost$ 2 T | NumCards$ 1\n";
+    assert_eq!(draw_read("Artifact", "{3}", tap), Effect::Engine);
+    let rummage = "A:AB$ Draw | Cost$ 2 T | SubAbility$ Discard\nSVar:Discard:DB$ Discard | Mode$ TgtChoose\n";
+    assert_eq!(draw_read("Artifact", "{1}", rummage), Effect::Other, "Currency Converter rummages");
+    let top = "A:AB$ Draw | Cost$ T | Defined$ You | NumCards$ 1 | SubAbility$ Back\n\
+               SVar:Back:DB$ ChangeZone | Defined$ Self | Origin$ Battlefield | Destination$ Library | LibraryPosition$ 0\n";
+    assert_eq!(draw_read("Artifact", "{1}", top), Effect::Other, "Sensei's Divining Top goes back on the library");
+    let plus = "A:AB$ Draw | Cost$ AddCounter<1/LOYALTY> | Planeswalker$ True | Defined$ You | NumCards$ 1\n";
+    assert_eq!(draw_read("Legendary Planeswalker — Teferi", "{3}{W}{U}", plus), Effect::Engine, "a + loyalty draw");
+}
+
+#[test]
+fn a_draw_as_it_enters_or_is_cast_is_once() {
+    let enters = "T:Mode$ ChangesZone | Origin$ Any | Destination$ Battlefield | ValidCard$ Card.Self | Execute$ Draw\n\
+                  SVar:Draw:DB$ Draw | Defined$ You | NumCards$ 1\n";
+    assert_eq!(draw_read("Enchantment", "{1}{U}", enters), Effect::Draw { cards: 1 }, "Proft's Eidetic Memory");
+    let cast =
+        "T:Mode$ SpellCast | ValidCard$ Card.Self | Execute$ Draw\nSVar:Draw:DB$ Draw | Defined$ You | NumCards$ 4\n";
+    assert_eq!(
+        draw_read("Legendary Creature — Eldrazi", "{10}", cast),
+        Effect::Draw { cards: 4 },
+        "Kozilek, Butcher of Truth"
+    );
+}
+
+#[test]
+fn a_draw_for_an_opponent_or_for_sacrificing_another_creature_isnt_counted() {
+    // Tataru Taru: you draw, and an opponent may.
+    let tataru = "T:Mode$ ChangesZone | ValidCard$ Card.Self | Destination$ Battlefield | Execute$ Draw\n\
+                  SVar:Draw:DB$ Draw | SubAbility$ Theirs\nSVar:Theirs:DB$ Draw | ValidTgts$ Opponent | OptionalDecider$ Opponent\n";
+    assert_eq!(draw_read("Legendary Creature — Dwarf Advisor", "{1}{U}", tataru), Effect::Draw { cards: 1 });
+    // Disciple of Bolas: sacrifice another creature, draw cards equal to its power.
+    let bolas = "T:Mode$ ChangesZone | Origin$ Any | Destination$ Battlefield | ValidCard$ Card.Self | Execute$ Sac\n\
+                 SVar:Sac:DB$ Sacrifice | SacValid$ Creature.Other | SubAbility$ Draw\nSVar:Draw:DB$ Draw | NumCards$ X\n\
+                 SVar:X:Sacrificed$CardPower\n";
+    assert_eq!(draw_read("Creature — Human Wizard", "{3}{B}", bolas), Effect::Other);
+}
+
+#[test]
+fn a_wheel_counts_the_hand_it_shuffles_away_whichever_way_its_scripted() {
+    // Day's Undoing shuffles hand and graveyard away, then draws seven; Winds of Change does it for
+    // each player in turn, drawing as many as it shuffled.
+    let undoing = "A:SP$ ChangeZoneAll | ChangeType$ Card | Origin$ Hand,Graveyard | Destination$ Library | Shuffle$ True | SubAbility$ Seven\n\
+                   SVar:Seven:DB$ Draw | NumCards$ 7 | Defined$ Player\n";
+    assert_eq!(draw_read("Sorcery", "{2}{U}", undoing), Effect::Draw { cards: 4 });
+    let winds = "A:SP$ RepeatEach | RepeatPlayers$ Player | RepeatSubAbility$ Shuffle\n\
+                 SVar:Shuffle:DB$ ChangeZoneAll | Defined$ Player.IsRemembered | Origin$ Hand | Destination$ Library | RememberChanged$ True | SubAbility$ Draw\n\
+                 SVar:Draw:DB$ Draw | NumCards$ X | Defined$ Player.IsRemembered\nSVar:X:Remembered$Amount\n";
+    assert_eq!(draw_read("Sorcery", "{R}", winds), Effect::Draw { cards: 0 }, "as many back as it shuffled away");
+}
+
 #[test]
 fn a_land_using_up_depletion_counters_is_read_like_one_using_charge_counters() {
     // Hickory Woodlot: {T}, remove a depletion counter: Add {G}{G}; two uses, then it's sacrificed.

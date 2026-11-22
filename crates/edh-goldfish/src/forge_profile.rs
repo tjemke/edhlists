@@ -1,12 +1,12 @@
 //! What a card does for a deck's mana, read from its Forge script ([`edh_data::forge`]): what its
 //! mana abilities make and take in, when a land enters tapped, what it fetches or bounces as it
-//! enters, what a ramp spell or ability puts onto the battlefield.
+//! enters, what a ramp spell or ability puts onto the battlefield, what a card draws.
 //!
 //! Only those fields are read, and only in the shapes Forge writes them in (surveyed across its
 //! ~34,000 scripts). A shape the reader doesn't know on a line that matters makes the card
 //! [`Fidelity::Unreadable`]: it's read from oracle text instead, and the deck's numbers say so.
-//! A known simplification makes it [`Fidelity::Approximate`]. Card draw is still read from
-//! oracle text.
+//! A known simplification makes it [`Fidelity::Approximate`]. Card draw is read for cards Scryfall
+//! Tagger says draw; a spell whose script shows no draw is left to oracle text.
 
 use edh_data::cards::Card;
 use edh_data::flags::{EnumSet, Flag};
@@ -600,11 +600,18 @@ impl Reader {
         if let Some(ramp) = self.land_ramp(face, types) {
             return ramp;
         }
-        // Card draw: from oracle text, unless it reads as mana the script doesn't make.
-        match oracle.spell.as_ref().map(|s| &s.effect) {
-            Some(e @ (Effect::Draw { .. } | Effect::Engine)) => e.clone(),
-            _ => Effect::Other,
+        // Card draw, for a card Scryfall Tagger says draws (oracle text says, untagged): from the
+        // script, or from oracle text for a spell whose script shows no draw (Fact or Fiction's
+        // piles).
+        let oracle_draw = match oracle.spell.as_ref().map(|s| &s.effect) {
+            Some(e @ (Effect::Draw { .. } | Effect::Engine)) => Some(e.clone()),
+            _ => None,
+        };
+        let draws = if card.tagged { card.roles.contains(Role::Draw) } else { oracle_draw.is_some() };
+        if !draws {
+            return Effect::Other;
         }
+        draw(face, types).or(oracle_draw).unwrap_or(Effect::Other)
     }
 
     /// An Aura's extra mana from the land it enchants (Wild Growth, Utopia Sprawl).
@@ -683,6 +690,250 @@ impl Reader {
 }
 
 const BASIC_TYPES: &[&str] = &["Plains", "Island", "Swamp", "Mountain", "Forest"];
+
+/// Cards drawn for an amount that depends on the game, as many as a typical one draws; X counts 2.
+const VARIABLE_DRAW: i32 = 3;
+
+/// What a face draws, by its script: a spell's cards, net of what it discards or puts back; a
+/// permanent's draw every turn ([`Effect::Engine`]: a trigger a goldfish sets off, an ability it
+/// can use every turn for a card more), or once (as it enters, or sacrificing itself); `Other` for
+/// a permanent whose draws need what a goldfish doesn't have (a death, life gained, an opponent).
+/// `None` for a spell whose script shows no draw.
+fn draw(face: &Face, types: &Types) -> Option<Effect> {
+    let cards = |n: i32| Effect::Draw { cards: n.clamp(0, i32::from(u8::MAX)) as u8 };
+    if !types.is_permanent() {
+        let start = face.lines_with("A").find(|l| params(l).first().is_some_and(|(k, _)| *k == "SP"))?;
+        let d = drawn(face, start);
+        return d.any.then(|| cards(d.net - discarded_in_cost(&params(start))));
+    }
+    let planeswalker = types.is(CardType::Planeswalker);
+    for line in face.lines_with("T") {
+        let p = params(line);
+        if every_turn(&p) && param(&p, "Execute").and_then(|e| face.svar(e)).is_some_and(|e| drawn(face, e).net > 0) {
+            return Some(Effect::Engine);
+        }
+    }
+    let mut once = None;
+    for line in face.lines_with("A") {
+        let p = params(line);
+        if !matches!(p.first(), Some(("AB", _))) || waits(&p) {
+            continue;
+        }
+        let d = drawn(face, line);
+        if d.net <= 0 {
+            continue;
+        }
+        let cost = param(&p, "Cost").unwrap_or("");
+        if param(&p, "Planeswalker").is_some() {
+            // A + or 0 loyalty ability can be used every turn; a − one is a long way off.
+            if cost.starts_with("AddCounter<") || cost.starts_with("SubCounter<0/") {
+                return Some(Effect::Engine);
+            }
+            continue;
+        }
+        let c = Cost::parse(cost);
+        if c.sacrifices_itself && !c.other {
+            once.get_or_insert(d.net);
+        } else if !planeswalker
+            && !c.other
+            && c.sacrifices_lands == 0
+            && (c.taps || c.mana_in > 0 || c.life)
+            && !d.moves_itself
+        {
+            return Some(Effect::Engine);
+        }
+    }
+    // As it enters, or as it's cast (Kozilek, Butcher of Truth).
+    let entering = self_entering(face).into_iter().chain(on_casting(face)).map(|e| drawn(face, e).net).find(|n| *n > 0);
+    Some(entering.or(once).map_or(Effect::Other, cards))
+}
+
+/// What an ability's steps draw.
+#[derive(Default)]
+struct Drawn {
+    /// Cards drawn (or dug into hand), less cards discarded or put back from hand.
+    net: i32,
+    /// It draws at all.
+    any: bool,
+    /// It puts itself somewhere else (Sensei's Divining Top: on top of the library).
+    moves_itself: bool,
+    /// It sacrifices something else for the cards (Disciple of Bolas: another creature).
+    sacrifices_another: bool,
+}
+
+/// What `start` and the steps after it draw: its `SubAbility$` chain, what a trigger it sets up
+/// (`DB$ ImmediateTrigger`, `DB$ DelayedTrigger`) executes, and a modal spell's best mode (times
+/// the modes chosen, when one can be chosen again: Mystic Confluence).
+fn drawn(face: &Face, start: &str) -> Drawn {
+    let mut d = Drawn::default();
+    let mut next = vec![start];
+    let mut steps = 0;
+    while let Some(at) = next.pop() {
+        steps += 1;
+        if steps > 16 {
+            break;
+        }
+        let p = params(at);
+        next.extend(param(&p, "SubAbility").and_then(|s| face.svar(s)));
+        let api = p.first().map_or("", |(_, v)| *v);
+        // A draw only if something holds (Rumor Gatherer's second creature this turn, a coin
+        // flip won) isn't counted.
+        let conditional = p.iter().any(|(k, _)| k.starts_with("Condition"));
+        if let Some(n) = param(&p, "Cost").and_then(|c| c.split_whitespace().find_map(|t| t.strip_prefix("Draw<"))) {
+            // Sylvan Library's `Draw<2/You>`.
+            d.net += n.split('/').next().and_then(|n| n.parse().ok()).unwrap_or(1);
+            d.any = true;
+        }
+        match api {
+            "Draw" | "Dig" if conditional => d.any = true,
+            "Draw" if for_you(&p) => {
+                d.net += amount(face, param(&p, "NumCards"));
+                d.any = true;
+            }
+            "Dig" if param(&p, "DestinationZone").is_none_or(|z| z == "Hand") => {
+                let n = match param(&p, "ChangeNum") {
+                    Some("All") => param(&p, "DigNum"),
+                    n => n,
+                };
+                d.net += amount(face, n);
+                d.any = true;
+            }
+            "Discard" if for_you(&p) && matches!(param(&p, "Mode"), Some("TgtChoose" | "Random") | None) => {
+                d.net -= amount(face, param(&p, "NumCards"));
+            }
+            // A hand thrown away for new cards (Wheel of Fortune, Timetwister): about three cards.
+            "Discard" if for_you(&p) && param(&p, "Mode") == Some("Hand") => d.net -= VARIABLE_DRAW,
+            // `Origin$ Hand,Graveyard`: Day's Undoing.
+            "ChangeZoneAll" if param(&p, "Origin").is_some_and(|o| o.split(',').any(|z| z == "Hand")) => {
+                d.net -= VARIABLE_DRAW;
+            }
+            // For each player (Winds of Change): what it does for this deck's.
+            // Not for each other player (Words of Wisdom, Syphon Mind: opponents' cards).
+            "RepeatEach" if param(&p, "RepeatPlayers") == Some("Player") => {
+                next.extend(param(&p, "RepeatSubAbility").and_then(|s| face.svar(s)));
+            }
+            // Brainstorm puts two back, Scroll Rack exiles them first; not when paying life keeps
+            // them (Sylvan Library).
+            "ChangeZone"
+                if param(&p, "Origin") == Some("Hand")
+                    && param(&p, "Destination") != Some("Battlefield")
+                    && param(&p, "UnlessCost").is_none() =>
+            {
+                d.net -= amount(face, param(&p, "ChangeNum"));
+            }
+            "ChangeZone" if param(&p, "Defined") == Some("Self") && param(&p, "Origin") == Some("Battlefield") => {
+                d.moves_itself = true;
+            }
+            "Sacrifice" if param(&p, "Defined") != Some("Self") => d.sacrifices_another = true,
+            "ImmediateTrigger" | "DelayedTrigger" => next.extend(param(&p, "Execute").and_then(|e| face.svar(e))),
+            // Either way it goes (Tribute to the World Tree: a draw or counters).
+            "Branch" => {
+                for b in ["TrueSubAbility", "FalseSubAbility"] {
+                    next.extend(param(&p, b).and_then(|s| face.svar(s)));
+                }
+            }
+            "Charm" => {
+                let best = param(&p, "Choices")
+                    .unwrap_or("")
+                    .split(',')
+                    .filter_map(|c| face.svar(c.trim()))
+                    .map(|c| drawn(face, c))
+                    .max_by_key(|c| c.net);
+                if let Some(best) = best {
+                    // Modes paid for with pawprints (Season of Gathering) can't all be the best one.
+                    let times = match param(&p, "CanRepeatModes") {
+                        Some("True") if param(&p, "Pawprint").is_none() => {
+                            param(&p, "CharmNum").and_then(|n| n.parse().ok()).unwrap_or(1)
+                        }
+                        _ => 1,
+                    };
+                    d.net += best.net * times;
+                    d.any |= best.any;
+                }
+            }
+            _ => {}
+        }
+    }
+    if d.sacrifices_another {
+        // A goldfish has nothing to spare.
+        d.net = d.net.min(0);
+    }
+    d
+}
+
+/// Whether a step's player is this deck's: you, each player, or a target you can choose yourself.
+fn for_you(p: &[(&str, &str)]) -> bool {
+    // Tataru Taru's second draw is an opponent's.
+    if param(p, "ValidTgts").is_some_and(|t| t.contains("Opponent")) {
+        return false;
+    }
+    match param(p, "Defined") {
+        None
+        | Some("You" | "Player" | "Targeted" | "TargetedPlayer" | "TriggeredPlayer" | "TriggeredCardController") => {
+            true
+        }
+        // `Player.IsRemembered`: each player in turn, this deck's among them.
+        Some(d) => (d.contains("You") || d == "Player.IsRemembered") && !d.contains("Opponent"),
+    }
+}
+
+/// A number of cards: a number, X (as two), or something that depends on the game.
+fn amount(face: &Face, n: Option<&str>) -> i32 {
+    match n {
+        None => 1,
+        Some(n) if n.chars().all(|c| c.is_ascii_digit()) => n.parse().unwrap_or(1),
+        Some(var) => match face.svar(var) {
+            Some("Count$xPaid") => 2,
+            _ => VARIABLE_DRAW,
+        },
+    }
+}
+
+/// Cards discarded to cast it (`Discard<1/Card>`).
+fn discarded_in_cost(p: &[(&str, &str)]) -> i32 {
+    param(p, "Cost").map_or(0, |c| {
+        c.split_whitespace()
+            .filter_map(|t| t.strip_prefix("Discard<"))
+            .map(|n| n.split('/').next().and_then(|n| n.parse::<i32>().ok()).unwrap_or(1))
+            .sum()
+    })
+}
+
+/// Whether an ability or trigger waits for something on the game (`CheckSVar$`: life gained this
+/// turn, a token made; `IsPresent$` on other cards); not a condition on itself (Howling Mine's
+/// untapped).
+fn waits(p: &[(&str, &str)]) -> bool {
+    param(p, "CheckSVar").is_some()
+        || (param(p, "IsPresent").is_some() && param(p, "PresentDefined") != Some("Self"))
+        || param(p, "Activation").is_some()
+        // The city's blessing: ten permanents.
+        || param(p, "Blessing").is_some()
+}
+
+/// Whether a trigger goes off every turn in a goldfish: at a step of each turn (your upkeep, each
+/// draw step), on your own spells, your permanents entering, or your land drops. Not one that needs
+/// an attack, a death, life gained, a discard or an opponent.
+fn every_turn(p: &[(&str, &str)]) -> bool {
+    if waits(p) {
+        return false;
+    }
+    let yours = |v: Option<&str>| v.is_none_or(|v| matches!(v, "You" | "Player"));
+    match p.first() {
+        Some(&("Mode", "Phase")) => yours(param(p, "ValidPlayer")),
+        // Not on casting itself (Kozilek, Butcher of Truth): that's once.
+        Some(&("Mode", "SpellCast" | "SpellCastOrCopy")) => {
+            yours(param(p, "ValidActivatingPlayer")) && param(p, "ValidCard") != Some("Card.Self")
+        }
+        Some(&("Mode", "ChangesZone" | "ChangesZoneAll")) => {
+            let card = param(p, "ValidCard").or(param(p, "ValidCards")).unwrap_or("");
+            // Its own entering is once (`Card.Self`); "it or another" (`Card.Self,Enchantment.Other+
+            // YouCtrl`: Eidolon of Blossoms) is every turn.
+            param(p, "Destination") == Some("Battlefield") && card.contains("YouCtrl") && card != "Card.Self"
+        }
+        Some(&("Mode", "LandPlayed")) => param(p, "ValidCard").is_some_and(|c| c.contains("YouCtrl")),
+        _ => false,
+    }
+}
 
 /// What ramp the goldfish doesn't play does, by the lines of its script.
 fn left_out(script: &Script) -> LeftOut {

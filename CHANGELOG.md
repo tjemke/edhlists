@@ -16,6 +16,14 @@ What changed in each version, newest first. How versions are numbered: see *Vers
   Landscape) are marked as approximate, as are lands using up depletion counters (Hickory Woodlot,
   Peat Bog), which couldn't be read before. On the corpus decks this moves commander by turn 4 by up
   to 1.2 points (Sultai Arisen) and how often colours held it up by up to 1.9.
+- The mana goldfish reads card draw from Forge's scripts too, for the cards Scryfall's tags say
+  draw: what a spell draws net of what it discards or puts back (Brainstorm 1, Mystic Confluence 3,
+  a wheel about 4, Day's Undoing and Timetwister too), and whether a permanent draws every turn (an
+  upkeep trigger, your own spells, your creatures entering: Dark Confidant, Kindred Discovery), once
+  (Proft's Eidetic Memory, Kozilek, Butcher of Truth), or only on something a goldfish doesn't do
+  (life gained, a death, an opponent's spell: The Gaffer, Morbid Opportunist, Sensei's Divining
+  Top's way back to the library). On the corpus decks it moves mana on turn 4 by up to 0.12 and the
+  draw it says it doesn't play by up to four cards.
 
 ## 0.3.6
 

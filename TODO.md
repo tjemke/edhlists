@@ -84,17 +84,16 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   commanders, most with no 15-walker decks; Bolas, Carth, Jace and Chandra now wait in reserve
   and are scanned once the search widens.
 
-- [ ] **Read card draw from Forge's scripts too.** The goldfish reads mana from the scripts
-  (`crates/edh-goldfish/src/forge_profile.rs`) but still takes draw from oracle text
-  (`profile.rs`'s `effect`, kept for cards whose script shows no mana or land search). The
-  scripts say it as data: `SP$ Draw | NumCards$ N`, `T:Mode$ Phase | Phase$ Upkeep` executing
-  `DB$ Draw` (an engine), `AB$ Draw` with what it costs, triggers on `Attacks`/`DamageDone`/an
-  opponent's action (not played). Misreads seen in the third audit (2026-11-21): looters read
-  as a draw every turn (Thrór's Map, Staff of Domination's {5} draw), Splitskin Doll as no card.
-  Do it if a corpus deck shows the oracle reading of a draw
-  moving commander-by-T4 by 2 points or mana on T4 by 0.2 (the stopping rule in the next
-  section); diff every draw-tagged card's reading first, as was done for mana (about 250 of
-  3,700 lands and ramp cards read differently, nearly all better). *Medium.*
+- [ ] **Draw the script reader still gets wrong.** Since 0.3.7 draw is read from Forge's scripts
+  (`draw` in `crates/edh-goldfish/src/forge_profile.rs`); against the blind audit's 461 draw-tagged
+  cards it agrees on 392 (the oracle reader on 358). Left: optional rummages read as engines
+  (Hazoret's Monument, Artist's Talent: the discard is an `UnlessCost`/optional step); draws counted
+  per opponent who doesn't draw extra (Smuggler's Share) or takes a tempting offer (Tempt with
+  Bunnies, as 3); an opponent's choice (Combustible Gearhulk's `GenericChoice`, read as no draw);
+  Fact or Fiction's piles (left to oracle text: 1). Lodestone Bauble's draw for "that player"; a
+  split card's second half (Expansion // Explosion's X draw); Struggle for Project Purity's upkeep
+  draw (a mode chosen as it enters). Mana: Queen's Diamond counts a mana from the start, though it
+  has none until stationed. *Small* each; none moves the corpus.
 
 ## Maybe
 
