@@ -473,6 +473,14 @@ fn draws_that_need_a_death_an_attack_or_a_sacrifice_dont_repeat_in_a_goldfish() 
         "Equipped creature gets +1/-1.\nWhenever equipped creature dies, draw two cards.\nEquip {1}",
     ));
     assert_eq!(effect(&clamp), Effect::Other);
+    let bonny = tagged(card(
+        "Bonny Pall, Clearcutter",
+        "Legendary Creature — Giant Scout",
+        "{3}{G}{U}",
+        "",
+        "Whenever you attack, draw a card, then you may put a land card from your hand or graveyard onto the battlefield.",
+    ));
+    assert_eq!(effect(&bonny), Effect::Other, "a goldfish doesn't attack");
     let greed = tagged(card("Greed", "Enchantment", "{3}{B}", "", "{B}, Pay 2 life: Draw a card."));
     assert_eq!(effect(&greed), Effect::Engine, "can be used every turn");
     let monitor = tagged(card(

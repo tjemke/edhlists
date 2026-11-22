@@ -3,6 +3,11 @@
 What changed in each version, newest first. How versions are numbered: see *Versioning* in
 `AGENTS.md`.
 
+## 0.3.6
+
+- The mana goldfish no longer counts a card drawn "whenever you attack" (Bonny Pall, Clearcutter)
+  as a card every turn: a goldfish doesn't attack.
+
 ## 0.3.5
 
 - The details pane, `check` and the exported report say how a deck's mana develops: a goldfish

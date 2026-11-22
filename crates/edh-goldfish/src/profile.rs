@@ -185,11 +185,11 @@ static MULTIKICKER: LazyLock<Regex> = LazyLock::new(|| re(r"multikicker \{(\d+)\
 /// A land search in a sentence that needs combat or a death first (Bitterthorn's "whenever
 /// equipped creature attacks").
 static NEEDS_COMBAT_OR_DEATH: LazyLock<Regex> =
-    LazyLock::new(|| re(r"attacks|combat damage|\bdies\b|put into a graveyard"));
-/// A draw that waits for something a goldfish doesn't have: combat, a death, an opponent's
-/// spell (Mystic Remora), Treasure (Smaug, Wicked Worm).
+    LazyLock::new(|| re(r"\battacks?\b|combat damage|\bdies\b|put into a graveyard"));
+/// A draw that waits for something a goldfish doesn't have: combat ("whenever you attack":
+/// Bonny Pall), a death, an opponent's spell (Mystic Remora), Treasure (Smaug, Wicked Worm).
 static DRAW_WAITS: LazyLock<Regex> =
-    LazyLock::new(|| re(r"attacks|combat damage|\bdies\b|put into a graveyard|opponent|treasure"));
+    LazyLock::new(|| re(r"\battacks?\b|combat damage|\bdies\b|put into a graveyard|opponent|treasure"));
 /// Lands a land sacrifices as it enters (Lotus Field).
 static SACRIFICE_ON_ENTERING: LazyLock<Regex> =
     LazyLock::new(|| re(r"when this land enters, sacrifice (an?|one|two|three) lands?"));
