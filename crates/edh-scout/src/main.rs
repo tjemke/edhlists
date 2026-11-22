@@ -78,10 +78,11 @@ struct TargetArgs {
 
 #[derive(Args)]
 struct ScoutArgs {
-    /// Commander name. Partial names work; if several commanders match you get to pick.
-    /// May be left out when -T filters are given: then decks are searched across commanders.
-    #[arg(required_unless_present = "types")]
-    commander: Option<String>,
+    /// Commander name, quoted or not (jodah the unifier). Partial names work; if several
+    /// commanders match you get to pick. May be left out when -T filters are given: then decks are
+    /// searched across commanders.
+    #[arg(required_unless_present = "types", value_name = "COMMANDER")]
+    commander: Vec<String>,
     /// Second commander (partner, background, ...).
     #[arg(long, requires = "commander")]
     partner: Option<String>,
@@ -354,7 +355,8 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
     let store = open_store(paths, &status)?;
     status.step("loading EDHREC's salt scores");
     let salt = load_salt(http);
-    let session = match &args.commander {
+    let commander = (!args.commander.is_empty()).then(|| args.commander.join(" "));
+    let session = match &commander {
         Some(name) => start_single(
             http,
             &store,
@@ -1009,5 +1011,34 @@ fn main() -> ExitCode {
             }
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    fn scout(args: &[&str]) -> ScoutArgs {
+        let cli = Cli::try_parse_from(["edh-scout", "scout"].iter().chain(args)).expect("parses");
+        match cli.command {
+            Command::Scout(a) => a,
+            _ => panic!("not scout"),
+        }
+    }
+
+    #[test]
+    fn the_options_are_consistent() {
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn a_commander_name_needs_no_quotes() {
+        let a = scout(&["jodah,", "the", "unifier", "-T", "legendary=30+", "--plain"]);
+        assert_eq!(a.commander.join(" "), "jodah, the unifier", "the words should make up one name");
+        assert_eq!(a.types, ["legendary=30+"], "options after the name are still options");
+        assert_eq!(scout(&["Jodah, the Unifier"]).commander, ["Jodah, the Unifier"], "quoting still works");
+        assert!(scout(&["-T", "equipment=10+"]).commander.is_empty(), "-T alone searches across commanders");
+        assert!(Cli::try_parse_from(["edh-scout", "scout"]).is_err(), "a commander or -T is needed");
     }
 }

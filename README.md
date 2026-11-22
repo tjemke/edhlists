@@ -38,7 +38,7 @@ is cached.
 ## Use
 
 ```sh
-edh-scout scout "Jodah, the Unifier"                 # interactive browser, target brackets 2–3
+edh-scout scout jodah the unifier                    # interactive browser, target brackets 2–3
 edh-scout scout tymna --partner kraum                # partners; partial names work
 edh-scout scout krenko -b 3 --max-price 300          # bracket 3 only, budget cap
 edh-scout scout krenko --price                       # also show EDHREC's deck prices
@@ -59,7 +59,9 @@ edh-scout check mydeck.txt -T equipment -T ramp=10+  # ... and count what it run
 edh-scout sync                                       # refresh prices / Game Changers / combos / Forge's scripts
 ```
 
-Names are matched loosely (any order, case, accents and punctuation ignored: `kraum lud`, `ludevics`).
+Names are matched loosely (any order, case, accents and punctuation ignored: `kraum lud`, `ludevics`),
+and need no quotes: the words after `scout` make up one name. (Only the shell's own characters need
+them: `"Kraum, Ludevic's Opus"`, or leave the apostrophe out.)
 If several commanders match, or none do, a picker opens below the prompt, prefilled with what you
 typed: keep typing to narrow it, `↑↓` and `⏎` to choose (each row shows color identity and EDHREC
 rank to tell look-alikes apart). Without a terminal you get the list of matches instead.

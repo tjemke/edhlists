@@ -3,6 +3,10 @@
 What changed in each version, newest first. How versions are numbered: see *Versioning* in
 `AGENTS.md`.
 
+## 0.3.8
+
+- `scout` takes a commander's name without quotes: `edh-scout scout jodah the unifier`.
+
 ## 0.3.7
 
 - The mana goldfish reads more mana cards right, found by checking how it reads the 1,500 most
