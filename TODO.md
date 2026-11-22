@@ -97,10 +97,16 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
 
 ## Maybe
 
+- [ ] **Let one run lift a configured `max_price`, `max_salt` or `since`.** Since 0.3.8 these
+  can be set in `[search]`, and an option replaces them, but nothing on the command line removes
+  them: a run without the cap needs a big number (`--max-price 100000`, `--since 100000`). An
+  `any`/`none` value for the three options would do (`crates/edh-scout/src/main.rs`, and
+  `since_date` in `crates/edh-data/src/text.rs`). *Small*. Nobody has asked yet.
+
 - [ ] **Put the hand-written `[default: …]` hints where clap puts its own.** In `--help` (the
   long form), clap prints a `default_value` in a paragraph of its own under the help text, while
-  the hints written into doc comments (`--miss-after`, `--widen-every`, `--power`, `--max-salt`,
-  `--max-price`, `--cache-dir`, `--state-dir`, `--config`) stay inline at the end of it; in `-h`
+  the hints written into doc comments (most of `scout`'s options since 0.3.8 moved their
+  defaults into the config, and `--cache-dir`, `--state-dir`, `--config`) stay inline at the end of it; in `-h`
   both are inline. A blank line before a hint would drop it from `-h`, so this would take
   separate `help`/`long_help` strings per option (`crates/edh-scout/src/main.rs`). *Small*;
   cosmetic only.

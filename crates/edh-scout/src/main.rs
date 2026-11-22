@@ -15,9 +15,9 @@ use edh_data::http::{Http, OfflineMiss, summarize_counts};
 use edh_data::progress::{Lines, Progress};
 use edh_data::sync::{SyncWhat, ensure_databases, sync};
 use edh_data::tags::TagIndex;
-use edh_data::text::{commander_slug, date_days_ago, front_face, slugify};
+use edh_data::text::{commander_slug, front_face, since_date, slugify};
 use edh_scout::analysis::score_epoch;
-use edh_scout::config::{Config, PaneLayout};
+use edh_scout::config::{Config, PaneLayout, SearchConfig};
 use edh_scout::export::{self, ExportFormat, ReportInput};
 use edh_scout::filters::{self, CardFilter, CompiledFilter, CountColumn, Filter};
 use edh_scout::rank::{RankMode, Target, Weights, hoist, mix, parse_range, rank};
@@ -68,10 +68,11 @@ enum Command {
 
 #[derive(Args)]
 struct TargetArgs {
-    /// Target Commander brackets, e.g. 3 or 2-3.
-    #[arg(short, long, default_value = "2-3", value_name = "RANGE")]
-    brackets: String,
-    /// Target EDHPowerLevel score band, e.g. 5.5-7 [default: derived from --brackets].
+    /// Target Commander brackets, e.g. 3 or 2-3 [default: 2-3, or the config's search.brackets].
+    #[arg(short, long, value_name = "RANGE")]
+    brackets: Option<String>,
+    /// Target EDHPowerLevel score band, e.g. 5.5-7 [default: the config's search.power unless
+    /// --brackets is given, else derived from the brackets].
     #[arg(short, long, value_name = "RANGE")]
     power: Option<String>,
 }
@@ -100,9 +101,10 @@ struct ScoutArgs {
     #[arg(short = 'T', long = "type", value_name = "WHAT[=RANGE]")]
     types: Vec<String>,
     /// Searching across commanders: how many commanders' deck tables to scan first (1 request
-    /// each). More are scanned, a few at a time, when too few of them have matching decks.
-    #[arg(long, default_value_t = 30, value_name = "N")]
-    commanders: usize,
+    /// each). More are scanned, a few at a time, when too few of them have matching decks
+    /// [default: 30, or the config's search.commanders].
+    #[arg(long, value_name = "N")]
+    commanders: Option<usize>,
     /// Searching across commanders: how many of a commander's decks may fail the card filters,
     /// none passing, before it counts as a miss; too many misses widen the search. Higher gives
     /// each commander longer and widens later [default: 3, or the config's search.miss_after].
@@ -115,37 +117,47 @@ struct ScoutArgs {
     widen_every: Option<usize>,
     #[command(flatten)]
     target: TargetArgs,
-    /// How to rank decks.
-    #[arg(short, long, value_enum, default_value_t = RankMode::Fit)]
-    rank: RankMode,
+    /// How to rank decks [default: fit, or the config's search.rank].
+    #[arg(short, long, value_enum)]
+    rank: Option<RankMode>,
     /// Searching across commanders: rank by score alone, instead of interleaving commanders so
     /// one with many decks doesn't fill the list (`m` toggles this in the browser).
     #[arg(long)]
     no_mix: bool,
-    /// Weights for --rank combined.
-    #[arg(long, default_value = "fit=0.5,salt=0.2,structure=0.15,synergy=0.15")]
-    weights: String,
-    /// New decklists to fetch this run (decks fetched before are reused for free).
-    #[arg(short = 'n', long, default_value_t = 60, value_name = "N")]
-    fetch: usize,
+    /// Weights for --rank combined [default: fit=0.5,salt=0.2,structure=0.15,synergy=0.15, or the
+    /// config's search.weights].
+    #[arg(long, value_name = "WEIGHTS")]
+    weights: Option<String>,
+    /// New decklists to fetch this run (decks fetched before are reused for free) [default: 60, or
+    /// the config's search.fetch].
+    #[arg(short = 'n', long, value_name = "N")]
+    fetch: Option<usize>,
     /// Seconds between deck page requests to EDHREC (minimum 2).
     #[arg(long, default_value_t = 2.0, value_name = "SECS")]
     deck_delay: f64,
-    /// Skip decks priced above this (USD, EDHREC's estimate) [default: no cap; with --price, the
-    /// 90th percentile of the decks declared in the target brackets].
+    /// Skip decks priced above this (USD, EDHREC's estimate) [default: the config's
+    /// search.max_price, else no cap; with --price, the 90th percentile of the decks declared in
+    /// the target brackets].
     #[arg(long, value_name = "USD")]
     max_price: Option<f64>,
-    /// Skip decks with an EDHREC salt score above this [default: the 90th percentile of the decks
-    /// declared in the target brackets, once there are 20 of them].
+    /// Skip decks with an EDHREC salt score above this [default: the config's search.max_salt,
+    /// else the 90th percentile of the decks declared in the target brackets, once there are 20 of
+    /// them].
     #[arg(long, value_name = "SALT")]
     max_salt: Option<f64>,
     /// Only decks tagged with this EDHREC theme (repeatable).
     #[arg(short, long = "tag", value_name = "THEME")]
     tags: Vec<String>,
-    /// Only decks whose owner declared a bracket in the target range.
-    #[arg(long)]
+    /// Only decks whose owner declared a bracket in the target range [default: off, or the config's
+    /// search.declared_only].
+    #[arg(long, overrides_with = "no_declared_only")]
     declared_only: bool,
-    /// Only decks saved since this date (YYYY-MM-DD) or within this many days.
+    /// Also decks with no bracket declared in the target range, despite the config's
+    /// search.declared_only.
+    #[arg(long, overrides_with = "declared_only")]
+    no_declared_only: bool,
+    /// Only decks saved since this date (YYYY-MM-DD) or within this many days [default: the
+    /// config's search.since, else any].
     #[arg(long, value_name = "DATE|DAYS")]
     since: Option<String>,
     #[command(flatten)]
@@ -176,16 +188,17 @@ struct OutputArgs {
 struct FavoritesArgs {
     #[command(flatten)]
     target: TargetArgs,
-    /// How to rank decks.
-    #[arg(short, long, value_enum, default_value_t = RankMode::Fit)]
-    rank: RankMode,
+    /// How to rank decks [default: fit, or the config's search.rank].
+    #[arg(short, long, value_enum)]
+    rank: Option<RankMode>,
     /// Interleave commanders so one with many favorites doesn't fill the list (`m` toggles this
     /// in the browser).
     #[arg(long)]
     mix: bool,
-    /// Weights for --rank combined.
-    #[arg(long, default_value = "fit=0.5,salt=0.2,structure=0.15,synergy=0.15")]
-    weights: String,
+    /// Weights for --rank combined [default: fit=0.5,salt=0.2,structure=0.15,synergy=0.15, or the
+    /// config's search.weights].
+    #[arg(long, value_name = "WEIGHTS")]
+    weights: Option<String>,
     #[command(flatten)]
     output: OutputArgs,
 }
@@ -229,10 +242,18 @@ struct SyncArgs {
     rebuild: bool,
 }
 
-fn target_from(args: &TargetArgs) -> Result<Target> {
-    let brackets = BracketRange::parse(&args.brackets).context("--brackets")?;
-    let band = args.power.as_deref().map(parse_range::<f64>).transpose().context("--power")?;
+/// The target, from the options or else the config. The config's power band goes with its
+/// brackets: with `--brackets` alone, the band is derived from those brackets.
+fn target_from(args: &TargetArgs, search: &SearchConfig) -> Result<Target> {
+    let brackets = BracketRange::parse(args.brackets.as_deref().unwrap_or(&search.brackets)).context("--brackets")?;
+    let power = args.power.as_deref().or(search.power.as_deref().filter(|_| args.brackets.is_none()));
+    let band = power.map(parse_range::<f64>).transpose().context("--power")?;
     Ok(Target::new(brackets, band))
+}
+
+/// `--weights`, else the config's, else the defaults.
+fn weights_from(arg: Option<&str>, search: &SearchConfig) -> Result<Weights> {
+    arg.or(search.weights.as_deref()).map_or(Ok(Weights::default()), |w| w.parse().context("--weights"))
 }
 
 fn interactive(plain: bool) -> bool {
@@ -320,14 +341,17 @@ fn goldfish(config: &Config, paths: &Paths) -> mana::Goldfish {
 }
 
 fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) -> Result<()> {
-    let target = target_from(&args.target)?;
+    let search = &config.search;
+    let target = target_from(&args.target, search)?;
     // Only the browser keeps fetching past the budget: plain output waits for the fetcher.
     let keep_fetching = config.tui.keep_fetching && interactive(args.output.plain) && !http.offline();
-    let weights: Weights = args.weights.parse().context("--weights")?;
-    let since = match &args.since {
-        Some(s) if s.chars().all(|c| c.is_ascii_digit()) => Some(date_days_ago(s.parse()?)),
-        Some(s) if s.len() == 10 && s.as_bytes()[4] == b'-' => Some(s.clone()),
-        Some(s) => bail!("--since takes YYYY-MM-DD or a number of days, got '{s}'"),
+    let rank = args.rank.unwrap_or(search.rank);
+    let weights = weights_from(args.weights.as_deref(), search)?;
+    let since = match args.since.clone().or_else(|| search.since.as_ref().map(|s| s.arg())) {
+        Some(s) => match since_date(&s) {
+            Some(date) => Some(date),
+            None => bail!("--since takes YYYY-MM-DD or a number of days, got '{s}'"),
+        },
         None => None,
     };
     let parsed: Vec<Filter> = args.types.iter().map(|t| t.parse()).collect::<Result<_>>().context("-T")?;
@@ -342,15 +366,15 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
     http.set_min_gap("edhrec.com", std::time::Duration::from_secs_f64(args.deck_delay.max(2.0)));
     let select = SelectOptions {
         brackets: target.brackets,
-        declared_only: args.declared_only,
-        max_price: args.max_price,
+        declared_only: args.declared_only || (search.declared_only && !args.no_declared_only),
+        max_price: args.max_price.or(search.max_price),
         price_ceiling: args.output.price,
-        max_salt: args.max_salt,
+        max_salt: args.max_salt.or(search.max_salt),
         tags: args.tags.clone(),
         since,
         types,
         priors: card_filters.iter().filter_map(|f| f.prior(&cards)).collect(),
-        budget: args.fetch,
+        budget: args.fetch.unwrap_or(search.fetch),
     };
     let store = open_store(paths, &status)?;
     status.step("loading EDHREC's salt scores");
@@ -366,6 +390,7 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
             &args,
             name,
             &target,
+            rank,
             &weights,
             select,
             card_filters,
@@ -382,9 +407,9 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
             select,
             card_filters,
             SearchOptions {
-                scan: args.commanders.max(1),
-                miss_after: args.miss_after.map_or(config.search.miss_after, |n| n as usize),
-                widen_every: args.widen_every.unwrap_or(config.search.widen_every),
+                scan: args.commanders.unwrap_or(search.commanders).max(1),
+                miss_after: args.miss_after.map_or(search.miss_after, |n| n as usize),
+                widen_every: args.widen_every.unwrap_or(search.widen_every),
                 keep_going: keep_fetching,
             },
             &status,
@@ -392,7 +417,7 @@ fn run_scout(http: &Arc<Http>, paths: &Paths, config: &Config, args: ScoutArgs) 
     };
     drop(status);
     let show = Show {
-        rank: args.rank,
+        rank,
         weights,
         mix: !args.no_mix,
         output: &args.output,
@@ -483,6 +508,7 @@ fn start_single<'a>(
     args: &ScoutArgs,
     name: &str,
     target: &Target,
+    rank_by: RankMode,
     weights: &Weights,
     select: SelectOptions,
     card_filters: Vec<CompiledFilter>,
@@ -499,12 +525,13 @@ fn start_single<'a>(
         title += &format!(" · {}", filters::describe(&select.types, &card_filters));
     }
     status.note(&format!("scouting {title} (edhrec.com/commanders/{slug}) for {} ...", target.describe()));
+    // Only the ceilings that apply: a set maximum (from the options or the config) replaces its own.
+    let (salt_capped, price_capped) = (select.max_salt.is_none(), select.price_ceiling && select.max_price.is_none());
     let opts = ScoutOptions { commanders, slug: slug.clone(), select };
     let Prepared { decks, sources, mut stats, mut to_fetch, more } = prepare(http, store, &opts, status)?;
     if let Some(c) = stats.ceiling {
-        // Only the ceilings that apply: --max-salt and --max-price replace theirs.
-        let salt = args.max_salt.is_none().then(|| format!("salt {:.0}", c.salt));
-        let price = (args.output.price && args.max_price.is_none()).then(|| format!("${:.0}", c.price));
+        let salt = salt_capped.then(|| format!("salt {:.0}", c.salt));
+        let price = price_capped.then(|| format!("${:.0}", c.price));
         let caps: Vec<String> = salt.into_iter().chain(price).collect();
         if !caps.is_empty() {
             status.note(&format!(
@@ -528,7 +555,7 @@ fn start_single<'a>(
     // In the browser, decks that still need scoring after a short wait join the list as they're
     // done; plain output waits for all of them.
     let budget = interactive(args.output.plain).then_some(START_BUDGET);
-    let backlog = pool.add_stored(decks, budget, &|s| rank(s, target, args.rank, weights));
+    let backlog = pool.add_stored(decks, budget, &|s| rank(s, target, rank_by, weights));
     if pool.decks.is_empty() && backlog.is_empty() && to_fetch.is_empty() {
         bail!(if http.offline() {
             "no stored decks to show (offline)".to_string()
@@ -707,8 +734,8 @@ fn start_search<'a>(
 /// The favorites, whatever their commander: stored decks only, no deck tables and no fetching.
 /// Each commander's synergy and combo votes load in the background (cached for a week).
 fn run_favorites(http: &Arc<Http>, paths: &Paths, config: &Config, args: FavoritesArgs) -> Result<()> {
-    let target = target_from(&args.target)?;
-    let weights: Weights = args.weights.parse().context("--weights")?;
+    let target = target_from(&args.target, &config.search)?;
+    let weights = weights_from(args.weights.as_deref(), &config.search)?;
     let status = Status::new(Some(http));
     let (cards, combos) = ensure_databases(http, paths, &status)?;
     let store = open_store(paths, &status)?;
@@ -752,7 +779,7 @@ fn run_favorites(http: &Arc<Http>, paths: &Paths, config: &Config, args: Favorit
     };
     drop(status);
     let show = Show {
-        rank: args.rank,
+        rank: args.rank.unwrap_or(config.search.rank),
         weights,
         mix: args.mix,
         output: &args.output,
@@ -870,7 +897,7 @@ fn print_plain(
 }
 
 fn run_check(http: &Http, paths: &Paths, config: &Config, args: CheckArgs) -> Result<()> {
-    let target = target_from(&args.target)?;
+    let target = target_from(&args.target, &config.search)?;
     let goldfish = goldfish(config, paths);
     if goldfish.games > 0
         && let Err(why) = goldfish.scripts()
@@ -1040,5 +1067,35 @@ mod tests {
         assert_eq!(scout(&["Jodah, the Unifier"]).commander, ["Jodah, the Unifier"], "quoting still works");
         assert!(scout(&["-T", "equipment=10+"]).commander.is_empty(), "-T alone searches across commanders");
         assert!(Cli::try_parse_from(["edh-scout", "scout"]).is_err(), "a commander or -T is needed");
+    }
+
+    #[test]
+    fn the_config_fills_in_options_not_given() {
+        let config = Config::parse("[search]\nbrackets = \"3\"\npower = \"6-7\"\nweights = \"salt=1\"\n").unwrap();
+        let search = &config.search;
+        let a = scout(&["krenko"]);
+        assert_eq!(target_from(&a.target, search).unwrap(), Target::new(BracketRange::new(3, 3), Some((6.0, 7.0))));
+        assert_eq!(weights_from(a.weights.as_deref(), search).unwrap(), "salt=1".parse().unwrap());
+        let a = scout(&["krenko", "-b", "2", "--weights", "fit=1"]);
+        assert_eq!(
+            target_from(&a.target, search).unwrap(),
+            Target::new(BracketRange::new(2, 2), None),
+            "the config's power band goes with its brackets, not with -b's"
+        );
+        assert_eq!(weights_from(a.weights.as_deref(), search).unwrap(), "fit=1".parse().unwrap());
+        let defaults = Config::default();
+        assert_eq!(weights_from(None, &defaults.search).unwrap(), Weights::default());
+        assert_eq!(
+            target_from(&scout(&["krenko"]).target, &defaults.search).unwrap(),
+            Target::new(BracketRange::new(2, 3), None)
+        );
+    }
+
+    #[test]
+    fn no_declared_only_undoes_declared_only() {
+        let a = scout(&["krenko", "--declared-only", "--no-declared-only"]);
+        assert!(!a.declared_only && a.no_declared_only, "the last one given wins");
+        let a = scout(&["krenko", "--no-declared-only", "--declared-only"]);
+        assert!(a.declared_only && !a.no_declared_only, "the last one given wins");
     }
 }

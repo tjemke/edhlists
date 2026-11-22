@@ -204,6 +204,19 @@ keep_fetching = true
 layout = "auto"
 
 [search]
+# Defaults for the options of the same names; an option given on the command line wins. Each
+# default below is the one without a config file.
+brackets = "2-3"   # -b; scout, favorites and check
+# power = "5.5-7"  # -p; default: derived from the brackets. Only used while -b isn't given, since
+                   # it goes with these brackets.
+rank = "fit"       # -r; scout and favorites
+weights = "fit=0.5,salt=0.2,structure=0.15,synergy=0.15"
+fetch = 60         # -n
+commanders = 30    # deck tables to scan first when searching across commanders
+# max_price = 300  # default: no cap (with --price, the 90th percentile of the declared decks)
+# max_salt = 40    # default: the 90th percentile of the declared decks
+declared_only = false   # `--no-declared-only` undoes it for one run
+# since = 365      # days, or "YYYY-MM-DD"; default: any
 # Searching across commanders: how many of a commander's decks may fail the -T filters, none
 # passing, before it counts as a miss (default: 3). Too many misses widen the search, so a higher
 # number gives each commander longer. `scout --miss-after N` overrides it for one run.

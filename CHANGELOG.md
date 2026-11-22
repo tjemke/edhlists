@@ -6,6 +6,12 @@ What changed in each version, newest first. How versions are numbered: see *Vers
 ## 0.3.8
 
 - `scout` takes a commander's name without quotes: `edh-scout scout jodah the unifier`.
+- The config file's `[search]` section sets the defaults for `--brackets`, `--power`, `--rank`,
+  `--weights`, `--fetch`, `--commanders`, `--max-price`, `--max-salt`, `--declared-only` and
+  `--since` (brackets and power for `favorites` and `check` too, rank and weights for `favorites`).
+  An option given on the command line still wins; a configured power band is dropped when `-b` is
+  given, so it can't end up paired with brackets it wasn't meant for. `--no-declared-only` undoes a
+  configured `declared_only` for one run. A bad value is reported when the config is read.
 
 ## 0.3.7
 

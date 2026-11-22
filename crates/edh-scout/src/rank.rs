@@ -10,9 +10,11 @@ use crate::select::weighted_order;
 use edh_data::deck::BracketRange;
 use edhpl::level_band;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum RankMode {
     /// How close EDHPowerLevel's score is to the middle of the target band.
+    #[default]
     Fit,
     /// Highest EDHPowerLevel score first.
     Power,

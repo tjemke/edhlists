@@ -9,6 +9,17 @@
 //! layout = "auto"
 //!
 //! [search]
+//! # Defaults for the command-line options of the same names; the options override them.
+//! brackets = "2-3"          # scout, favorites, check
+//! power = "5.5-7"           # default: derived from the brackets; ignored with -b
+//! rank = "fit"              # scout, favorites
+//! weights = "fit=0.5,salt=0.2,structure=0.15,synergy=0.15"
+//! fetch = 60
+//! commanders = 30
+//! max_price = 300
+//! max_salt = 40
+//! declared_only = false
+//! since = 365               # days, or "YYYY-MM-DD"
 //! # Searching across commanders: decks failing the -T filters, none passing, before a commander
 //! # counts as a miss (and too many misses widen the search).
 //! miss_after = 3
@@ -31,7 +42,11 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use edh_data::deck::BracketRange;
+use edh_data::text::since_date;
 use serde::Deserialize;
+
+use crate::rank::{RankMode, Weights, parse_range};
 
 #[derive(Debug, Default, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
@@ -60,9 +75,32 @@ impl Default for GoldfishConfig {
     }
 }
 
+/// Defaults for `scout`'s options (and `favorites`' and `check`'s, where they have them), each
+/// overridden by its command-line option.
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct SearchConfig {
+    /// Target brackets (`--brackets`), e.g. "3" or "2-3".
+    pub brackets: String,
+    /// Target EDHPowerLevel band (`--power`), e.g. "5.5-7". `None`: derived from the brackets.
+    /// Kept only while `--brackets` isn't given, since it goes with these brackets.
+    pub power: Option<String>,
+    /// How to rank decks (`--rank`).
+    pub rank: RankMode,
+    /// Weights for the combined ranking (`--weights`). `None`: [`Weights::default`].
+    pub weights: Option<String>,
+    /// New decklists to fetch per run (`--fetch`).
+    pub fetch: usize,
+    /// Searching across commanders: deck tables to scan first (`--commanders`).
+    pub commanders: usize,
+    /// Skip decks priced above this (`--max-price`).
+    pub max_price: Option<f64>,
+    /// Skip decks with a salt score above this (`--max-salt`).
+    pub max_salt: Option<f64>,
+    /// Only decks declared in the target brackets (`--declared-only`; `--no-declared-only` undoes it).
+    pub declared_only: bool,
+    /// Only decks saved since then (`--since`).
+    pub since: Option<Since>,
     /// Searching across commanders: how many of a commander's decks may fail the `-T` filters,
     /// none passing, before it counts as a miss (see [`crate::plan`]). `scout --miss-after`
     /// overrides it.
@@ -72,9 +110,66 @@ pub struct SearchConfig {
     pub widen_every: usize,
 }
 
+pub const BRACKETS: &str = "2-3";
+pub const FETCH: usize = 60;
+pub const COMMANDERS: usize = 30;
+
 impl Default for SearchConfig {
     fn default() -> Self {
-        Self { miss_after: crate::plan::MISS_AFTER, widen_every: crate::plan::WIDEN_EVERY }
+        Self {
+            brackets: BRACKETS.into(),
+            power: None,
+            rank: RankMode::default(),
+            weights: None,
+            fetch: FETCH,
+            commanders: COMMANDERS,
+            max_price: None,
+            max_salt: None,
+            declared_only: false,
+            since: None,
+            miss_after: crate::plan::MISS_AFTER,
+            widen_every: crate::plan::WIDEN_EVERY,
+        }
+    }
+}
+
+/// `since` in the config file: a number of days back, or a date.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum Since {
+    Days(u64),
+    Date(String),
+}
+
+impl Since {
+    /// As `--since` would take it.
+    pub fn arg(&self) -> String {
+        match self {
+            Since::Days(n) => n.to_string(),
+            Since::Date(d) => d.clone(),
+        }
+    }
+}
+
+impl SearchConfig {
+    /// Read every setting the way its option would, so a bad one is reported once, on loading.
+    fn check(&self) -> Result<()> {
+        BracketRange::parse(&self.brackets).context("brackets")?;
+        if let Some(p) = &self.power {
+            parse_range::<f64>(p).context("power")?;
+        }
+        if let Some(w) = &self.weights {
+            w.parse::<Weights>().context("weights")?;
+        }
+        if let Some(s) = &self.since
+            && since_date(&s.arg()).is_none()
+        {
+            anyhow::bail!("since takes a number of days or \"YYYY-MM-DD\", got \"{}\"", s.arg());
+        }
+        if self.miss_after == 0 {
+            anyhow::bail!("miss_after must be at least 1");
+        }
+        Ok(())
     }
 }
 
@@ -170,9 +265,7 @@ impl Config {
         if config.performance.threads == Some(0) {
             anyhow::bail!("[performance] threads must be at least 1");
         }
-        if config.search.miss_after == 0 {
-            anyhow::bail!("[search] miss_after must be at least 1");
-        }
+        config.search.check().context("[search]")?;
         Ok(config)
     }
 }
@@ -225,6 +318,55 @@ mod tests {
         assert_eq!(Config::parse("").unwrap().search.widen_every, crate::plan::WIDEN_EVERY);
         assert_eq!(Config::parse("[search]\nwiden_every = 20\n").unwrap().search.widen_every, 20);
         assert_eq!(Config::parse("[search]\nwiden_every = 0\n").unwrap().search.widen_every, 0, "0 turns it off");
+    }
+
+    #[test]
+    fn search_defaults_match_the_options_without_a_config() {
+        let search = Config::parse("").unwrap().search;
+        assert_eq!(search.brackets, BRACKETS);
+        assert_eq!(search.power, None);
+        assert_eq!(search.rank, RankMode::Fit);
+        assert_eq!(search.weights, None);
+        assert_eq!((search.fetch, search.commanders), (FETCH, COMMANDERS));
+        assert_eq!((search.max_price, search.max_salt, search.declared_only), (None, None, false));
+        assert_eq!(search.since, None);
+    }
+
+    #[test]
+    fn search_defaults_can_be_set() {
+        let search = Config::parse(
+            "[search]\nbrackets = \"3\"\npower = \"6-7.5\"\nrank = \"combined\"\nweights = \"fit=0.4,salt=0.6\"\n\
+             fetch = 100\ncommanders = 50\nmax_price = 300\nmax_salt = 40.5\ndeclared_only = true\nsince = 365\n",
+        )
+        .unwrap()
+        .search;
+        assert_eq!(search.brackets, "3");
+        assert_eq!(search.power.as_deref(), Some("6-7.5"));
+        assert_eq!(search.rank, RankMode::Combined);
+        assert_eq!(search.weights.as_deref(), Some("fit=0.4,salt=0.6"));
+        assert_eq!((search.fetch, search.commanders), (100, 50));
+        assert_eq!((search.max_price, search.max_salt), (Some(300.0), Some(40.5)), "whole numbers are prices too");
+        assert!(search.declared_only);
+        assert_eq!(search.since, Some(Since::Days(365)));
+        let dated = Config::parse("[search]\nsince = \"2025-06-01\"\n").unwrap().search;
+        assert_eq!(dated.since, Some(Since::Date("2025-06-01".into())));
+    }
+
+    #[test]
+    fn bad_search_defaults_are_reported_on_loading() {
+        for bad in [
+            "brackets = \"2-9\"",
+            "brackets = \"two\"",
+            "power = \"high\"",
+            "rank = \"best\"",
+            "weights = \"fun=1\"",
+            "since = \"last year\"",
+            "since = -3",
+            "fetch = -1",
+        ] {
+            let err = Config::parse(&format!("[search]\n{bad}\n"));
+            assert!(err.is_err(), "[search] {bad} should be an error");
+        }
     }
 
     #[test]

@@ -43,6 +43,18 @@ pub fn date_days_ago(days: u64) -> String {
     civil_date((now / 86_400).saturating_sub(days) as i64)
 }
 
+/// A `--since` value as a date: YYYY-MM-DD as given, or a number of days back from today. `None`
+/// for anything else.
+pub fn since_date(s: &str) -> Option<String> {
+    if !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()) {
+        return s.parse().ok().map(date_days_ago);
+    }
+    let b = s.as_bytes();
+    let digits = |r: std::ops::Range<usize>| b[r].iter().all(u8::is_ascii_digit);
+    (b.len() == 10 && b[4] == b'-' && b[7] == b'-' && digits(0..4) && digits(5..7) && digits(8..10))
+        .then(|| s.to_string())
+}
+
 pub fn today() -> String {
     date_days_ago(0)
 }
@@ -79,6 +91,16 @@ pub fn strip_reminder(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn since_takes_a_date_or_a_number_of_days() {
+        assert_eq!(since_date("2025-03-01").as_deref(), Some("2025-03-01"));
+        assert_eq!(since_date("0"), Some(today()), "0 days back is today");
+        assert_eq!(since_date("30"), Some(date_days_ago(30)));
+        for bad in ["", "last year", "2025-3-01", "2025/03/01", "-30"] {
+            assert_eq!(since_date(bad), None, "'{bad}' is neither a date nor a number of days");
+        }
+    }
 
     #[test]
     fn slugs() {
