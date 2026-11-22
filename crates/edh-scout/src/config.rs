@@ -23,6 +23,9 @@
 //! # Games the mana goldfish plays per deck for the details pane, `check` and the report;
 //! # 0 turns it off.
 //! games = 5000
+//! # Forge's card scripts to read (its res/cardsfolder) instead of the ones `sync` downloads;
+//! # EDH_SCOUT_FORGE_CARDS overrides it.
+//! forge_cards = "/path/to/forge/res/cardsfolder"
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -44,6 +47,8 @@ pub struct Config {
 pub struct GoldfishConfig {
     /// Games the mana goldfish ([`crate::mana`]) plays per deck; 0 turns it off.
     pub games: u32,
+    /// Forge's card scripts to read instead of the download ([`edh_data::forge::ForgeSource`]).
+    pub forge_cards: Option<PathBuf>,
 }
 
 /// Enough games that a share moves by about a point at most from one run of games to another.
@@ -51,7 +56,7 @@ pub const GOLDFISH_GAMES: u32 = 5000;
 
 impl Default for GoldfishConfig {
     fn default() -> Self {
-        Self { games: GOLDFISH_GAMES }
+        Self { games: GOLDFISH_GAMES, forge_cards: None }
     }
 }
 
@@ -228,6 +233,8 @@ mod tests {
         assert_eq!(Config::parse("[goldfish]\ngames = 20000\n").unwrap().goldfish.games, 20000);
         assert_eq!(Config::parse("[goldfish]\ngames = 0\n").unwrap().goldfish.games, 0, "0 turns it off");
         assert!(Config::parse("[goldfish]\ngames = -1\n").is_err());
+        let forge = Config::parse("[goldfish]\nforge_cards = \"/opt/forge/res/cardsfolder\"\n").unwrap();
+        assert_eq!(forge.goldfish.forge_cards.as_deref(), Some(Path::new("/opt/forge/res/cardsfolder")));
     }
 
     #[test]

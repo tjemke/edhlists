@@ -245,6 +245,13 @@ impl Http {
         })
     }
 
+    /// Read a (large) download as it arrives, without keeping it.
+    pub fn stream<T>(&self, url: &str, read: impl FnOnce(&mut dyn io::Read) -> Result<T>) -> Result<T> {
+        let _one_at_a_time = lock(&self.in_flight);
+        let resp = self.send(url)?;
+        read(&mut resp.into_body().into_reader())
+    }
+
     fn cache_path(&self, key: &str) -> PathBuf {
         let digest = Sha256::digest(key.as_bytes());
         let hex: String = digest.iter().take(16).map(|b| format!("{b:02x}")).collect();

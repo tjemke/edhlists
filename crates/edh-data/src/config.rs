@@ -111,4 +111,12 @@ impl Paths {
     pub fn spellbook_raw(&self) -> PathBuf {
         self.raw().join("spellbook-variants.json.gz")
     }
+    /// Forge's card scripts, read from its release ([`crate::forge`]).
+    pub fn forge_db(&self) -> PathBuf {
+        self.root.join("forge-scripts.json.gz")
+    }
+    /// The scripts as they were in Forge's release (24 MB, 4 gzipped; the release is 250).
+    pub fn forge_raw(&self) -> PathBuf {
+        self.raw().join("forge-cardsfolder.json.gz")
+    }
 }

@@ -10,6 +10,7 @@ use edh_data::combos::ComboDb;
 use edh_data::config::Paths;
 use edh_data::deck::{BracketRange, Deck, parse_decklist};
 use edh_data::edhrec::{self, ListedCommander};
+use edh_data::forge::ForgeSource;
 use edh_data::http::{Http, OfflineMiss, summarize_counts};
 use edh_data::progress::{Lines, Progress};
 use edh_data::sync::{SyncWhat, ensure_databases, sync};
@@ -213,8 +214,12 @@ struct SyncArgs {
     #[arg(long, conflicts_with = "combos")]
     cards: bool,
     /// Only the combo database.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "forge")]
     combos: bool,
+    /// Only Forge's card scripts, for the mana goldfish (skipped when a directory of them is
+    /// configured: `[goldfish] forge_cards` or EDH_SCOUT_FORGE_CARDS).
+    #[arg(long, conflicts_with = "cards")]
+    forge: bool,
     /// Rebuild from the downloads already on disk instead of fetching new ones.
     #[arg(long)]
     rebuild: bool,
@@ -947,13 +952,24 @@ fn main() -> ExitCode {
             Command::Favorites(args) => run_favorites(&http, &paths, &load_config(cli.config.clone())?, args),
             Command::Check(args) => run_check(&http, &paths, &load_config(cli.config.clone())?, args),
             Command::Sync(args) => {
-                let both = !args.cards && !args.combos;
-                sync(
-                    &http,
-                    &paths,
-                    SyncWhat { cards: both || args.cards, combos: both || args.combos, use_existing_raw: args.rebuild },
-                    &Lines,
-                )?;
+                let all = !args.cards && !args.combos && !args.forge;
+                let config = load_config(cli.config.clone())?;
+                let forge = match ForgeSource::find(config.goldfish.forge_cards.as_deref()) {
+                    ForgeSource::Download => all || args.forge,
+                    ForgeSource::Dir(dir) => {
+                        if all || args.forge {
+                            eprintln!("Forge's card scripts are read from {}: nothing to download", dir.display());
+                        }
+                        false
+                    }
+                };
+                let what = SyncWhat {
+                    cards: all || args.cards,
+                    combos: all || args.combos,
+                    forge,
+                    use_existing_raw: args.rebuild,
+                };
+                sync(&http, &paths, what, &Lines)?;
                 eprintln!(
                     "{} · cache in {} · decks in {}",
                     summarize_counts(&http.request_counts()),

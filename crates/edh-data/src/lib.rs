@@ -7,6 +7,7 @@ pub mod config;
 pub mod deck;
 pub mod edhrec;
 pub mod flags;
+pub mod forge;
 pub mod http;
 pub mod mana;
 pub mod progress;

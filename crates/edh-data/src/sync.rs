@@ -1,8 +1,9 @@
 //! Downloading and (re)building the local card and combo databases.
 //!
 //! Three bulk downloads (Scryfall card printings and oracle tags, Commander Spellbook variants)
-//! replace what would otherwise be thousands of per-card API calls. The raw files are kept, so a schema change in
-//! this tool only rebuilds — it never re-downloads.
+//! replace what would otherwise be thousands of per-card API calls, and a fourth brings Forge's card
+//! scripts for the mana goldfish. The raw files are kept, so a schema change in this tool only
+//! rebuilds — it never re-downloads.
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
@@ -10,8 +11,10 @@ use serde::Deserialize;
 use crate::cards::{self, CARDS_SCHEMA, CardDb};
 use crate::combos::{self, COMBOS_SCHEMA, ComboDb};
 use crate::config::{DB_STALE_DAYS, Paths, SCRYFALL_BULK_CARDS, SCRYFALL_BULK_TAGS, SPELLBOOK_DUMP};
+use crate::forge::{FORGE_LATEST_RELEASE, FORGE_SCHEMA, ForgeDb, ForgeRaw, forge_tarball, read_tarball};
 use crate::http::{Http, ensure_online};
 use crate::progress::Progress;
+use crate::storage::{read_json_gz, write_json_gz};
 use crate::tags::load_role_tags;
 use std::path::Path;
 
@@ -19,6 +22,9 @@ use std::path::Path;
 pub struct SyncWhat {
     pub cards: bool,
     pub combos: bool,
+    /// Forge's card scripts, from its latest release (unless a directory of them is configured:
+    /// see [`crate::forge::ForgeSource`]).
+    pub forge: bool,
     /// Reuse a raw download already on disk instead of fetching it again.
     pub use_existing_raw: bool,
 }
@@ -87,6 +93,52 @@ pub fn sync(http: &Http, paths: &Paths, what: SyncWhat, progress: &dyn Progress)
         db.save(&paths.combos_db())?;
         progress.note(&format!("  {} commander-legal combos", db.combos.len()));
     }
+    if what.forge {
+        sync_forge(http, paths, what.use_existing_raw, progress)?;
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct Release {
+    tag_name: String,
+}
+
+/// Download Forge's latest release's scripts, unless they're the ones already here, and build
+/// their database.
+fn sync_forge(http: &Http, paths: &Paths, use_existing_raw: bool, progress: &dyn Progress) -> Result<()> {
+    let raw_path = paths.forge_raw();
+    let raw = if use_existing_raw && raw_path.exists() {
+        read_json_gz::<ForgeRaw>(&raw_path)?
+    } else {
+        ensure_online(http, "downloading Forge's card scripts")?;
+        let latest: Release = serde_json::from_slice(&http.get_bytes(FORGE_LATEST_RELEASE)?)
+            .context("Forge's latest release on GitHub")?;
+        let have = ForgeDb::load(&paths.forge_db()).ok();
+        if have.as_ref().is_some_and(|db| db.schema == FORGE_SCHEMA && db.source == latest.tag_name) {
+            progress.note(&format!("  Forge's card scripts are already {}'s", latest.tag_name));
+            return Ok(());
+        }
+        // The release is the one kept, and only the database is of an older schema.
+        let kept = raw_path.exists().then(|| read_json_gz::<ForgeRaw>(&raw_path).ok()).flatten();
+        match kept.filter(|raw| raw.source == latest.tag_name) {
+            Some(raw) => raw,
+            None => {
+                progress.step(&format!(
+                    "downloading Forge {}'s card scripts (~250 MB with the rest of its source)",
+                    latest.tag_name
+                ));
+                let files = http.stream(&forge_tarball(&latest.tag_name), |r| read_tarball(r))?;
+                let raw = ForgeRaw { source: latest.tag_name, files };
+                write_json_gz(&raw_path, &raw)?;
+                raw
+            }
+        }
+    };
+    progress.step("building Forge card script database");
+    let db = ForgeDb::from_raw(raw);
+    db.save(&paths.forge_db())?;
+    progress.note(&format!("  {} card scripts from {}", db.len(), db.source));
     Ok(())
 }
 
@@ -108,7 +160,7 @@ pub fn ensure_databases(http: &Http, paths: &Paths, progress: &dyn Progress) -> 
             bail!("no local card/combo database yet; run `edh-scout sync` once while online");
         }
         progress.note("local databases missing or outdated — building them first");
-        let what = SyncWhat { cards: cards.is_none(), combos: combos.is_none(), use_existing_raw: true };
+        let what = SyncWhat { cards: cards.is_none(), combos: combos.is_none(), forge: false, use_existing_raw: true };
         sync(http, paths, what, progress)?;
     }
     let cards = match cards {
