@@ -128,6 +128,22 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   before the commander whatever it costs (Lord of the Forsaken at 5 ahead of Kotis at 3: 1.2 points
   of Sultai Arisen's commander-by-T4). *Small* each.
 
+- [ ] **Reconsider how strict the goldfish's confidence is, now that its card readings are
+  audited.** Since cost reducers count as mana engines (weight 1, 0.3.6), 18 of the 27 corpus
+  decks read poor, 6 rough and 3 good, which may make "poor" too common to notice. Kept as is on
+  2026-11-22 until the blind audit (`notes/goldfish-audit`) had fixed the misreads, which 0.3.7
+  did; look again at the weights and the rough-from-2/poor-from-5 cut-offs in
+  `crates/edh-goldfish/src/doubts.rs`, against the corpus (33 decks) and the audit's findings.
+  *Small.*
+
+- [ ] **Mana the goldfish doesn't play yet, found by the blind audit (2026-11-22).** Each needs the
+  stopping rule: mana from a planeswalker's `+` ability (Chandra, Torch of Defiance) or a
+  main-phase trigger (Hulking Raptor); counter-limited mana without {T} (Wall of Roots); digging
+  until a land onto the battlefield (Clifftop Lookout); a modal spell's land mode (Archdruid's
+  Charm); the land-ramp half of adventures, omens and prepare cards (Beanstalk Giant, Bloomvine
+  Regent, Studious First-Year). `crates/edh-goldfish/src/forge_profile.rs`. *Small* each; none in
+  the corpus yet.
+
 - [ ] **Show why the goldfish has no Forge scripts in the browser.** `check` notes it on stderr
   (a configured directory that can't be read, or no `sync --forge` yet); the browser's Mana line
   only says the cards were read without them. The background thread (`edh-scout/src/mana.rs`,

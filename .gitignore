@@ -5,6 +5,9 @@
 # default output directories from `scout --export` and the TUI's export keys
 edh-scout-*/
 
-.claude
+# Claude Code's local settings, but not the project's saved workflows
+/.claude/*
+!/.claude/workflows/
+__pycache__/
 .codex
 .h5i
