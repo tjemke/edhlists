@@ -1,7 +1,7 @@
 //! The goldfish on a fixed set of decks (`tests/data/decks`: EDHREC lists and precons picked for
 //! their mana: snow, Phyrexian, colourless, five colours, lands, artifacts, exile-and-play, elves,
 //! mana Auras, Treasure, landfall, bounce lands and extra land drops, cost reducers, rituals, a
-//! dork commander), to see what a change does before keeping it, and how far each deck's numbers
+//! dork commander, life gain, wheels, draw on land drops and historic spells, depletion lands), to see what a change does before keeping it, and how far each deck's numbers
 //! can be trusted:
 //!
 //! ```sh
