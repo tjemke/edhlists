@@ -5,7 +5,8 @@
 //! 1. drop incomplete lists and anything the owner declared outside the target brackets;
 //! 2. calibrate a salt ceiling (and, with `--price`, a price ceiling) from the decks whose owners
 //!    *did* declare a target bracket (their 90th percentile), and drop decks above it — they are
-//!    very likely stronger or meaner than wanted, whatever their label says;
+//!    very likely stronger or meaner than wanted, whatever their label says. An explicit
+//!    `--max-salt` or `--max-price` replaces its ceiling;
 //! 3. drop exact duplicates (re-uploads of the same list);
 //! 4. include every already-cached deck for free, then spread the remaining budget across themes
 //!    and salt/price tiers so the pool isn't fifty copies of the same idea.
@@ -27,11 +28,12 @@ use crate::filters::{Prior, TypeFilter};
 pub struct SelectOptions {
     pub brackets: BracketRange,
     pub declared_only: bool,
+    /// Skip decks priced above this, instead of the calibrated price ceiling.
     pub max_price: Option<f64>,
     /// Also cap price at the declared decks' 90th percentile (off unless asked for: a deck's price
     /// is often one or two cards, which says little about how it plays).
     pub price_ceiling: bool,
-    /// Skip decks whose EDHREC salt is above this.
+    /// Skip decks whose EDHREC salt is above this, instead of the calibrated salt ceiling.
     pub max_salt: Option<f64>,
     /// Keep only decks with one of these EDHREC tags (case-insensitive).
     pub tags: Vec<String>,
@@ -119,7 +121,8 @@ pub fn select<'a>(rows: &'a [TableRow], opts: &SelectOptions, is_cached: impl Fn
         // ceiling applies to declared decks too.
         .filter(|r| {
             ceiling.is_none_or(|c| {
-                r.salt <= c.salt && (!opts.price_ceiling || opts.max_price.is_some() || r.price <= c.price)
+                (opts.max_salt.is_some() || r.salt <= c.salt)
+                    && (!opts.price_ceiling || opts.max_price.is_some() || r.price <= c.price)
             })
         })
         .filter(|r| {
@@ -302,6 +305,25 @@ mod tests {
         let by_both = got(&SelectOptions { price_ceiling: true, ..opts(100) });
         assert!(by_both.contains("fine") && !by_both.contains("pricey") && !by_both.contains("salty"));
         assert!(select(&rows, &opts(100), |_| false).ceiling.is_some());
+    }
+
+    #[test]
+    fn an_explicit_max_salt_or_max_price_replaces_its_ceiling() {
+        let mut rows: Vec<TableRow> = (0..30)
+            .map(|i| row(&format!("d{i}"), Some(3), 50.0 + i as f64 * 0.5, 300.0 + i as f64, &[], "2026-01-01"))
+            .collect();
+        rows.push(row("salty", None, 95.0, 400.0, &[], "2026-01-01"));
+        rows.push(row("pricey", None, 55.0, 9000.0, &[], "2026-01-01"));
+        let got = |o: &SelectOptions| -> HashSet<String> {
+            select(&rows, o, |_| false).to_fetch.iter().map(|r| r.urlhash.clone()).collect()
+        };
+        let looser_salt = got(&SelectOptions { max_salt: Some(99.0), ..opts(100) });
+        assert!(looser_salt.contains("salty"), "--max-salt above the ceiling should let saltier decks in");
+        let tighter_salt = got(&SelectOptions { max_salt: Some(52.0), ..opts(100) });
+        assert!(!tighter_salt.contains("d10"), "--max-salt below the ceiling should still cap salt");
+        let looser_price = got(&SelectOptions { price_ceiling: true, max_price: Some(10_000.0), ..opts(100) });
+        assert!(looser_price.contains("pricey"), "--max-price above the price ceiling should let pricier decks in");
+        assert!(!looser_price.contains("salty"), "--max-price shouldn't lift the salt ceiling");
     }
 
     #[test]

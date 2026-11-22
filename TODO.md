@@ -97,6 +97,14 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
 
 ## Maybe
 
+- [ ] **Put the hand-written `[default: …]` hints where clap puts its own.** In `--help` (the
+  long form), clap prints a `default_value` in a paragraph of its own under the help text, while
+  the hints written into doc comments (`--miss-after`, `--widen-every`, `--power`, `--max-salt`,
+  `--max-price`, `--cache-dir`, `--state-dir`, `--config`) stay inline at the end of it; in `-h`
+  both are inline. A blank line before a hint would drop it from `-h`, so this would take
+  separate `help`/`long_help` strings per option (`crates/edh-scout/src/main.rs`). *Small*;
+  cosmetic only.
+
 - [ ] **Say how much of a deck synergy could see.** Cards missing from the commander's EDHREC
   page count as 0, so a deck on a different plan from the page reads as about 0% with nothing
   saying why. Grand Arbiter Augustin IV deck `WsFaOHEZG81j3vpcqtUclA` (equipment and auras, the

@@ -26,6 +26,11 @@ What changed in each version, newest first. How versions are numbered: see *Vers
   draw it says it doesn't play by up to four cards.
 - The count columns for `-T equipment` and `-T creatures` are headed `equip` and `creats`, as
   `planeswalkers` and `enchantments` already were `walkers` and `enchants`.
+- `scout --max-salt` replaces the salt ceiling calibrated from the declared decks, as `--max-price`
+  already replaced the price ceiling: above the ceiling it lets saltier decks in (it could only
+  lower the cap before). The note on which decks are capped leaves out a ceiling a flag replaced.
+- `--help` says what `--max-salt` and `--max-price` default to, that `$EDH_SCOUT_CACHE` and
+  `$EDH_SCOUT_STATE` set `--cache-dir` and `--state-dir`, and names `check -c`'s value `COMMANDER`.
 
 ## 0.3.6
 

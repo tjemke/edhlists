@@ -284,7 +284,7 @@ Press `r` in the browser to cycle.
 no quality signal, so the deck table (one request) is filtered first: incomplete lists, decks
 declared outside the target, and duplicates are dropped; a salt ceiling is calibrated
 from the decks whose owners declared a target bracket (their 90th percentile; with `--price` a
-price ceiling too); the fetch budget
+price ceiling too; `--max-salt` and `--max-price` replace them); the fetch budget
 (`-n`, default 60) is then spread across themes and salt/price tiers. Decks fetched earlier are
 reused for free, so repeated runs grow the pool.
 

@@ -12,7 +12,7 @@ use edhpl::level_band;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub enum RankMode {
-    /// How close EDHPowerLevel's score is to the middle of the target band (default).
+    /// How close EDHPowerLevel's score is to the middle of the target band.
     Fit,
     /// Highest EDHPowerLevel score first.
     Power,

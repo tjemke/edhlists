@@ -39,10 +39,11 @@ struct Cli {
     /// Never touch the network: use only cached pages and the local databases.
     #[arg(long, global = true)]
     offline: bool,
-    /// Where downloads and the cache live [default: $XDG_CACHE_HOME/edh-scout].
+    /// Where downloads and the cache live [default: $XDG_CACHE_HOME/edh-scout, or
+    /// $EDH_SCOUT_CACHE].
     #[arg(long, global = true, value_name = "DIR")]
     cache_dir: Option<PathBuf>,
-    /// Where fetched decklists are kept [default: $XDG_STATE_HOME/edh-scout].
+    /// Where fetched decklists are kept [default: $XDG_STATE_HOME/edh-scout, or $EDH_SCOUT_STATE].
     #[arg(long, global = true, value_name = "DIR")]
     state_dir: Option<PathBuf>,
     /// Config file [default: $XDG_CONFIG_HOME/edh-scout/config.toml, or $EDH_SCOUT_CONFIG].
@@ -129,10 +130,12 @@ struct ScoutArgs {
     /// Seconds between deck page requests to EDHREC (minimum 2).
     #[arg(long, default_value_t = 2.0, value_name = "SECS")]
     deck_delay: f64,
-    /// Skip decks priced above this (USD, EDHREC's estimate).
+    /// Skip decks priced above this (USD, EDHREC's estimate) [default: no cap; with --price, the
+    /// 90th percentile of the decks declared in the target brackets].
     #[arg(long, value_name = "USD")]
     max_price: Option<f64>,
-    /// Skip decks with an EDHREC salt score above this.
+    /// Skip decks with an EDHREC salt score above this [default: the 90th percentile of the decks
+    /// declared in the target brackets, once there are 20 of them].
     #[arg(long, value_name = "SALT")]
     max_salt: Option<f64>,
     /// Only decks tagged with this EDHREC theme (repeatable).
@@ -191,7 +194,7 @@ struct CheckArgs {
     /// Decklist file (plain, MTGA, Moxfield or Archidekt text export).
     file: PathBuf,
     /// Commander, if the file doesn't mark one (repeat for partners).
-    #[arg(short, long = "commander")]
+    #[arg(short, long = "commander", value_name = "COMMANDER")]
     commanders: Vec<String>,
     /// Count cards of a kind in the list, repeatable: equipment, ramp, 'otag:sweeper',
     /// 'o:"create a treasure"' (as for scout -T). With a range (equipment=10+) the count is
@@ -497,13 +500,18 @@ fn start_single<'a>(
     let opts = ScoutOptions { commanders, slug: slug.clone(), select };
     let Prepared { decks, sources, mut stats, mut to_fetch, more } = prepare(http, store, &opts, status)?;
     if let Some(c) = stats.ceiling {
-        let price = if args.output.price { format!(" / ${:.0}", c.price) } else { String::new() };
-        status.note(&format!(
-            "  decks capped at salt {:.0}{price} (90th percentile of {} decks declared {})",
-            c.salt,
-            c.from_decks,
-            target.describe().split(" · ").next().unwrap_or("")
-        ));
+        // Only the ceilings that apply: --max-salt and --max-price replace theirs.
+        let salt = args.max_salt.is_none().then(|| format!("salt {:.0}", c.salt));
+        let price = (args.output.price && args.max_price.is_none()).then(|| format!("${:.0}", c.price));
+        let caps: Vec<String> = salt.into_iter().chain(price).collect();
+        if !caps.is_empty() {
+            status.note(&format!(
+                "  decks capped at {} (90th percentile of {} decks declared {})",
+                caps.join(" / "),
+                c.from_decks,
+                target.describe().split(" · ").next().unwrap_or("")
+            ));
+        }
     }
     let count_columns = filters::count_columns(&card_filters);
     if keep_fetching {
