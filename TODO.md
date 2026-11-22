@@ -119,9 +119,15 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   creature's own power when it's the greatest power among your creatures (Selvala); X in a land
   search is two; a Saga's later chapter comes at once; a search for snow or nonbasic lands
   (Into the North) finds any land; a rock's filter taking in more than one mana counts from the
-  start (a land's waits for the lands to pay for it). Ramp is cast before the commander
-  whatever it costs (Lord of the Forsaken at 5 ahead of Kotis at 3: 1.2 points of Sultai
-  Arisen's commander-by-T4). *Small* each.
+  start (a land's waits for the lands to pay for it); mana that grows with the board and takes mana
+  in (Cabal Coffers) counts as one more than it takes in; a land taking a basic type as it enters,
+  or copying another (Vesuva), makes any of the deck's colours; mana of each colour among your
+  permanents (Bloom Tender) counts as its own colours; a land that taps for mana or sacrifices
+  itself for a land for free plays as the fetch, and one whose search costs mana (Myriad
+  Landscape) as the mana land, its search left out; colours a card gives other lands (Chromatic
+  Lantern, Abundant Growth) are left out, as is River of Tears' {B} after a land drop. Ramp is cast
+  before the commander whatever it costs (Lord of the Forsaken at 5 ahead of Kotis at 3: 1.2 points
+  of Sultai Arisen's commander-by-T4). *Small* each.
 
 - [ ] **Show why the goldfish has no Forge scripts in the browser.** `check` notes it on stderr
   (a configured directory that can't be read, or no `sync --forge` yet); the browser's Mana line

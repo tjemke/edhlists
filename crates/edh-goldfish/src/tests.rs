@@ -1088,3 +1088,124 @@ fn the_same_deck_gets_the_same_report() {
     assert_eq!(run(&entries, 1000, seed), run(&entries, 1000, seed));
     assert_ne!(run(&entries, 1000, seed), run(&entries, 1000, seed + 1), "another seed plays other games");
 }
+
+fn units(u: &[crate::profile::Unit]) -> Vec<String> {
+    u.iter().map(|u| u.to_string()).collect()
+}
+
+#[test]
+fn mana_that_grows_with_the_board_counts_one_more_than_it_takes_in() {
+    // Cabal Coffers: {2}, {T}: Add {B} for each Swamp you control. Counted as one, less the two it
+    // takes in, it made nothing; it makes one once the lands are there to pay for it.
+    let c = card("Coffers", "Land", "", "B", "");
+    let script = "Name:Coffers\nTypes:Land\nA:AB$ Mana | Cost$ 2 T | Produced$ B | Amount$ X\n\
+                  SVar:X:Count$Valid Swamp.YouCtrl\n";
+    let p = scripted(&c, script, "B");
+    let l = land(&p);
+    assert!(l.units.is_empty(), "nothing before there are lands to pay for it, made {:?}", units(&l.units));
+    let (lands, makes) = l.with_lands.clone().expect("mana once enough lands are out");
+    assert_eq!((lands, units(&makes)), (3, vec!["B".to_string()]), "one black with three lands");
+    assert!(p.undercounted);
+}
+
+#[test]
+fn a_land_that_takes_a_basic_land_type_as_it_enters_makes_any_of_the_decks_colours() {
+    // Multiversal Passage: choose a basic land type as it enters; it's that type.
+    let c = card("Passage", "Land", "", "", "");
+    let script = "Name:Passage\nTypes:Land\n\
+                  R:Event$ Moved | ValidCard$ Card.Self | Destination$ Battlefield | ReplaceWith$ DBChooseBasic | ReplacementResult$ Updated\n\
+                  SVar:DBChooseBasic:DB$ ChooseType | ETB$ True | Type$ Basic Land | SubAbility$ DBTap\n\
+                  SVar:DBTap:DB$ Tap | ETB$ True | Defined$ Self | UnlessCost$ PayLife<2> | UnlessPayer$ You\n\
+                  S:Mode$ Continuous | AffectedDefined$ Self | AddType$ ChosenType | RemoveLandTypes$ True\n";
+    let p = scripted(&c, script, "UR");
+    assert_eq!(units(&land(&p).units), ["UR"], "one mana of either of the deck's colours");
+    assert_eq!(land(&p).enters, Enters::PayLife);
+    assert!(matches!(p.fidelity, Fidelity::Approximate(_)), "the type is chosen: {:?}", p.fidelity);
+}
+
+#[test]
+fn a_land_that_enters_as_a_copy_of_another_makes_any_colour_tapped() {
+    // Vesuva copies a land on the battlefield; Echoing Deeps one in a graveyard, which a
+    // goldfish's is empty of.
+    let copy = |zone: &str| {
+        let c = card("Copy Land", "Land", "", "", "");
+        let script = format!(
+            "Name:Copy Land\nTypes:Land\nK:ETBReplacement:Copy:DBCopy:Optional\n\
+             SVar:DBCopy:DB$ Clone | Choices$ Land.Other{zone} | IntoPlayTapped$ True\n"
+        );
+        scripted(&c, &script, "WB")
+    };
+    let vesuva = copy("");
+    assert_eq!(units(&land(&vesuva).units), ["WB"]);
+    assert_eq!(land(&vesuva).enters, Enters::Tapped, "the copy enters tapped");
+    assert!(land(&copy(" | ChoiceZone$ Graveyard")).units.is_empty(), "nothing to copy in a graveyard");
+}
+
+#[test]
+fn mana_of_each_colour_among_permanents_is_at_least_its_own_colours() {
+    // Faeburrow Elder ({1}{G}{W}): {T}: Add one mana of each color among permanents you control.
+    let c = card("Elder", "Creature — Treefolk Druid", "{1}{G}{W}", "WUBRG", "");
+    let script = "Name:Elder\nManaCost:1 G W\nTypes:Creature Treefolk Druid\nPT:0/0\n\
+                  A:AB$ Mana | Cost$ T | Produced$ Special EachColorAmong_Valid Permanent.YouCtrl\n";
+    let p = scripted(&c, script, "GW");
+    assert_eq!(rock_units(&p), ["W", "G"], "a green and a white mana, from itself");
+    assert!(p.undercounted, "the deck's other permanents add more");
+}
+
+#[test]
+fn a_land_that_taps_for_colourless_or_fetches_for_free_plays_as_the_fetch() {
+    // Twisted Landscape: {T}: Add {C}; {T}, sacrifice it: a basic Swamp, Mountain or Forest, tapped.
+    // Myriad Landscape's search costs {2}: it stays a land for {C}, with the search marked as left out.
+    let landscape = |cost: &str| {
+        let c = card("Landscape", "Land", "", "C", "");
+        let script = format!(
+            "Name:Landscape\nTypes:Land\nA:AB$ Mana | Cost$ T | Produced$ C\n\
+             A:AB$ ChangeZone | Cost$ {cost}T Sac<1/CARDNAME> | Origin$ Library | Destination$ Battlefield | Tapped$ True | ChangeType$ Swamp.Basic,Mountain.Basic,Forest.Basic\n"
+        );
+        scripted(&c, &script, "BRG")
+    };
+    let free = landscape("");
+    let LandKind::Fetch { finds, tapped } = &free.lands[0].kind else { panic!("a fetch, is {:?}", free.lands[0].kind) };
+    assert!(finds.basic && *tapped);
+    assert_eq!(finds.types.len(), 3);
+    let paid = landscape("2 ");
+    assert_eq!(units(&land(&paid).units), ["C"]);
+    assert!(matches!(paid.fidelity, Fidelity::Approximate(_)), "its search is left out: {:?}", paid.fidelity);
+}
+
+#[test]
+fn mana_given_to_other_lands_is_marked_but_not_counted_as_more_mana() {
+    // Chromatic Lantern: lands you control have "{T}: Add one mana of any color"; {T}: Add one mana
+    // of any color. The World Tree gives that to its lands only with six of them.
+    let c = card("Lantern", "Artifact", "{3}", "WUBRG", "");
+    let script = "Name:Lantern\nManaCost:3\nTypes:Artifact\n\
+                  S:Mode$ Continuous | Affected$ Land.YouCtrl | AddAbility$ AnyMana\n\
+                  SVar:AnyMana:AB$ Mana | Cost$ T | Produced$ Any | Amount$ 1\nA:AB$ Mana | Cost$ T | Produced$ Any\n";
+    let p = scripted(&c, script, "WUB");
+    assert_eq!(rock_units(&p), ["WUB"]);
+    assert!(matches!(p.fidelity, Fidelity::Approximate(_)), "the lands' colours are left out: {:?}", p.fidelity);
+    assert!(!p.undercounted, "colours aren't more mana");
+    let tree = card("Tree", "Land", "", "G", "");
+    let script = "Name:Tree\nTypes:Land\nA:AB$ Mana | Cost$ T | Produced$ G\n\
+                  S:Mode$ Continuous | Affected$ Land.YouCtrl | AddAbility$ AnyMana | IsPresent$ Land.YouCtrl | PresentCompare$ GE6\n\
+                  SVar:AnyMana:AB$ Mana | Cost$ T | Produced$ Any | Amount$ 1\n";
+    assert_eq!(units(&land(&scripted(&tree, script, "WUBG")).units), ["G"], "green until there are six lands");
+}
+
+#[test]
+fn a_land_creature_enters_as_if_tapped() {
+    // Dryad Arbor: a Forest that's a creature can't tap for mana the turn it's played.
+    let c = card("Arbor", "Land Creature — Forest Dryad", "", "G", "");
+    let script = "Name:Arbor\nTypes:Land Creature Forest Dryad\nPT:1/1\n";
+    assert_eq!(land(&scripted(&c, script, "G")).enters, Enters::Tapped);
+}
+
+#[test]
+fn a_land_using_up_depletion_counters_is_read_like_one_using_charge_counters() {
+    // Hickory Woodlot: {T}, remove a depletion counter: Add {G}{G}; two uses, then it's sacrificed.
+    let c = card("Woodlot", "Land", "", "G", "");
+    let script = "Name:Woodlot\nTypes:Land\nA:AB$ Mana | Cost$ T SubCounter<1/DEPLETION> | Produced$ G | Amount$ 2\n";
+    let p = scripted(&c, script, "G");
+    assert_eq!(units(&land(&p).units), ["G", "G"]);
+    assert!(matches!(p.fidelity, Fidelity::Approximate(_)), "its uses are limited: {:?}", p.fidelity);
+}

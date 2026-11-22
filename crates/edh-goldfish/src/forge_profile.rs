@@ -61,6 +61,8 @@ struct Reader {
     theirs: bool,
     /// It makes more mana than it's counted as making (see [`Profile::undercounted`]).
     undercounted: bool,
+    /// The mana ability [`Reader::produced`] last read makes an amount that grows with the board.
+    grows: bool,
 }
 
 impl Reader {
@@ -74,6 +76,7 @@ impl Reader {
             unreadable: None,
             theirs: false,
             undercounted: false,
+            grows: false,
         }
     }
 
@@ -124,6 +127,11 @@ impl Reader {
                 Spell::new(cost, effect, multikick(face))
             })
         };
+        if script.faces.iter().any(gives_others_mana) {
+            // Chromatic Lantern, Abundant Growth: its own mana is read, what it gives the deck's
+            // lands (colours, mostly) isn't.
+            self.note("mana it gives other permanents left out");
+        }
         let fidelity = match self.notes.first() {
             Some(why) => Fidelity::Approximate(why),
             None => Fidelity::Exact,
@@ -134,7 +142,21 @@ impl Reader {
     fn land(&mut self, face: &Face, types: &Types, type_line: &str) -> LandKind {
         let makes = self.makes(face, types, type_line);
         let entering = self.on_entering(face);
-        if makes.units.is_empty() && makes.with_lands.is_none() {
+        let makes_nothing = makes.units.is_empty() && makes.with_lands.is_none();
+        match fetch_cost(face) {
+            // The Landscapes: {C}, or sacrificed for a basic land of one of three types. As
+            // the fetch, it's the land it finds, which a deck plays it for.
+            Some(0) if !makes_nothing => {
+                if let Some(fetch) = self.fetch(face) {
+                    self.note("a land that taps for mana or fetches counted as the fetch");
+                    return fetch;
+                }
+            }
+            // Myriad Landscape, Krosan Verge: two lands later, for mana.
+            Some(_) if !makes_nothing => self.note("a land search it can pay for later left out"),
+            _ => {}
+        }
+        if makes_nothing {
             if let Some(fetch) = self.fetch(face) {
                 return fetch;
             }
@@ -155,7 +177,8 @@ impl Reader {
             units: makes.units,
             with_lands: makes.with_lands,
             sacrifices,
-            enters: self.enters(face),
+            // A land creature (Dryad Arbor) can't tap for mana the turn it comes.
+            enters: if types.is(CardType::Creature) { Enters::Tapped } else { self.enters(face) },
             bounce,
             basic: types.supertypes.contains(Supertype::Basic),
             land_types: types.land_types,
@@ -169,6 +192,21 @@ impl Reader {
         let (mut gated, mut gate, mut lent) = (Vec::new(), 0, Unit::empty());
         if types.is(CardType::Land) && !types.land_types.is_empty() {
             always.push(vec![types.land_types.iter().map(|t| Mana::from(t.color())).collect()]);
+        }
+        if types.is(CardType::Land) {
+            match takes_a_type(face) {
+                Some(TakesType::Chosen) => {
+                    // Multiversal Passage, Thran Portal: the basic land type chosen as it enters.
+                    self.note("a colour chosen as it enters counted as any of the deck's");
+                    always.push(vec![self.any]);
+                }
+                Some(TakesType::Copy) => {
+                    // Vesuva: a copy of a land on the battlefield.
+                    self.note("a copy of another land counted as making any of the deck's colours");
+                    always.push(vec![self.any]);
+                }
+                None => {}
+            }
         }
         let mut skipped = false;
         for line in mana_lines(face, types, type_line) {
@@ -210,8 +248,9 @@ impl Reader {
             }
             if cost.charge_counter {
                 // Vivid lands, Sphere of the Suns: two or three uses, then nothing.
-                self.note("mana that uses up charge counters counted as lasting");
+                self.note("mana that uses up charge or depletion counters counted as lasting");
             }
+            self.grows = false;
             let units = if reflected {
                 self.note("mana another land makes counted as any of the deck's colours");
                 vec![self.any]
@@ -232,7 +271,9 @@ impl Reader {
                 self.note("mana only some spells may spend counted like any other");
             }
             let kinds = units.iter().fold(Unit::empty(), |a, u| a | *u);
-            let units = if cost.mana_in == 0 {
+            let units = if cost.mana_in == 0 || self.grows {
+                // Mana that grows with the board (Cabal Coffers' {2}, {T}: {B} for each Swamp) is
+                // counted as one more than it takes in.
                 units
             } else {
                 // A filter ({1}, {T}: Add {W}{U}) turns mana into its colours: units of any of
@@ -305,16 +346,21 @@ impl Reader {
                     self.note("mana that grows with the board counted as one");
                     self.undercounted = true;
                     // The greatest power among your creatures is at least its own (Selvala, Heart
-                    // of the Wilds).
+                    // of the Wilds): an amount, which what it takes in comes off.
                     let greatest_power = x == "Count$Valid Creature.YouCtrl$GreatestCardPower";
                     match face.power() {
                         Some(power) if greatest_power && face.types.contains("Creature") => power.max(1) as usize,
-                        _ => 1,
+                        _ => {
+                            // Not a count of what entered this turn, which may be nothing.
+                            self.grows = !x.contains("ThisTurnEntered");
+                            1
+                        }
                     }
                 }
                 None => {
                     self.note("mana that grows with the board counted as one");
                     self.undercounted = true;
+                    self.grows = true;
                     1
                 }
             },
@@ -329,6 +375,19 @@ impl Reader {
                 _ => Mana::from_code(t).map(ManaSet::of),
             }
         };
+        if produced.starts_with("Special EachColorAmong") {
+            // Bloom Tender, Faeburrow Elder: one of each colour among your permanents, itself
+            // among them.
+            self.note("mana of each colour among your permanents counted as its own colours");
+            self.undercounted = true;
+            let own: Vec<Unit> = ["W", "U", "B", "R", "G"]
+                .into_iter()
+                .filter(|c| face.cost.split([' ', '/']).any(|t| t == *c))
+                .filter_map(Mana::from_code)
+                .map(|m| self.narrow(ManaSet::of(m)))
+                .collect();
+            return Some((!own.is_empty()).then_some(own));
+        }
         let units = if let Some(choice) = produced.strip_prefix("Combo ") {
             let mut kinds = Unit::empty();
             for t in choice.split_whitespace() {
@@ -352,6 +411,9 @@ impl Reader {
     /// Whether and how the land enters tapped, from its replacement effect (`R:Event$ Moved |
     /// ValidCard$ Card.Self | ReplaceWith$ …`, the replacing SVar a `DB$ Tap` with conditions).
     fn enters(&mut self, face: &Face) -> Enters {
+        if copies_tapped(face) {
+            return Enters::Tapped;
+        }
         for line in face.lines_with("R") {
             let p = params(line);
             if p.first() != Some(&("Event", "Moved")) || param(&p, "ValidCard") != Some("Card.Self") {
@@ -780,7 +842,8 @@ impl Cost {
                 _ if t.starts_with("Sac<1/CARDNAME") => c.sacrifices_itself = true,
                 // Milling a card costs a goldfish nothing (Millikin).
                 _ if t.starts_with("Mill<") => {}
-                "SubCounter<1/CHARGE>" => c.charge_counter = true,
+                // Depletion counters too (Hickory Woodlot: two uses, then it's sacrificed).
+                "SubCounter<1/CHARGE>" | "SubCounter<1/DEPLETION>" => c.charge_counter = true,
                 _ if t.starts_with("Sac<") && t.contains("/Land") => {
                     c.sacrifices_lands += t[4..].split('/').next().and_then(|n| n.parse().ok()).unwrap_or(1);
                 }
@@ -829,6 +892,76 @@ struct ManaLine<'a> {
     needs_counter: bool,
 }
 
+/// What a land's own fetch costs in mana (`A:AB$ ChangeZone | Cost$ 2 T Sac<1/CARDNAME> | Origin$
+/// Library | Destination$ Battlefield …`), if it has one.
+fn fetch_cost(face: &Face) -> Option<usize> {
+    face.lines_with("A").find_map(|line| {
+        let p = params(line);
+        let fetch = p.first() == Some(&("AB", "ChangeZone"))
+            && param(&p, "Origin") == Some("Library")
+            && param(&p, "Destination") == Some("Battlefield");
+        // `EACH Forest & Plains`: one of each (Krosan Verge).
+        let finds_lands = param(&p, "ChangeType")
+            .is_some_and(|t| t.strip_prefix("EACH ").unwrap_or(t).split(" & ").any(|t| land_filter(t).is_some()));
+        let cost = Cost::parse(param(&p, "Cost").unwrap_or(""));
+        (fetch && finds_lands && cost.sacrifices_itself).then_some(cost.mana_in)
+    })
+}
+
+/// How a land takes a land type as it enters, which its mana comes from.
+enum TakesType {
+    /// A basic land type chosen (`S:Mode$ Continuous | AffectedDefined$ Self | AddType$ ChosenType`).
+    Chosen,
+    /// Another land's, as a copy of it (`K:ETBReplacement:Copy:…` with `DB$ Clone | Choices$ Land…`).
+    Copy,
+}
+
+fn takes_a_type(face: &Face) -> Option<TakesType> {
+    let chosen = face.lines_with("S").any(|line| {
+        let p = params(line);
+        p.first() == Some(&("Mode", "Continuous"))
+            && param(&p, "AffectedDefined") == Some("Self")
+            && param(&p, "AddType") == Some("ChosenType")
+    });
+    if chosen {
+        return Some(TakesType::Chosen);
+    }
+    land_copy(face).map(|_| TakesType::Copy)
+}
+
+/// A land's copy of another land as it enters (Vesuva): its `DB$ Clone` step.
+fn land_copy(face: &Face) -> Option<&str> {
+    face.keywords().find_map(|k| {
+        let svar = k.strip_prefix("ETBReplacement:Copy:")?.split(':').next()?;
+        let step = face.svar(svar)?;
+        let p = params(step);
+        // Not one in a graveyard (Echoing Deeps), empty in a goldfish.
+        let on_battlefield = param(&p, "ChoiceZone").is_none_or(|z| z == "Battlefield");
+        let copies_land = param(&p, "Choices").is_some_and(|c| c.starts_with("Land"));
+        (p.first() == Some(&("DB", "Clone")) && copies_land && on_battlefield).then_some(step)
+    })
+}
+
+/// Whether it enters tapped as a copy of another land (Vesuva's `IntoPlayTapped$ True`).
+fn copies_tapped(face: &Face) -> bool {
+    land_copy(face).is_some_and(|step| param(&params(step), "IntoPlayTapped") == Some("True"))
+}
+
+/// Whether a static ability gives a mana ability to other permanents (Chromatic Lantern: lands you
+/// control; Abundant Growth: the enchanted land), or to itself only while something holds (The
+/// World Tree, with six lands).
+fn gives_others_mana(face: &Face) -> bool {
+    face.lines_with("S").any(|line| {
+        let p = params(line);
+        let Some(added) = param(&p, "AddAbility") else { return false };
+        let others = param(&p, "Affected").is_some_and(|a| a != "Card.Self")
+            || param(&p, "AffectedDefined").is_some_and(|a| a != "Self");
+        p.first() == Some(&("Mode", "Continuous"))
+            && others
+            && added.split('&').filter_map(|n| face.svar(n.trim())).any(|a| a.starts_with("AB$ Mana"))
+    })
+}
+
 /// The face's mana abilities: its `A:` lines, and those its `S:Mode$ Continuous` abilities give
 /// to permanents it is one of.
 fn mana_lines<'a>(face: &'a Face, types: &Types, type_line: &str) -> Vec<ManaLine<'a>> {
@@ -838,7 +971,7 @@ fn mana_lines<'a>(face: &'a Face, types: &Types, type_line: &str) -> Vec<ManaLin
     for line in face.lines_with("S") {
         let p = params(line);
         if p.first() != Some(&("Mode", "Continuous"))
-            || p.iter().any(|(k, _)| k.starts_with("Condition") || *k == "CheckSVar")
+            || p.iter().any(|(k, _)| k.starts_with("Condition") || matches!(*k, "CheckSVar" | "IsPresent"))
         {
             continue;
         }

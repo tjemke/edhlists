@@ -3,6 +3,20 @@
 What changed in each version, newest first. How versions are numbered: see *Versioning* in
 `AGENTS.md`.
 
+## 0.3.7
+
+- The mana goldfish reads more mana cards right, found by checking how it reads the 1,500 most
+  played mana and draw cards: Cabal Coffers and its kin make mana again (one more than they take in,
+  once there are lands to pay for it; they made none); Vesuva, Multiversal Passage and Thran Portal
+  make any of the deck's colours (they made none); Bloom Tender and Faeburrow Elder make a mana of
+  each of their own colours (they were read as no mana at all); the Landscapes play as the fetch
+  they are (Twisted Landscape, Shattered Landscape); Dryad Arbor can't tap the turn it's played; The
+  World Tree makes {G} until there are six lands. Cards whose mana for other permanents is left out
+  (Chromatic Lantern's colours for your lands) and lands whose paid search is left out (Myriad
+  Landscape) are marked as approximate, as are lands using up depletion counters (Hickory Woodlot,
+  Peat Bog), which couldn't be read before. On the corpus decks this moves commander by turn 4 by up
+  to 1.2 points (Sultai Arisen) and how often colours held it up by up to 1.9.
+
 ## 0.3.6
 
 - The mana goldfish reads what cards do for mana from Forge's card scripts: what a mana ability
