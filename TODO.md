@@ -93,6 +93,22 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   Fact or Fiction's piles (left to oracle text: 1). Lodestone Bauble's draw for "that player"; a
   split card's second half (Expansion // Explosion's X draw); Struggle for Project Purity's upkeep
   draw (a mode chosen as it enters). *Small* each; none moves the corpus.
+- [ ] **A `Branch` step counts both branches' draws.** `drawn` (`forge_profile.rs`) adds the true and
+  false branches, so Heaven Sent (rank 12,461) reads draw 7, which comes only when an opponent is at
+  0 life. Reading Saga chapters (0.3.9) surfaced it. Take the better branch, or skip a branch gated
+  on opponents. *Small*; nothing in the corpus.
+- [ ] **Add the second audit's rulings to `notes/goldfish-audit/brief.md`.** The findings list
+  ten; eight are settled and would have removed ~40 agent disagreements (plus 16 from a format
+  slip). One needs a decision: exile-to-play on a Draw-role spell (census says draw 1, readers say
+  not a draw). Half X and Windfall are settled by hand (Hydroid Krasis and Wan Shi Tong draw 2,
+  Windfall refills to three: `by_hand` in `crates/edh-goldfish/src/profile.rs`, 0.3.9); spree is
+  still open. *Small*, docs.
+- [ ] **Make the blind audit sync first on a fresh machine.** The `goldfish-blind-audit` workflow
+  (`.claude/workflows/goldfish-blind-audit.js`) fails at the census on a machine with no
+  `~/.cache/edh-scout/cards.json.gz`, as on a new cbox (2026-11-23). The census agent *returns*
+  that failure rather than erroring, so resuming the run replays the cached failure and only a
+  fresh run recovers. Either run `edh-scout sync` in the census step when the cache is missing, or
+  check for the cache before any agent starts. *Small.*
 
 ## Maybe
 
