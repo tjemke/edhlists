@@ -1333,3 +1333,75 @@ fn a_land_using_up_depletion_counters_is_read_like_one_using_charge_counters() {
     assert_eq!(units(&land(&p).units), ["G", "G"]);
     assert!(matches!(p.fidelity, Fidelity::Approximate(_)), "its uses are limited: {:?}", p.fidelity);
 }
+
+#[test]
+fn a_planets_ability_at_twelve_counters_isnt_mana_it_gives_other_permanents() {
+    // Adagia, Windswept Bastion: at twelve charge counters it gains a copy ability, not mana.
+    let c = card("Planet", "Land — Planet", "", "W", "");
+    let script = "Name:Planet\nTypes:Land Planet\nA:AB$ Mana | Cost$ T | Produced$ W\nK:Station:12\n\
+                  S:Mode$ Continuous | AffectedDefined$ Self | Affected$ Card.counters_GE12_CHARGE | AddAbility$ Copy\n\
+                  SVar:Copy:AB$ CopyPermanent | Cost$ 3 W T | ValidTgts$ Artifact.YouCtrl | Defined$ Targeted\n";
+    let p = scripted(&c, script, "W");
+    assert!(!p.undercounted, "it gives no mana to anything");
+    assert_eq!(p.fidelity, Fidelity::Exact, "nothing about its mana is left out");
+}
+
+#[test]
+fn a_creature_giving_mana_to_its_own_creature_type_is_a_dork_itself() {
+    // Manaweft Sliver: Sliver creatures you control have "{T}: Add one mana of any color."
+    let c = card("Mana Sliver", "Creature — Sliver", "{1}{G}", "WUBRG", "");
+    let script = "Name:Mana Sliver\nTypes:Creature Sliver\n\
+                  S:Mode$ Continuous | Affected$ Creature.Sliver+YouCtrl | AddAbility$ AnyMana\n\
+                  SVar:AnyMana:AB$ Mana | Cost$ T | Produced$ Any | Amount$ 1\n";
+    let p = scripted(&c, script, "G");
+    assert_eq!(rock_units(&p), ["G"], "a dork making any of the deck's colours");
+    assert!(p.undercounted, "the other Slivers' mana is left out");
+    // Not a type it isn't.
+    let c = card("Elf Lord", "Creature — Human", "{1}{G}", "WUBRG", "");
+    let script = script.replace("Mana Sliver", "Elf Lord").replace("Creature Sliver", "Creature Human");
+    assert_eq!(effect(&scripted(&c, &script.replace("Sliver+", "Elf+"), "G")), &Effect::Other);
+}
+
+#[test]
+fn a_land_search_paid_with_its_own_counters_is_land_ramp_but_not_a_loyalty_ultimate() {
+    // Fertilid: {1}{G}, remove a +1/+1 counter: search for a basic land, onto the battlefield tapped.
+    let c = card("Searcher", "Creature — Elemental", "{2}{G}", "", "");
+    let script = "Name:Searcher\nTypes:Creature Elemental\nK:etbCounter:P1P1:2\n\
+                  A:AB$ ChangeZone | Cost$ 1 G SubCounter<1/P1P1> | Origin$ Library | Destination$ Battlefield | Tapped$ True | ChangeType$ Land.Basic\n";
+    let p = scripted(&c, script, "G");
+    assert!(matches!(effect(&p), Effect::LandRamp { to_battlefield: 1, tapped: true, activation: 2, .. }), "{p:?}");
+    // A planeswalker's −7 is a long way off.
+    let c = card("Walker", "Legendary Planeswalker — Nissa", "{3}{G}{G}", "", "");
+    let script = "Name:Walker\nTypes:Legendary Planeswalker Nissa\n\
+                  A:AB$ ChangeZone | Cost$ SubCounter<7/LOYALTY> | Planeswalker$ True | Ultimate$ True | Origin$ Library | Destination$ Battlefield | ChangeType$ Land.Forest | ChangeNum$ X\n";
+    assert_eq!(effect(&scripted(&c, script, "G")), &Effect::Other);
+}
+
+#[test]
+fn a_class_level_that_makes_spells_cheaper_is_ramp_the_goldfish_doesnt_play() {
+    // Artist's Talent, level 2: noncreature spells you cast cost {1} less.
+    let c = card("Talent", "Enchantment — Class", "{1}{R}", "", "");
+    let script = "Name:Talent\nTypes:Enchantment Class\nK:Class:2:2 R:AddStaticAbility$ SReduceCost\n\
+                  SVar:SReduceCost:Mode$ ReduceCost | ValidCard$ Card.nonCreature | Type$ Spell | Activator$ You | Amount$ 1\n";
+    let p = scripted(&c, script, "R");
+    assert_eq!(p.unplayed, Some(Role::Ramp));
+    assert_eq!(p.left_out, Some(crate::profile::LeftOut::Engine));
+}
+
+#[test]
+fn mana_stored_for_later_or_from_station_counters_isnt_a_rock() {
+    // Jeweled Amulet: {1}, {T}: a charge counter; {T}, remove it: one mana of the type stored.
+    let c = card("Amulet", "Artifact", "{0}", "WUBRG", "");
+    let script = "Name:Amulet\nTypes:Artifact\n\
+                  A:AB$ PutCounter | Cost$ 1 T | CounterType$ CHARGE | CounterNum$ 1 | CheckSVar$ X | SVarCompare$ EQ0\n\
+                  SVar:X:Count$CardCounters.CHARGE\nA:AB$ Mana | Cost$ T SubCounter<1/CHARGE> | Produced$ Special LastNotedType\n";
+    let p = scripted(&c, script, "R");
+    assert_eq!(effect(&p), &Effect::Other, "it nets no mana");
+    assert!(!matches!(p.fidelity, Fidelity::Unreadable(_)), "{:?}", p.fidelity);
+    // Queen's Diamond: a mana for each charge counter, which only stationing puts on it.
+    let c = card("Diamond", "Legendary Artifact — Spacecraft", "{4}", "WUBRG", "");
+    let script = "Name:Diamond\nTypes:Legendary Artifact Spacecraft\n\
+                  A:AB$ Mana | Cost$ T | Produced$ Any | Amount$ X | RestrictValid$ Spell.IsCommander+YouOwn\n\
+                  K:Station:8\nSVar:X:Count$CardCounters.CHARGE\n";
+    assert_eq!(effect(&scripted(&c, script, "R")), &Effect::Other, "a goldfish doesn't station it");
+}

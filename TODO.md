@@ -92,8 +92,7 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   Bunnies, as 3); an opponent's choice (Combustible Gearhulk's `GenericChoice`, read as no draw);
   Fact or Fiction's piles (left to oracle text: 1). Lodestone Bauble's draw for "that player"; a
   split card's second half (Expansion // Explosion's X draw); Struggle for Project Purity's upkeep
-  draw (a mode chosen as it enters). Mana: Queen's Diamond counts a mana from the start, though it
-  has none until stationed. *Small* each; none moves the corpus.
+  draw (a mode chosen as it enters). *Small* each; none moves the corpus.
 
 ## Maybe
 

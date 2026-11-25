@@ -3,6 +3,16 @@
 What changed in each version, newest first. How versions are numbered: see *Versioning* in
 `AGENTS.md`.
 
+## 0.3.9
+
+- The mana goldfish reads more cards right, found by a second check of how it reads the 1,500 most
+  played mana and draw cards (on Forge 2.0.16). Mana: a creature that gives mana to its own creature
+  type is a dork itself (Manaweft Sliver, Katilda); a land search paid with the card's own counters
+  is land ramp (Khalni Heart Expedition, Fertilid); a Class level that makes spells cheaper is ramp
+  the goldfish doesn't play (Artist's Talent); Jeweled Amulet and Queen's Diamond are no longer read
+  as lasting rocks; the station Planets aren't marked as giving mana to other permanents. On the
+  corpus decks this moves commander by turn 4 by up to 3.7 points (Aesi; Tatyova 3.0, Jhoira −1.8).
+
 ## 0.3.8
 
 - `scout` takes a commander's name without quotes: `edh-scout scout jodah the unifier`.

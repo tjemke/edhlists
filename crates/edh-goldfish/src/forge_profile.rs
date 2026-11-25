@@ -218,6 +218,13 @@ impl Reader {
                 }
                 None => line.ability,
             };
+            let p = params(ability);
+            let reflected = match p.first() {
+                Some(&("AB", "Mana")) => false,
+                Some(&("AB", "ManaReflected")) => true,
+                // Not a mana ability (a Planet's copy ability at 12 charge counters).
+                _ => continue,
+            };
             if line.granted {
                 self.note("mana it gives other permanents left out");
                 self.undercounted = true;
@@ -225,15 +232,9 @@ impl Reader {
             if line.needs_counter {
                 self.note("mana it has once it has a counter counted from the start");
             }
-            let p = params(ability);
-            let reflected = match p.first() {
-                Some(&("AB", "Mana")) => false,
-                Some(&("AB", "ManaReflected")) => true,
-                _ => continue,
-            };
             let cost = Cost::parse(param(&p, "Cost").unwrap_or(""));
             let once_a_turn = cost.life && param(&p, "ActivationLimit") == Some("1");
-            let uses_up = cost.other || cost.sacrifices_itself || cost.sacrifices_lands > 0;
+            let uses_up = cost.takes_more() || cost.sacrifices_itself || cost.sacrifices_lands > 0;
             let waits = param(&p, "CheckSVar").is_some();
             if param(&p, "Planeswalker").is_some()
                 || uses_up
@@ -245,10 +246,6 @@ impl Reader {
                 // lands of a name), or one that costs nothing it pays each turn.
                 skipped = true;
                 continue;
-            }
-            if cost.charge_counter {
-                // Vivid lands, Sphere of the Suns: two or three uses, then nothing.
-                self.note("mana that uses up charge or depletion counters counted as lasting");
             }
             self.grows = false;
             let units = if reflected {
@@ -267,6 +264,10 @@ impl Reader {
                     }
                 }
             };
+            if cost.charge_counter {
+                // Vivid lands, Sphere of the Suns: two or three uses, then nothing.
+                self.note("mana that uses up charge or depletion counters counted as lasting");
+            }
             if param(&p, "RestrictValid").is_some() {
                 self.note("mana only some spells may spend counted like any other");
             }
@@ -332,10 +333,19 @@ impl Reader {
     /// amount the goldfish doesn't count (it depends on the board), `None` when it can't be read.
     fn produced(&mut self, p: &[(&str, &str)], face: &Face) -> Option<Option<Vec<Unit>>> {
         let produced = param(p, "Produced")?;
+        if produced == "Special LastNotedType" {
+            // Jeweled Amulet: the mana it stored, a turn later; it nets none.
+            return Some(None);
+        }
         let amount = match param(p, "Amount") {
             None => 1,
             Some(n) if n.chars().all(|c| c.is_ascii_digit()) => n.parse().ok()?,
             Some(var) => match face.svar(var) {
+                // A Spacecraft's (Queen's Diamond): none until it's stationed, which a goldfish
+                // doesn't do.
+                Some("Count$CardCounters.CHARGE") if face.keywords().any(|k| k.starts_with("Station:")) => {
+                    return Some(None);
+                }
                 // Everflowing Chalice, Astral Cornucopia: one counter, as one kick or X = 1.
                 Some("Count$CardCounters.CHARGE") => 1,
                 // Storage lands' X: what was saved up.
@@ -648,9 +658,12 @@ impl Reader {
             let cost = Cost::parse(param(&p, "Cost").unwrap_or(""));
             match p.first() {
                 Some(("SP", _)) if !permanent => starts.push((line, 0, false)),
-                // Sacrificing it (Sakura-Tribe Elder) or tapping it once (Hithlain Rope); not
-                // one that needs something else.
-                Some(&("AB", "ChangeZone")) if permanent && (cost.sacrifices_itself || cost.taps) && !cost.other => {
+                // Sacrificing it (Sakura-Tribe Elder), tapping it once (Hithlain Rope) or removing
+                // its own counters (Fertilid; Khalni Heart Expedition's, which landfall gives it);
+                // not one that needs something else.
+                Some(&("AB", "ChangeZone"))
+                    if permanent && (cost.sacrifices_itself || cost.taps || cost.own_counters) && !cost.other =>
+                {
                     starts.push((line, cost.mana_in as u32, false));
                 }
                 _ => {}
@@ -732,10 +745,10 @@ fn draw(face: &Face, types: &Types) -> Option<Effect> {
             continue;
         }
         let c = Cost::parse(cost);
-        if c.sacrifices_itself && !c.other {
+        if c.sacrifices_itself && !c.takes_more() {
             once.get_or_insert(d.net);
         } else if !planeswalker
-            && !c.other
+            && !c.takes_more()
             && c.sacrifices_lands == 0
             && (c.taps || c.mana_in > 0 || c.life)
             && !d.moves_itself
@@ -1079,7 +1092,9 @@ struct Cost {
     sacrifices_lands: u32,
     /// Removes a charge counter (Vivid lands, Sphere of the Suns).
     charge_counter: bool,
-    /// Something else: counters, other permanents, cards, energy, X.
+    /// Removes other counters from itself (Fertilid's +1/+1, Khalni Heart Expedition's quest).
+    own_counters: bool,
+    /// Something else: other permanents, cards, energy, X.
     other: bool,
 }
 
@@ -1095,6 +1110,17 @@ impl Cost {
                 _ if t.starts_with("Mill<") => {}
                 // Depletion counters too (Hickory Woodlot: two uses, then it's sacrificed).
                 "SubCounter<1/CHARGE>" | "SubCounter<1/DEPLETION>" => c.charge_counter = true,
+                // `SubCounter<3/QUEST>`, `SubCounter<1/OIL/CARDNAME>`; not from other permanents
+                // (`SubCounter<1/P1P1/Creature.YouCtrl/…>`), and not loyalty (Nissa, Worldwaker's −7).
+                _ if t.starts_with("SubCounter<")
+                    && !t.contains("/LOYALTY")
+                    && t.trim_end_matches('>')
+                        .split('/')
+                        .nth(2)
+                        .is_none_or(|w| matches!(w, "CARDNAME" | "NICKNAME")) =>
+                {
+                    c.own_counters = true;
+                }
                 _ if t.starts_with("Sac<") && t.contains("/Land") => {
                     c.sacrifices_lands += t[4..].split('/').next().and_then(|n| n.parse().ok()).unwrap_or(1);
                 }
@@ -1105,6 +1131,12 @@ impl Cost {
             }
         }
         c
+    }
+
+    /// It takes something besides mana, tapping, life or sacrificing: counters, other permanents,
+    /// cards, energy, X.
+    fn takes_more(&self) -> bool {
+        self.other || self.own_counters
     }
 }
 
@@ -1227,7 +1259,8 @@ fn mana_lines<'a>(face: &'a Face, types: &Types, type_line: &str) -> Vec<ManaLin
             continue;
         }
         let (Some(affected), Some(added)) = (param(&p, "Affected"), param(&p, "AddAbility")) else { continue };
-        // `Creature.YouCtrl`, `Ally.YouCtrl`, `Sliver`, `Creature.YouCtrl+HasCounters`, `Card.Self`.
+        // `Creature.YouCtrl`, `Ally.YouCtrl`, `Sliver`, `Creature.YouCtrl+HasCounters`, `Card.Self`,
+        // `Creature.Sliver+YouCtrl` (a subtype it has).
         let mut covers_itself = None;
         for a in affected.split(',') {
             let (kind, props) = a.split_once('.').unwrap_or((a, ""));
@@ -1235,9 +1268,12 @@ fn mana_lines<'a>(face: &'a Face, types: &Types, type_line: &str) -> Vec<ManaLin
                 || CardType::from_code(kind).is_some_and(|t| types.is(t))
                 || words.contains(&kind);
             let props: Vec<&str> = props.split('+').filter(|p| !p.is_empty()).collect();
-            let counter = props.iter().any(|p| *p == "HasCounters" || p.starts_with("counters_GE1"));
-            let fits =
-                props.iter().all(|p| matches!(*p, "YouCtrl" | "Self" | "HasCounters") || p.starts_with("counters_GE1"));
+            // One counter (`counters_GE1_P1P1`), not a Planet's twelve (`counters_GE12_CHARGE`).
+            let one_counter = |p: &str| p == "counters_GE1" || p.starts_with("counters_GE1_");
+            let counter = props.iter().any(|p| *p == "HasCounters" || one_counter(p));
+            let fits = props
+                .iter()
+                .all(|p| matches!(*p, "YouCtrl" | "Self" | "HasCounters") || one_counter(p) || words.contains(p));
             if is_one && fits {
                 covers_itself = Some(counter);
                 break;
@@ -1356,9 +1392,15 @@ fn land_filter(change_type: &str) -> Option<FoundLands> {
 
 /// It makes your other spells cheaper (Animar, Goreclaw, the Medallions): `S:Mode$ ReduceCost` for
 /// spells you cast, while it's on the battlefield or in the command zone; not one that makes
-/// itself cheaper (Affinity) or that taxes what targets it.
+/// itself cheaper (Affinity) or that taxes what targets it. A Class's level counts (Artist's
+/// Talent: `K:Class:2:2 R:AddStaticAbility$ SReduceCost`).
 fn reduces_costs(script: &Script) -> bool {
-    script.front().lines_with("S").any(|line| {
+    let face = script.front();
+    let levels = face.keywords().filter(|k| k.starts_with("Class:")).filter_map(|k| {
+        let name = k.split("AddStaticAbility$ ").nth(1)?.split(['|', ' ']).next()?;
+        face.svar(name.trim())
+    });
+    face.lines_with("S").chain(levels).any(|line| {
         let p = params(line);
         p.first() == Some(&("Mode", "ReduceCost"))
             && param(&p, "Type") == Some("Spell")
