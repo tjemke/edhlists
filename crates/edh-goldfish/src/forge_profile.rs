@@ -717,6 +717,11 @@ fn draw(face: &Face, types: &Types) -> Option<Effect> {
     if !types.is_permanent() {
         let start = face.lines_with("A").find(|l| params(l).first().is_some_and(|(k, _)| *k == "SP"))?;
         let d = drawn(face, start);
+        if !d.any && d.not_yours {
+            // Its cards are someone else's (Tibalt's Trickery's), or come only in combat (Hunter's
+            // Insight), so not oracle text's draw either.
+            return Some(Effect::Other);
+        }
         return d.any.then(|| cards(d.net - discarded_in_cost(&params(start))));
     }
     let planeswalker = types.is(CardType::Planeswalker);
@@ -756,8 +761,18 @@ fn draw(face: &Face, types: &Types) -> Option<Effect> {
             return Some(Effect::Engine);
         }
     }
-    // As it enters, or as it's cast (Kozilek, Butcher of Truth).
-    let entering = self_entering(face).into_iter().chain(on_casting(face)).map(|e| drawn(face, e).net).find(|n| *n > 0);
+    // As it enters, or as it's cast (Kozilek, Butcher of Truth), or at a Saga's chapter (Summon:
+    // Bahamut's third), a turn or two later.
+    let chapters = face
+        .keywords()
+        .filter_map(|k| k.strip_prefix("Chapter:")?.split(':').nth(1))
+        .flat_map(|names| names.split(',').filter_map(|n| face.svar(n.trim())));
+    let entering = self_entering(face)
+        .into_iter()
+        .chain(on_casting(face))
+        .chain(chapters)
+        .map(|e| drawn(face, e).net)
+        .find(|n| *n > 0);
     Some(entering.or(once).map_or(Effect::Other, cards))
 }
 
@@ -772,6 +787,17 @@ struct Drawn {
     moves_itself: bool,
     /// It sacrifices something else for the cards (Disciple of Bolas: another creature).
     sacrifices_another: bool,
+    /// Someone else's cards (Tibalt's Trickery: the countered spell's controller digs), or a draw
+    /// that waits on combat (Hunter's Insight).
+    not_yours: bool,
+    /// An earlier step targets an opponent (Archon of Cruelty), so `Defined$ Targeted` is them.
+    targets_opponent: bool,
+    /// Players an earlier step remembers, the deck among them (Wheel of Misfortune: those who
+    /// didn't choose the lowest number, as a deck can choose).
+    players_remembered: bool,
+    /// Cards an earlier step remembers moving (Valakut Awakening: those put back), for
+    /// `Count$RememberedSize`.
+    remembered: Option<i32>,
 }
 
 /// What `start` and the steps after it draw: its `SubAbility$` chain, what a trigger it sets up
@@ -791,31 +817,53 @@ fn drawn(face: &Face, start: &str) -> Drawn {
         let api = p.first().map_or("", |(_, v)| *v);
         // A draw only if something holds (Rumor Gatherer's second creature this turn, a coin
         // flip won) isn't counted.
-        let conditional = p.iter().any(|(k, _)| k.starts_with("Condition"));
-        if let Some(n) = param(&p, "Cost").and_then(|c| c.split_whitespace().find_map(|t| t.strip_prefix("Draw<"))) {
+        let conditional = p.iter().any(|(k, _)| k.starts_with("Condition")) && !singleton_holds(face, &p);
+        let cost = param(&p, "Cost").unwrap_or("");
+        let sacrifices_other =
+            cost.split_whitespace().any(|t| t.starts_with("Sac<") && !t.starts_with("Sac<1/CARDNAME"));
+        if sacrifices_other && matches!(p.first(), Some(("AB", _))) {
+            // A trigger's `AB$ Draw | Cost$ Sac<1/Creature.Other/…>` (Sephiroth, Fabled SOLDIER); an
+            // activated ability's (`draw` weighs its cost too). Not a spell's additional cost
+            // (Deadly Dispute: the goldfish counts that as paid).
+            d.sacrifices_another = true;
+        }
+        if param(&p, "ValidTgts").is_some_and(|t| t.contains("Opponent")) && param(&p, "Defined").is_none() {
+            d.targets_opponent = true;
+        }
+        // Each player, remembered for a later step (Snort: those who discarded their hand draw).
+        if param(&p, "Defined") == Some("Player") && p.iter().any(|(k, _)| k.starts_with("Remember")) {
+            d.players_remembered = true;
+        }
+        if let Some(n) = cost.split_whitespace().find_map(|t| t.strip_prefix("Draw<")) {
             // Sylvan Library's `Draw<2/You>`.
             d.net += n.split('/').next().and_then(|n| n.parse().ok()).unwrap_or(1);
             d.any = true;
         }
         match api {
             "Draw" | "Dig" if conditional => d.any = true,
-            "Draw" if for_you(&p) => {
-                d.net += amount(face, param(&p, "NumCards"));
+            "Draw" if for_you(&p, &d) => {
+                d.net += amount(face, param(&p, "NumCards"), d.remembered);
                 d.any = true;
             }
-            "Dig" if param(&p, "DestinationZone").is_none_or(|z| z == "Hand") => {
+            "Dig" if for_you(&p, &d) && param(&p, "DestinationZone").is_none_or(|z| z == "Hand") => {
                 let n = match param(&p, "ChangeNum") {
                     Some("All") => param(&p, "DigNum"),
                     n => n,
                 };
-                d.net += amount(face, n);
+                d.net += amount(face, n, d.remembered);
                 d.any = true;
             }
-            "Discard" if for_you(&p) && matches!(param(&p, "Mode"), Some("TgtChoose" | "Random") | None) => {
-                d.net -= amount(face, param(&p, "NumCards"));
+            // Another player's draw (Wheel and Deal's opponents, Oblation's target's owner); not each
+            // player who meets a condition (Shatter the Sky's `Player.controlsCreature…`).
+            "Draw" if !param(&p, "Defined").is_some_and(|d| d.starts_with("Player")) => d.not_yours = true,
+            // Another player casts what's dug up (Tibalt's Trickery: the countered spell's
+            // controller).
+            "Play" if param(&p, "Controller").is_some_and(|c| c != "You") => d.not_yours = true,
+            "Discard" if for_you(&p, &d) && matches!(param(&p, "Mode"), Some("TgtChoose" | "Random") | None) => {
+                d.net -= amount(face, param(&p, "NumCards"), d.remembered);
             }
             // A hand thrown away for new cards (Wheel of Fortune, Timetwister): about three cards.
-            "Discard" if for_you(&p) && param(&p, "Mode") == Some("Hand") => d.net -= VARIABLE_DRAW,
+            "Discard" if for_you(&p, &d) && param(&p, "Mode") == Some("Hand") => d.net -= VARIABLE_DRAW,
             // `Origin$ Hand,Graveyard`: Day's Undoing.
             "ChangeZoneAll" if param(&p, "Origin").is_some_and(|o| o.split(',').any(|z| z == "Hand")) => {
                 d.net -= VARIABLE_DRAW;
@@ -823,6 +871,7 @@ fn drawn(face: &Face, start: &str) -> Drawn {
             // For each player (Winds of Change): what it does for this deck's.
             // Not for each other player (Words of Wisdom, Syphon Mind: opponents' cards).
             "RepeatEach" if param(&p, "RepeatPlayers") == Some("Player") => {
+                d.players_remembered = true;
                 next.extend(param(&p, "RepeatSubAbility").and_then(|s| face.svar(s)));
             }
             // Brainstorm puts two back, Scroll Rack exiles them first; not when paying life keeps
@@ -832,13 +881,36 @@ fn drawn(face: &Face, start: &str) -> Drawn {
                     && param(&p, "Destination") != Some("Battlefield")
                     && param(&p, "UnlessCost").is_none() =>
             {
-                d.net -= amount(face, param(&p, "ChangeNum"));
+                let n = amount(face, param(&p, "ChangeNum"), d.remembered);
+                d.net -= n;
+                if param(&p, "RememberChanged") == Some("True") {
+                    d.remembered = Some(n);
+                }
             }
             "ChangeZone" if param(&p, "Defined") == Some("Self") && param(&p, "Origin") == Some("Battlefield") => {
                 d.moves_itself = true;
             }
-            "Sacrifice" if param(&p, "Defined") != Some("Self") => d.sacrifices_another = true,
+            // Not an opponent's edict (Archon of Cruelty).
+            "Sacrifice" if param(&p, "Defined") != Some("Self") && for_you(&p, &d) => d.sacrifices_another = true,
             "ImmediateTrigger" | "DelayedTrigger" => next.extend(param(&p, "Execute").and_then(|e| face.svar(e))),
+            // Each player chooses a number (Wheel of Misfortune): a deck can choose not to be the
+            // lowest.
+            "ChooseNumber" if param(&p, "Defined") == Some("Player") => {
+                d.players_remembered = true;
+                next.extend(param(&p, "NotLowest").and_then(|s| face.svar(s)));
+            }
+            // An effect's trigger that draws only in combat (Hunter's Insight: on combat damage this
+            // turn); not one a goldfish may set off (Rite of Harmony: creatures entering).
+            "Effect" => {
+                let in_combat = param(&p, "Triggers")
+                    .unwrap_or("")
+                    .split(',')
+                    .filter_map(|t| face.svar(t.trim()))
+                    .map(params)
+                    .filter(|t| param(t, "Execute").and_then(|e| face.svar(e)).is_some_and(|e| drawn(face, e).any))
+                    .any(|t| t.first().is_some_and(|(_, m)| m.starts_with("Damage") || m.starts_with("Attack")));
+                d.not_yours |= in_combat;
+            }
             // Either way it goes (Tribute to the World Tree: a draw or counters).
             "Branch" => {
                 for b in ["TrueSubAbility", "FalseSubAbility"] {
@@ -874,29 +946,54 @@ fn drawn(face: &Face, start: &str) -> Drawn {
     d
 }
 
-/// Whether a step's player is this deck's: you, each player, or a target you can choose yourself.
-fn for_you(p: &[(&str, &str)]) -> bool {
+/// Whether a step's player is this deck's: you, each player, or a target you can choose yourself,
+/// given what the steps before it (`d`) targeted and remembered.
+fn for_you(p: &[(&str, &str)], d: &Drawn) -> bool {
+    let defined = param(p, "Defined");
+    // Loran of the Third Path: `ValidTgts$ Opponent | Defined$ TargetedAndYou`.
+    if defined.is_some_and(|d| d.contains("You") && !d.contains("Opponent")) {
+        return true;
+    }
     // Tataru Taru's second draw is an opponent's.
     if param(p, "ValidTgts").is_some_and(|t| t.contains("Opponent")) {
         return false;
     }
-    match param(p, "Defined") {
-        None
-        | Some("You" | "Player" | "Targeted" | "TargetedPlayer" | "TriggeredPlayer" | "TriggeredCardController") => {
-            true
-        }
+    match defined {
+        None | Some("Player" | "TriggeredPlayer" | "TriggeredCardController") => true,
+        // Archon of Cruelty's opponent, targeted a step before.
+        Some("Targeted" | "TargetedPlayer") => !d.targets_opponent,
+        Some("Remembered") => d.players_remembered,
         // `Player.IsRemembered`: each player in turn, this deck's among them.
-        Some(d) => (d.contains("You") || d == "Player.IsRemembered") && !d.contains("Opponent"),
+        Some(d) => d == "Player.IsRemembered",
     }
 }
 
-/// A number of cards: a number, X (as two), or something that depends on the game.
-fn amount(face: &Face, n: Option<&str>) -> i32 {
+/// Whether a step's condition is only that the creature entering has a name no other has
+/// (Guardian Project): in a singleton deck, it holds.
+fn singleton_holds(face: &Face, p: &[(&str, &str)]) -> bool {
+    let only = param(p, "ConditionCheckSVar")
+        .and_then(|v| face.svar(v))
+        .and_then(|x| x.strip_prefix("TriggeredCard$Valid Card."))
+        .is_some_and(|props| props.split('+').all(|q| q.starts_with("doesNotShareNameWith ")));
+    only && p.iter().filter(|(k, _)| k.starts_with("Condition")).all(|(k, _)| *k == "ConditionCheckSVar")
+}
+
+/// A number of cards: a number, X (as two), as many as an earlier step moved (`remembered`, plus
+/// some: Valakut Awakening's `Count$RememberedSize/Plus.1`), or something that depends on the game.
+fn amount(face: &Face, n: Option<&str>, remembered: Option<i32>) -> i32 {
     match n {
         None => 1,
         Some(n) if n.chars().all(|c| c.is_ascii_digit()) => n.parse().unwrap_or(1),
         Some(var) => match face.svar(var) {
             Some("Count$xPaid") => 2,
+            Some(x) if x.starts_with("Count$RememberedSize") && remembered.is_some() => {
+                let plus = match x.strip_prefix("Count$RememberedSize") {
+                    Some("") => Some(0),
+                    Some(more) => more.strip_prefix("/Plus.").and_then(|n| n.parse::<i32>().ok()),
+                    None => None,
+                };
+                plus.map_or(VARIABLE_DRAW, |plus| remembered.unwrap_or(0) + plus)
+            }
             _ => VARIABLE_DRAW,
         },
     }

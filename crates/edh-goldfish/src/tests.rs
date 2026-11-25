@@ -1405,3 +1405,85 @@ fn mana_stored_for_later_or_from_station_counters_isnt_a_rock() {
                   K:Station:8\nSVar:X:Count$CardCounters.CHARGE\n";
     assert_eq!(effect(&scripted(&c, script, "R")), &Effect::Other, "a goldfish doesn't station it");
 }
+
+#[test]
+fn a_draw_for_you_and_an_opponent_counts_yours_and_an_opponents_edict_costs_you_nothing() {
+    // Loran of the Third Path: {T}: you and target opponent each draw a card.
+    let loran = "A:AB$ Draw | Cost$ T | ValidTgts$ Opponent | Defined$ TargetedAndYou | NumCards$ 1\n";
+    assert_eq!(draw_read("Legendary Creature — Human Artificer", "{2}{W}", loran), Effect::Engine);
+    // Archon of Cruelty: target opponent sacrifices, discards and loses 3 life; you draw.
+    let archon = "T:Mode$ ChangesZone | ValidCard$ Card.Self | Destination$ Battlefield | Execute$ TrigSac\n\
+                  SVar:TrigSac:DB$ Sacrifice | ValidTgts$ Opponent | SacValid$ Creature,Planeswalker | SubAbility$ DBDiscard\n\
+                  SVar:DBDiscard:DB$ Discard | Defined$ Targeted | Mode$ TgtChoose | SubAbility$ DBDraw\n\
+                  SVar:DBDraw:DB$ Draw\n";
+    assert_eq!(draw_read("Creature — Archon", "{6}{B}{B}", archon), Effect::Draw { cards: 1 });
+    // Wheel and Deal: any number of opponents discard their hands and draw seven; you draw one.
+    let deal = "A:SP$ Discard | ValidTgts$ Opponent | Mode$ Hand | SubAbility$ Theirs\n\
+                SVar:Theirs:DB$ Draw | Defined$ Targeted | NumCards$ 7 | SubAbility$ Mine\nSVar:Mine:DB$ Draw\n";
+    assert_eq!(draw_read("Instant", "{3}{U}", deal), Effect::Draw { cards: 1 });
+}
+
+#[test]
+fn a_draw_on_a_creature_with_a_new_name_entering_holds_in_singleton() {
+    // Guardian Project.
+    let script = "T:Mode$ ChangesZone | ValidCard$ Creature.!token+YouCtrl+doesNotShareNameWith YourGraveyard | Origin$ Any | Destination$ Battlefield | Execute$ TrigDraw | TriggerZones$ Battlefield\n\
+                  SVar:TrigDraw:DB$ Draw | Defined$ You | NumCards$ 1 | ConditionCheckSVar$ X\n\
+                  SVar:X:TriggeredCard$Valid Card.doesNotShareNameWith YourGraveyard+doesNotShareNameWith OtherYourBattlefield\n";
+    assert_eq!(draw_read("Enchantment", "{3}{G}", script), Effect::Engine);
+}
+
+#[test]
+fn cards_put_back_and_drawn_back_plus_one_net_one() {
+    // Valakut Awakening: put any number of cards from hand on the bottom, draw that many plus one.
+    let script = "A:SP$ ChangeZone | Origin$ Hand | Destination$ Library | LibraryPosition$ -1 | ChangeType$ Card | ChangeNum$ X | RememberChanged$ True | SubAbility$ DBDraw\n\
+                  SVar:DBDraw:DB$ Draw | NumCards$ Y\nSVar:X:Count$ValidHand Card.YouOwn\nSVar:Y:Count$RememberedSize/Plus.1\n";
+    assert_eq!(draw_read("Instant", "{2}{R}", script), Effect::Draw { cards: 1 });
+}
+
+#[test]
+fn a_sagas_chapter_draws_once() {
+    // Summon: Bahamut, chapter III: draw two cards.
+    let script = "K:Chapter:4:DBDestroy,DBDestroy,DBDraw,DBDamage\n\
+                  SVar:DBDestroy:DB$ Destroy | TargetMin$ 0 | TargetMax$ 1 | ValidTgts$ Permanent.nonLand\n\
+                  SVar:DBDraw:DB$ Draw | Defined$ You | NumCards$ 2\nSVar:DBDamage:DB$ DealDamage | Defined$ Player.Opponent | NumDmg$ 1\n";
+    assert_eq!(draw_read("Enchantment Creature — Saga Dragon", "{9}", script), Effect::Draw { cards: 2 });
+}
+
+#[test]
+fn a_wheel_each_player_may_take_is_one_for_this_deck() {
+    // Snort: each player may discard their hand and draw five.
+    let snort = "A:SP$ Discard | Mode$ Hand | Defined$ Player | Optional$ True | RememberDiscardingPlayers$ True | SubAbility$ DBDraw\n\
+                 SVar:DBDraw:DB$ Draw | Defined$ Remembered | NumCards$ 5\n";
+    assert_eq!(draw_read("Sorcery", "{3}{R}", snort), Effect::Draw { cards: 2 });
+    // Wheel of Misfortune: each player who didn't choose the lowest number wheels for seven.
+    let misfortune = "A:SP$ ChooseNumber | Defined$ Player | Secretly$ True | Highest$ DBLoseLife | NotLowest$ DBDiscard\n\
+                      SVar:DBLoseLife:DB$ DealDamage | Defined$ Remembered | NumDmg$ Count$ChosenNumber\n\
+                      SVar:DBDiscard:DB$ Discard | Defined$ Remembered | Mode$ Hand | SubAbility$ DBDraw\n\
+                      SVar:DBDraw:DB$ Draw | Defined$ Remembered | NumCards$ 7\n";
+    assert_eq!(draw_read("Sorcery", "{2}{R}", misfortune), Effect::Draw { cards: 4 });
+}
+
+#[test]
+fn cards_another_player_gets_or_that_come_only_in_combat_arent_this_decks() {
+    // Tibalt's Trickery: the countered spell's controller digs up a card and may cast it.
+    let trickery = "A:SP$ Counter | TargetType$ Spell | ValidTgts$ Card | SubAbility$ DBDig\n\
+                    SVar:DBDig:DB$ DigUntil | Defined$ TargetedController | Valid$ Card.nonLand | FoundDestination$ Exile | RememberFound$ True | SubAbility$ DBPlay\n\
+                    SVar:DBPlay:DB$ Play | Controller$ TargetedController | Defined$ Remembered | WithoutManaCost$ True | Optional$ True\n";
+    assert_eq!(draw_read("Instant", "{1}{R}", trickery), Effect::Other);
+    // Hunter's Insight: draw when the creature deals combat damage this turn.
+    let insight = "A:SP$ Effect | ValidTgts$ Creature.YouCtrl | Triggers$ TrigDamage | RememberObjects$ Targeted\n\
+                   SVar:TrigDamage:Mode$ DamageDone | ValidSource$ Creature.IsRemembered | ValidTarget$ Player | Execute$ TrigDraw | CombatDamage$ True\n\
+                   SVar:TrigDraw:DB$ Draw | Defined$ You | NumCards$ X\nSVar:X:TriggerCount$DamageAmount\n";
+    assert_eq!(draw_read("Instant", "{2}{G}", insight), Effect::Other);
+}
+
+#[test]
+fn a_trigger_that_sacrifices_another_creature_to_draw_isnt_counted() {
+    // Sephiroth, Fabled SOLDIER: as it enters, you may sacrifice another creature to draw.
+    let script = "T:Mode$ ChangesZone | Origin$ Any | Destination$ Battlefield | ValidCard$ Card.Self | Execute$ TrigDraw\n\
+                  SVar:TrigDraw:AB$ Draw | Cost$ Sac<1/Creature.Other/another creature>\n";
+    assert_eq!(draw_read("Legendary Creature — Human Soldier", "{2}{B}", script), Effect::Other);
+    // A spell's additional cost is paid (Deadly Dispute).
+    let dispute = "A:SP$ Draw | Cost$ 1 B Sac<1/Artifact;Creature/artifact or creature> | NumCards$ 2\n";
+    assert_eq!(draw_read("Instant", "{1}{B}", dispute), Effect::Draw { cards: 2 });
+}

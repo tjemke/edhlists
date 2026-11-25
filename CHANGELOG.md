@@ -10,8 +10,14 @@ What changed in each version, newest first. How versions are numbered: see *Vers
   type is a dork itself (Manaweft Sliver, Katilda); a land search paid with the card's own counters
   is land ramp (Khalni Heart Expedition, Fertilid); a Class level that makes spells cheaper is ramp
   the goldfish doesn't play (Artist's Talent); Jeweled Amulet and Queen's Diamond are no longer read
-  as lasting rocks; the station Planets aren't marked as giving mana to other permanents. On the
-  corpus decks this moves commander by turn 4 by up to 3.7 points (Aesi; Tatyova 3.0, Jhoira −1.8).
+  as lasting rocks; the station Planets aren't marked as giving mana to other permanents. Draw: you
+  and an opponent each drawing counts yours (Loran of the Third Path, a draw engine); an opponent's
+  edict no longer cancels your draw (Archon of Cruelty, 1); Guardian Project is a draw engine in a
+  singleton deck; Valakut Awakening nets 1; a Saga's chapter draws once (Summon: Bahamut, 2); a
+  wheel each player may take counts as yours (Snort, Wheel of Misfortune); Wheel and Deal draws you
+  1, not 8; a trigger that sacrifices another creature to draw (Sephiroth), Tibalt's Trickery and
+  Hunter's Insight count no draw. On the corpus decks this moves commander by turn 4 by up to 3.7
+  points (Aesi; Tatyova 3.0, Jhoira −1.8).
 
 ## 0.3.8
 
