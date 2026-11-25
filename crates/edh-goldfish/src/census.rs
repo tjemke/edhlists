@@ -275,6 +275,7 @@ fn reading(p: &Profile) -> Value {
             }),
             Effect::Draw { cards } => json!({ "draw": cards }),
             Effect::Engine => json!("draw engine"),
+            Effect::Refill { to } => json!({ "refill": to }),
             Effect::Other => json!("other"),
         };
         json!({ "cost": s.cost.to_string(), "extra": s.extra(), "effect": effect })

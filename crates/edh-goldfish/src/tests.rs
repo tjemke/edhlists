@@ -1487,3 +1487,43 @@ fn a_trigger_that_sacrifices_another_creature_to_draw_isnt_counted() {
     let dispute = "A:SP$ Draw | Cost$ 1 B Sac<1/Artifact;Creature/artifact or creature> | NumCards$ 2\n";
     assert_eq!(draw_read("Instant", "{1}{B}", dispute), Effect::Draw { cards: 2 });
 }
+
+#[test]
+fn cards_whose_draw_hangs_on_x_or_opponents_hands_are_set_by_hand() {
+    let tagged = |c: Card| Card { tagged: true, roles: Role::Draw.into(), ..c };
+    // Half X, rounded down: X is usually 4 or 5.
+    let krasis = tagged(card("Hydroid Krasis", "Creature — Jellyfish Hydra Beast", "{X}{G}{U}", "", ""));
+    assert_eq!(effect(&profile(&krasis, "GU")), &Effect::Draw { cards: 2 });
+    let script = "Name:Hydroid Krasis\nTypes:Creature Jellyfish Hydra Beast\n\
+                  T:Mode$ SpellCast | ValidCard$ Card.Self | Execute$ TrigDraw\n\
+                  SVar:TrigDraw:DB$ Draw | NumCards$ HalfXDown\nSVar:X:Count$xPaid\nSVar:HalfXDown:Count$xPaid/HalfDown\n";
+    assert_eq!(effect(&scripted(&krasis, script, "GU")), &Effect::Draw { cards: 2 }, "whatever the script says");
+    let wan = tagged(card("Wan Shi Tong, Librarian", "Legendary Creature — Bird Spirit", "{X}{U}{U}", "", ""));
+    assert_eq!(effect(&profile(&wan, "U")), &Effect::Draw { cards: 2 });
+    // Windfall: as many as the biggest hand discarded, this deck's or an opponent's.
+    let windfall = tagged(card("Windfall", "Sorcery", "{2}{U}", "", ""));
+    assert_eq!(effect(&profile(&windfall, "U")), &Effect::Refill { to: 3 });
+}
+
+#[test]
+fn an_x_spell_cast_with_the_mana_left_draws_what_it_draws() {
+    // Hydroid Krasis waits for the turn's last mana; once cast, its two cards come.
+    let cmd = [commander("Simic Lord", "{8}{G}{U}", "GU")];
+    let krasis = Card {
+        tagged: true,
+        roles: Role::Draw.into(),
+        ..card("Hydroid Krasis", "Creature — Hydra", "{X}{G}{U}", "", "")
+    };
+    let dud = card("Big Dud", "Creature — Hydra", "{X}{G}{U}", "", "");
+    let lands = (basic("Forest", "G"), 20);
+    let islands = (basic("Island", "U"), 19);
+    let with = [lands.clone(), islands.clone(), (krasis, 30), (filler("{9}"), 30)];
+    let without = [lands, islands, (dud, 30), (filler("{9}"), 30)];
+    let (a, b) = (run(&deck(&cmd, &with), 1000, 1), run(&deck(&cmd, &without), 1000, 1));
+    assert!(
+        a.capacity[7] > b.capacity[7] + 0.2,
+        "drawing finds more lands by turn 8: {:.2} vs {:.2}",
+        a.capacity[7],
+        b.capacity[7]
+    );
+}

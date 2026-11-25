@@ -18,6 +18,10 @@ What changed in each version, newest first. How versions are numbered: see *Vers
   1, not 8; a trigger that sacrifices another creature to draw (Sephiroth), Tibalt's Trickery and
   Hunter's Insight count no draw. On the corpus decks this moves commander by turn 4 by up to 3.7
   points (Aesi; Tatyova 3.0, Jhoira −1.8).
+- An X spell the goldfish casts with the turn's last mana now draws what it draws (it spent the
+  mana and drew nothing). Hydroid Krasis and Wan Shi Tong draw 2, half the X they're usually cast
+  for (they read 3), and Windfall refills a hand to at least three, as opponents' hands are (it
+  read 0). Mana by turn 8 moves by up to 0.15 on the corpus (Kinnan).
 
 ## 0.3.8
 

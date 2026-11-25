@@ -222,6 +222,16 @@ impl<'d> Game<'d> {
         rec
     }
 
+    /// What a spell's draw does, once it's cast.
+    fn drawn_by(&mut self, effect: &Effect) {
+        match effect {
+            Effect::Draw { cards } => self.draw(usize::from(*cards)),
+            Effect::Engine => self.engines += 1,
+            Effect::Refill { to } => self.draw(usize::from(*to).saturating_sub(self.hand.len())),
+            Effect::Rock { .. } | Effect::LandRamp { .. } | Effect::Other => {}
+        }
+    }
+
     fn draw(&mut self, n: usize) {
         for _ in 0..n {
             if let Some(c) = self.library.pop() {
@@ -453,7 +463,7 @@ impl<'d> Game<'d> {
             let mv = i64::from(s.mana_value());
             let (group, order) = match s.effect {
                 Effect::Rock { .. } | Effect::LandRamp { .. } => (0, mv),
-                Effect::Draw { .. } | Effect::Engine => (2, mv),
+                Effect::Draw { .. } | Effect::Engine | Effect::Refill { .. } => (2, mv),
                 Effect::Other => (3, -mv),
             };
             options.push((group, order, Slot::Hand(pos)));
@@ -537,14 +547,16 @@ impl<'d> Game<'d> {
                         }
                     }
                 }
-                Effect::Draw { cards } => self.draw(usize::from(*cards)),
-                Effect::Engine => self.engines += 1,
-                Effect::Other => {}
+                draw => self.drawn_by(draw),
             }
         }
         if let Some((pos, n)) = soak(self.deck, &self.hand, &units) {
-            self.hand.remove(pos);
+            // An X spell, with the mana left: its draw (Hydroid Krasis), as the reading has it.
+            let c = self.hand.remove(pos);
             spent += n;
+            if let Some(s) = &self.profile(c).spell {
+                self.drawn_by(&s.effect);
+            }
         }
         (spent, commander)
     }

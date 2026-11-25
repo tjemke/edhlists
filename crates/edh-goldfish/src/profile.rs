@@ -201,7 +201,27 @@ pub enum Effect {
     },
     /// Draws a card every turn from the next one on.
     Engine,
+    /// Throws the hand away for at least this many cards, once: the hand grows to this many if it
+    /// was smaller (Windfall draws as many as the biggest hand discarded, an opponent's or this).
+    Refill {
+        to: u8,
+    },
     Other,
+}
+
+/// Cards whose draw depends on what neither oracle text nor Forge's script says, set by hand: how
+/// they're played (Playgroup Live's cast turns: Hydroid Krasis first cast at turn 7, half between 6
+/// and 9), or what a goldfish has no way to know (opponents' hands).
+fn by_hand(name: &str) -> Option<(Effect, &'static str)> {
+    match name {
+        // Half X, rounded down, cast with X of 4 or 5.
+        "Hydroid Krasis" | "Wan Shi Tong, Librarian" => {
+            Some((Effect::Draw { cards: 2 }, "a draw of half X counted as two, a typical X"))
+        }
+        // As many as the biggest hand: the deck's own, or an opponent's of about three.
+        "Windfall" => Some((Effect::Refill { to: 3 }, "a hand refilled to at least three, as opponents' hands are")),
+        _ => None,
+    }
 }
 
 fn re(s: &str) -> Regex {
@@ -298,10 +318,15 @@ impl Profile {
     /// `identity`: the deck's colours, which "any colour" mana is narrowed to.
     pub fn of(card: &Card, script: Option<&Script>, identity: ColorSet) -> Profile {
         let oracle = Profile::from_oracle(card, identity);
-        match script {
+        let mut p = match script {
             Some(script) => crate::forge_profile::read(card, script, identity, oracle),
             None => oracle,
+        };
+        if let (Some((effect, why)), Some(spell)) = (by_hand(&card.name), p.spell.as_mut()) {
+            spell.effect = effect;
+            p.fidelity = Fidelity::Approximate(why);
         }
+        p
     }
 
     /// Read from oracle text alone.
