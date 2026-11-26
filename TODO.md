@@ -136,8 +136,18 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   enter tapped (Mountain Valley); `left_out` for per-turn Treasure makers. The third audit's
   smaller rulings aren't in yet (`findings-2026-11-25.md`, "Rulings for brief.md": "up to N" is
   N, X-only rocks, station never done, Wrenn and Seven, …). *Small*, docs; before the next run.
+- [ ] **Let legendary Vehicles and Spacecraft lead decks everywhere.** `is:commander` now follows
+  Scryfall and counts them (Esika's Chariot, Golden Argosy: 55 cards), but `Card::can_be_commander`
+  (`edh-data/src/cards.rs`), which the commander list, the picker and `scout`'s lookup use, still
+  doesn't, so `scout esika's chariot` finds no commander. Check EDHREC has pages for them first.
+  *Small.*
 
 ## Maybe
+
+- [ ] **Duel Commander's own commander bans.** `is:duelcommander` takes Duel's legality from
+  Scryfall, which doesn't carry Duel's separate list of cards banned as commander (Derevi, Edgar
+  Markov, …: 27 of Scryfall's 3,697 differ). Only worth it if someone counts with it. Touches
+  `edh-data/src/query.rs`. *Small, but the list needs keeping up by hand.*
 
 - [ ] **Let one run lift a configured `max_price`, `max_salt` or `since`.** Since 0.3.8 these
   can be set in `[search]`, and an option replaces them, but nothing on the command line removes
@@ -273,6 +283,17 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   `edh-store/src/lib.rs` and the README's table. *Small.*
 
 ## Considered, probably not
+
+- The rest of the printing-level search keys (`a:`, `ft:`, `wm:`, `frame:`, `border:`, `cn:`,
+  `new:`, `prints`, `is:foil`, `is:promo`, `atag:`, `lang:`, …). Sets, rarity, dates, reprints and
+  Universes Beyond are in (`edh-data/src/printed.rs`); the rest describe the physical card, not
+  anything a deck plays, and are an error that says so (`edh-data/src/query.rs`). `atag:` would
+  also need the 13 MB art-tag download, and languages the 2 GB `all-cards` one.
+- Matching Scryfall exactly where its rules are its own: `pow>tou` compares any face's power with
+  any face's toughness, `pt` only the front face's; its french vanilla and land-cycle lists are kept
+  by hand. Here each face is compared on its own and land cycles are read from rules text. Measured
+  against Scryfall's search on the 32,725 Commander-legal cards (2026-11-26): every other new key
+  matches exactly or within 1–2 odd cards.
 
 - **Play the engines decks are built around in the mana goldfish.** Swamp doublers (Crypt Ghast,
   Nirkana Revenant, Bubbling Muck), Forsaken Monument's {C}, cost reducers (Etherium Sculptor,

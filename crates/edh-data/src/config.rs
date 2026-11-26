@@ -13,6 +13,8 @@ pub const EDHREC_JSON: &str = "https://json.edhrec.com/pages";
 pub const SCRYFALL_BULK_CARDS: &str = "https://api.scryfall.com/bulk-data/default-cards";
 /// Scryfall Tagger oracle tags (what each card does: ramp, removal, ...).
 pub const SCRYFALL_BULK_TAGS: &str = "https://api.scryfall.com/bulk-data/oracle-tags";
+/// Every set, with its block and parent set (one page, ~0.6 MB).
+pub const SCRYFALL_SETS: &str = "https://api.scryfall.com/sets";
 pub const SPELLBOOK_DUMP: &str = "https://json.commanderspellbook.com/variants.json.gz";
 
 /// How long fetched pages stay fresh before we ask again. Decklists are snapshots and never expire.
@@ -107,6 +109,10 @@ impl Paths {
     }
     pub fn scryfall_tags_raw(&self) -> PathBuf {
         self.raw().join("scryfall-oracle-tags.jsonl.gz")
+    }
+    /// Scryfall's set list, for blocks and related sets in searches.
+    pub fn scryfall_sets_raw(&self) -> PathBuf {
+        self.raw().join("scryfall-sets.json")
     }
     pub fn spellbook_raw(&self) -> PathBuf {
         self.raw().join("spellbook-variants.json.gz")

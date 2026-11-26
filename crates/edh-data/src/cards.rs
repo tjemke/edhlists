@@ -10,13 +10,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::flags::EnumSet;
 use crate::mana::{ColorSet, ManaCost, ManaSet};
+use crate::printed::{Game, Printed, Rarity, SetInfo, parse_date};
 use crate::storage::{open_maybe_gz, read_json_gz, write_json_gz};
 use crate::tags::{RoleTags, Roles};
 use crate::text::{fold, front_face};
 use crate::types::{CardType, Layout, Supertype, Types};
 
 /// Bump when [`Card`] changes shape; `sync` rebuilds from the kept raw bulk file without downloading.
-pub const CARDS_SCHEMA: u32 = 6;
+pub const CARDS_SCHEMA: u32 = 7;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Card {
@@ -69,6 +70,132 @@ pub struct Card {
     /// Keyword abilities, as Scryfall lists them ("Flying", "Equip", ...), all faces.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub keywords: Vec<String>,
+    /// Power, toughness, loyalty and defense per face, like `oracle`; empty when no face has any.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stats: Vec<FaceStats>,
+    /// Where it's legal, banned or restricted ([`FORMATS`]).
+    #[serde(default, skip_serializing_if = "Legalities::is_empty")]
+    pub legalities: Legalities,
+    /// Cheapest EUR and MTGO ticket prices across real printings, like `usd`; 0 when unpriced.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub eur: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub tix: f64,
+    /// Some face has a colour indicator (the dot beside the type line).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub indicator: bool,
+    /// The card two meld cards make (Brisela), not one of the two.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub meld_result: bool,
+    /// Where it's been printed ([`Printed`]): one entry per set, rarity and kind of printing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub printings: Vec<Printed>,
+}
+
+fn is_zero(x: &f64) -> bool {
+    *x == 0.0
+}
+
+/// One face's power, toughness, loyalty and defense, as printed ("*", "1+*", "X").
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FaceStats {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub power: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub toughness: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loyalty: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub defense: Option<String>,
+}
+
+impl FaceStats {
+    fn is_empty(&self) -> bool {
+        *self == FaceStats::default()
+    }
+}
+
+/// The formats Scryfall gives legalities for, by its names for them.
+pub const FORMATS: [&str; 23] = [
+    "standard",
+    "future",
+    "historic",
+    "timeless",
+    "gladiator",
+    "pioneer",
+    "modern",
+    "legacy",
+    "pauper",
+    "vintage",
+    "penny",
+    "commander",
+    "oathbreaker",
+    "standardbrawl",
+    "brawl",
+    "competitivebrawl",
+    "alchemy",
+    "paupercommander",
+    "duel",
+    "oldschool",
+    "premodern",
+    "predh",
+    "tlr",
+];
+
+/// What a format says about a card.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Legality {
+    Legal,
+    Banned,
+    Restricted,
+    NotLegal,
+}
+
+/// A card's legality in each of [`FORMATS`], one bit per format.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Legalities {
+    #[serde(default)]
+    legal: u32,
+    #[serde(default)]
+    banned: u32,
+    #[serde(default)]
+    restricted: u32,
+}
+
+impl Legalities {
+    pub fn is_empty(&self) -> bool {
+        *self == Legalities::default()
+    }
+
+    /// From Scryfall's `legalities` (format -> "legal", "banned", ...); formats it doesn't know
+    /// are left out.
+    pub fn from_scryfall<'a>(map: impl IntoIterator<Item = (&'a str, &'a str)>) -> Self {
+        let mut out = Legalities::default();
+        for (format, status) in map {
+            let Some(i) = FORMATS.iter().position(|f| *f == format) else { continue };
+            match status {
+                "legal" => out.legal |= 1 << i,
+                "banned" => out.banned |= 1 << i,
+                "restricted" => out.restricted |= 1 << i,
+                _ => {}
+            }
+        }
+        out
+    }
+
+    /// In the `i`th of [`FORMATS`].
+    pub fn get(&self, i: usize) -> Legality {
+        let bit = 1 << i;
+        if self.legal & bit != 0 {
+            Legality::Legal
+        } else if self.banned & bit != 0 {
+            Legality::Banned
+        } else if self.restricted & bit != 0 {
+            Legality::Restricted
+        } else {
+            Legality::NotLegal
+        }
+    }
 }
 
 impl Card {
@@ -116,6 +243,9 @@ pub struct CardDb {
     /// Unix seconds when this DB was built.
     pub built: u64,
     pub cards: Vec<Card>,
+    /// Every set, from Scryfall's set list (or only what the printings say, without one).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sets: Vec<SetInfo>,
     #[serde(skip)]
     index: HashMap<String, usize>,
 }
@@ -123,7 +253,7 @@ pub struct CardDb {
 impl CardDb {
     pub fn new(cards: Vec<Card>) -> Self {
         let built = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let mut db = Self { schema: CARDS_SCHEMA, built, cards, index: HashMap::new() };
+        let mut db = Self { schema: CARDS_SCHEMA, built, cards, sets: vec![], index: HashMap::new() };
         db.reindex();
         db
     }
@@ -226,8 +356,12 @@ impl CardDb {
         let mut cards: Vec<Card> = names.into_iter().filter_map(|n| self.get(n).cloned()).collect();
         cards.sort_by(|a, b| a.name.cmp(&b.name));
         cards.dedup_by(|a, b| a.name == b.name);
+        let used: std::collections::HashSet<&str> =
+            cards.iter().flat_map(|c| &c.printings).map(|p| p.set.as_str()).collect();
+        let sets = self.sets.iter().filter(|s| used.contains(s.code.as_str())).cloned().collect();
         let mut db = CardDb::new(cards);
         db.built = self.built;
+        db.sets = sets;
         db
     }
 }
@@ -248,6 +382,16 @@ struct RawFace {
     mana_cost: Option<String>,
     #[serde(default)]
     colors: Option<Vec<String>>,
+    #[serde(default)]
+    color_indicator: Option<Vec<String>>,
+    #[serde(default)]
+    power: Option<String>,
+    #[serde(default)]
+    toughness: Option<String>,
+    #[serde(default)]
+    loyalty: Option<String>,
+    #[serde(default)]
+    defense: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -255,6 +399,17 @@ struct RawPrices {
     usd: Option<String>,
     usd_foil: Option<String>,
     usd_etched: Option<String>,
+    eur: Option<String>,
+    eur_foil: Option<String>,
+    tix: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RawPart {
+    #[serde(default)]
+    component: String,
+    #[serde(default)]
+    name: String,
 }
 
 #[derive(Deserialize)]
@@ -264,6 +419,20 @@ struct RawCard {
     oracle_id: Option<String>,
     #[serde(default)]
     digital: bool,
+    #[serde(default)]
+    set: String,
+    #[serde(default)]
+    set_name: String,
+    #[serde(default)]
+    rarity: String,
+    #[serde(default)]
+    released_at: String,
+    #[serde(default)]
+    reprint: bool,
+    #[serde(default)]
+    promo_types: Vec<String>,
+    #[serde(default)]
+    games: Vec<String>,
     #[serde(default)]
     layout: String,
     #[serde(default)]
@@ -298,6 +467,18 @@ struct RawCard {
     flavor_name: Option<String>,
     #[serde(default)]
     keywords: Vec<String>,
+    #[serde(default)]
+    color_indicator: Option<Vec<String>>,
+    #[serde(default)]
+    power: Option<String>,
+    #[serde(default)]
+    toughness: Option<String>,
+    #[serde(default)]
+    loyalty: Option<String>,
+    #[serde(default)]
+    defense: Option<String>,
+    #[serde(default)]
+    all_parts: Vec<RawPart>,
 }
 
 const SKIP_LAYOUTS: &[&str] =
@@ -330,6 +511,28 @@ fn convert(c: RawCard) -> Option<Card> {
         Some(faces) if c.colors.is_none() && multi => faces,
         _ => vec![],
     };
+    let stats: Vec<FaceStats> = if multi {
+        c.card_faces
+            .iter()
+            .map(|f| FaceStats {
+                power: f.power.clone(),
+                toughness: f.toughness.clone(),
+                loyalty: f.loyalty.clone(),
+                defense: f.defense.clone(),
+            })
+            .collect()
+    } else {
+        vec![FaceStats {
+            power: c.power.clone(),
+            toughness: c.toughness.clone(),
+            loyalty: c.loyalty.clone(),
+            defense: c.defense.clone(),
+        }]
+    };
+    let stats = if stats.iter().all(FaceStats::is_empty) { vec![] } else { stats };
+    let indicator = c.color_indicator.is_some() || c.card_faces.iter().any(|f| f.color_indicator.is_some());
+    let meld_result = c.all_parts.iter().any(|p| p.component == "meld_result" && p.name == c.name);
+    let legalities = Legalities::from_scryfall(c.legalities.iter().map(|(k, v)| (k.as_str(), v.as_str())));
     let oracle_id = c
         .oracle_id
         .clone()
@@ -356,6 +559,13 @@ fn convert(c: RawCard) -> Option<Card> {
         roles: Roles::empty(),
         tagged: false,
         keywords: c.keywords,
+        stats,
+        legalities,
+        eur: 0.0,
+        tix: 0.0,
+        indicator,
+        meld_result,
+        printings: vec![],
         name: c.name,
     })
 }
@@ -372,24 +582,41 @@ fn keep_min(slot: &mut Option<f64>, v: Option<f64>) {
 
 /// Build the DB from a Scryfall bulk file: `default_cards` (every printing; prices become the
 /// cheapest real printing, like EDHPowerLevel's) or `oracle_cards` (one printing per card).
-/// Gzipped JSON Lines or a plain JSON array both work.
-pub fn build_from_bulk(path: &Path, tags: Option<&RoleTags>) -> Result<CardDb> {
+/// Gzipped JSON Lines or a plain JSON array both work. `sets` is Scryfall's set list (`/sets`),
+/// for blocks and related sets; without it the sets are only what the printings say.
+pub fn build_from_bulk(path: &Path, tags: Option<&RoleTags>, sets: Option<&Path>) -> Result<CardDb> {
     let mut reader = open_maybe_gz(path)?;
     let first = reader.fill_buf()?.iter().find(|b| !b.is_ascii_whitespace()).copied();
-    // oracle id -> (card, cheapest usd, cheapest foil, cheapest etched)
-    type Slot = (Card, Option<f64>, Option<f64>, Option<f64>);
+    // oracle id -> (card, cheapest usd, cheapest foil, cheapest etched, cheapest eur, cheapest
+    // eur foil, cheapest tix)
+    #[derive(Default)]
+    struct Prices([Option<f64>; 6]);
+    type Slot = (Card, Prices);
     let mut by_oracle: HashMap<String, Slot> = HashMap::new();
+    // Every printing, digital and memorabilia ones too: they're still where the card was printed.
+    let mut printed: HashMap<String, Vec<Printed>> = HashMap::new();
+    let mut set_list: HashMap<String, SetInfo> = HashMap::new();
     let mut add = |raw: RawCard| {
+        if !SKIP_LAYOUTS.contains(&raw.layout.as_str())
+            && let Some(oracle_id) = raw.oracle_id.clone().or_else(|| raw.card_faces.first()?.oracle_id.clone())
+        {
+            let (p, set) = printing(&raw);
+            let entry = set_list.entry(p.set.clone()).or_insert(set);
+            if entry.released == 0 || (p.released != 0 && p.released < entry.released) {
+                entry.released = p.released;
+            }
+            printed.entry(oracle_id).or_default().push(p);
+        }
         if raw.digital {
             return;
         }
-        let (usd, foil, etched) =
-            (parse_price(&raw.prices.usd), parse_price(&raw.prices.usd_foil), parse_price(&raw.prices.usd_etched));
+        let p = &raw.prices;
+        let prices = [&p.usd, &p.usd_foil, &p.usd_etched, &p.eur, &p.eur_foil, &p.tix].map(parse_price);
         let Some(card) = convert(raw) else { return };
-        let slot = by_oracle.entry(card.oracle_id.clone()).or_insert_with(|| (card, None, None, None));
-        keep_min(&mut slot.1, usd);
-        keep_min(&mut slot.2, foil);
-        keep_min(&mut slot.3, etched);
+        let slot = by_oracle.entry(card.oracle_id.clone()).or_insert_with(|| (card, Prices::default()));
+        for (have, new) in slot.1.0.iter_mut().zip(prices) {
+            keep_min(have, new);
+        }
     };
     if first == Some(b'[') {
         let raws: Vec<RawCard> = serde_json::from_reader(reader).context("parsing Scryfall bulk JSON array")?;
@@ -404,12 +631,18 @@ pub fn build_from_bulk(path: &Path, tags: Option<&RoleTags>) -> Result<CardDb> {
         }
     }
     let mut by_name: HashMap<String, Card> = HashMap::with_capacity(by_oracle.len());
-    for (_, (mut card, usd, foil, etched)) in by_oracle {
+    for (_, (mut card, Prices([usd, foil, etched, eur, eur_foil, tix]))) in by_oracle {
         card.usd = usd.or(foil).or(etched).unwrap_or(0.0);
+        card.eur = eur.or(eur_foil).unwrap_or(0.0);
+        card.tix = tix.unwrap_or(0.0);
         if let Some(t) = tags {
             card.roles = t.roles.get(&card.oracle_id).copied().unwrap_or_default();
             card.tagged = t.tagged.contains(&card.oracle_id);
         }
+        let mut p = printed.remove(&card.oracle_id).unwrap_or_default();
+        p.sort_by(|a, b| (a.released, &a.set, a.rarity, a.flags).cmp(&(b.released, &b.set, b.rarity, b.flags)));
+        p.dedup();
+        card.printings = p;
         // On a name clash (rare), prefer the one people actually play.
         match by_name.get(&card.name) {
             Some(prev) if prev.rank.is_some() || card.rank.is_none() => {}
@@ -420,7 +653,82 @@ pub fn build_from_bulk(path: &Path, tags: Option<&RoleTags>) -> Result<CardDb> {
     }
     let mut cards: Vec<Card> = by_name.into_values().collect();
     cards.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(CardDb::new(cards))
+    if let Some(path) = sets {
+        for s in read_sets(path)? {
+            set_list.insert(s.code.clone(), s);
+        }
+    }
+    let mut db = CardDb::new(cards);
+    db.sets = set_list.into_values().collect();
+    db.sets.sort_by(|a, b| a.code.cmp(&b.code));
+    Ok(db)
+}
+
+/// One printing as [`Printed`] keeps it, and its set as far as the printing tells.
+fn printing(raw: &RawCard) -> (Printed, SetInfo) {
+    let mut flags = 0;
+    if raw.reprint {
+        flags |= Printed::REPRINT;
+    }
+    if raw.promo_types.iter().any(|t| t == "universesbeyond") {
+        flags |= Printed::UB;
+    }
+    if ["promo", "box", "masterpiece", "from_the_vault", "memorabilia"].contains(&raw.set_type.as_str()) {
+        flags |= Printed::SIDE_PRODUCT;
+    }
+    for g in &raw.games {
+        if let Some(g) = Game::named(g) {
+            flags |= g as u8;
+        }
+    }
+    let released = parse_date(&raw.released_at).unwrap_or(0);
+    let set = raw.set.to_lowercase();
+    let p = Printed { set: set.clone(), rarity: Rarity::named(&raw.rarity).unwrap_or_default(), released, flags };
+    let info = SetInfo {
+        code: set,
+        name: raw.set_name.clone(),
+        set_type: raw.set_type.clone(),
+        released,
+        ..Default::default()
+    };
+    (p, info)
+}
+
+#[derive(Deserialize)]
+struct RawSets {
+    data: Vec<RawSet>,
+}
+
+#[derive(Deserialize)]
+struct RawSet {
+    code: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    set_type: String,
+    #[serde(default)]
+    block_code: Option<String>,
+    #[serde(default)]
+    parent_set_code: Option<String>,
+    #[serde(default)]
+    released_at: Option<String>,
+}
+
+/// Scryfall's set list, as `sync` keeps it.
+fn read_sets(path: &Path) -> Result<Vec<SetInfo>> {
+    let raw: RawSets = serde_json::from_reader(open_maybe_gz(path)?).context("parsing Scryfall's set list")?;
+    Ok(raw
+        .data
+        .into_iter()
+        .map(|s| SetInfo {
+            code: s.code.to_lowercase(),
+            name: s.name,
+            set_type: s.set_type,
+            block: s.block_code.map(|b| b.to_lowercase()),
+            parent: s.parent_set_code.map(|p| p.to_lowercase()),
+            released: s.released_at.as_deref().and_then(parse_date).unwrap_or(0),
+        })
+        .collect())
 }
 
 /// A name folded for searching: lowercase ASCII, apostrophes dropped, other punctuation as spaces
@@ -480,6 +788,32 @@ mod tests {
         assert_eq!(costs(&fire_ice), vec![Some("{1}{R}".to_string()), Some("{1}{U}".to_string())]);
         let bolt = raw(r#"{"name": "Lightning Bolt", "layout": "normal", "mana_cost": "{R}"}"#);
         assert!(bolt.produced.is_empty(), "makes no mana: {:?}", bolt.produced);
+    }
+
+    #[test]
+    fn cards_keep_what_searches_ask_about_them() {
+        let raw = |json: &str| convert(serde_json::from_str(json).unwrap()).unwrap();
+        let delver = raw(r#"{"name": "Delver of Secrets // Insectile Aberration", "layout": "transform",
+                "legalities": {"commander": "legal", "vintage": "restricted", "standard": "not_legal", "brandnew": "legal"},
+                "card_faces": [{"name": "Delver of Secrets", "power": "1", "toughness": "1"},
+                    {"name": "Insectile Aberration", "power": "3", "toughness": "2", "color_indicator": ["U"]}]}"#);
+        let stats = |c: &Card| c.stats.iter().map(|s| (s.power.clone(), s.toughness.clone())).collect::<Vec<_>>();
+        assert_eq!(stats(&delver), vec![(Some("1".into()), Some("1".into())), (Some("3".into()), Some("2".into()))]);
+        assert!(delver.indicator, "the back face has a colour indicator");
+        let at = |f: &str| FORMATS.iter().position(|x| *x == f).unwrap();
+        assert_eq!(delver.legalities.get(at("commander")), Legality::Legal);
+        assert_eq!(delver.legalities.get(at("vintage")), Legality::Restricted);
+        assert_eq!(delver.legalities.get(at("standard")), Legality::NotLegal);
+        let jace = raw(r#"{"name": "Jace Beleren", "layout": "normal", "loyalty": "3"}"#);
+        assert_eq!(jace.stats[0].loyalty.as_deref(), Some("3"));
+        assert!(raw(r#"{"name": "Sol Ring", "layout": "normal"}"#).stats.is_empty(), "no stats, none kept");
+        let brisela = raw(r#"{"name": "Brisela, Voice of Nightmares", "layout": "meld", "all_parts": [
+                {"component": "meld_part", "name": "Bruna, the Fading Light"},
+                {"component": "meld_result", "name": "Brisela, Voice of Nightmares"}]}"#);
+        let bruna = raw(r#"{"name": "Bruna, the Fading Light", "layout": "meld", "all_parts": [
+                {"component": "meld_part", "name": "Bruna, the Fading Light"},
+                {"component": "meld_result", "name": "Brisela, Voice of Nightmares"}]}"#);
+        assert!(brisela.meld_result && !bruna.meld_result);
     }
 
     fn card(name: &str, faces: &[&str]) -> Card {

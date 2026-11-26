@@ -10,6 +10,7 @@ pub mod flags;
 pub mod forge;
 pub mod http;
 pub mod mana;
+pub mod printed;
 pub mod progress;
 pub mod query;
 pub mod storage;

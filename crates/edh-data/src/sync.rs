@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use crate::cards::{self, CARDS_SCHEMA, CardDb};
 use crate::combos::{self, COMBOS_SCHEMA, ComboDb};
-use crate::config::{DB_STALE_DAYS, Paths, SCRYFALL_BULK_CARDS, SCRYFALL_BULK_TAGS, SPELLBOOK_DUMP};
+use crate::config::{DB_STALE_DAYS, Paths, SCRYFALL_BULK_CARDS, SCRYFALL_BULK_TAGS, SCRYFALL_SETS, SPELLBOOK_DUMP};
 use crate::forge::{FORGE_LATEST_RELEASE, FORGE_SCHEMA, ForgeDb, ForgeRaw, forge_tarball, read_tarball};
 use crate::http::{Http, ensure_online};
 use crate::progress::Progress;
@@ -66,9 +66,15 @@ pub fn sync(http: &Http, paths: &Paths, what: SyncWhat, progress: &dyn Progress)
         if !(what.use_existing_raw && tags_raw.exists()) {
             download_bulk(http, SCRYFALL_BULK_TAGS, "Scryfall Tagger oracle tags", &tags_raw, progress)?;
         }
+        let sets_raw = paths.scryfall_sets_raw();
+        if !(what.use_existing_raw && sets_raw.exists()) {
+            progress.step("downloading Scryfall's set list (~0.6 MB)");
+            http.download(SCRYFALL_SETS, &sets_raw)?;
+        }
         progress.step("building card database");
         let tags = load_role_tags(&tags_raw)?;
-        let db = cards::build_from_bulk(&raw, Some(&tags))?;
+        // Kept downloads from before the set list was fetched build without it (no `b:`, `g:`).
+        let db = cards::build_from_bulk(&raw, Some(&tags), sets_raw.exists().then_some(sets_raw.as_path()))?;
         let gcs = db.cards.iter().filter(|c| c.game_changer).count();
         db.save(&paths.cards_db())?;
         progress.note(&format!(

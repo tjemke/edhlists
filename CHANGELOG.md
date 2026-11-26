@@ -3,6 +3,28 @@
 What changed in each version, newest first. How versions are numbered: see *Versioning* in
 `AGENTS.md`.
 
+## 0.3.10
+
+- `-T` searches understand the rest of Scryfall's syntax that's about cards: mana costs (`m:2WW`,
+  `m:{R/P}`), `devotion:`, `produces:`, power, toughness and loyalty (`pow>=8`, `pow>tou`, `pt`,
+  `loy`, `def`), `mv:even`/`mv:odd`, format legality (`f:pauper`, `banned:`, `restricted:`), `eur`,
+  `tix`, `edhrec`, `has:indicator`, and many more `is:` values: kinds of card (`spell`, `vanilla`,
+  `frenchvanilla`, `bear`, `party`, `outlaw`, `modal`, `hybrid`, `phyrexian`), layouts (`split`,
+  `transform`, `meld`, `leveler`, …), leaders (`partner`, `companion`, `brawler`, `duelcommander`,
+  `oathbreaker`) and land cycles (`fetchland`, `shockland`, `triome`, `creatureland` and 18 more,
+  read from rules text, so renamed reprints count). `is:commander` now counts legendary Vehicles
+  and Spacecraft and leaves out cards banned in Commander, and `is:dfc` leaves out meld cards, as on
+  Scryfall. Keys about printings (`s:`, `r:`, `a:`, `year`, `is:reprint`, …) and Scryfall's display
+  keys say why they can't count, instead of only that they're unknown. The card database is rebuilt
+  from the kept download once, by itself.
+- `-T` searches know where each card was printed: `s:neo`, `st:commander`, `b:wwk`, `g:fin`,
+  `in:lea` (`-in:lea`: never printed in Alpha), `in:arena`, `in:common`, `r:mythic`, `year<=1994`,
+  `date>ori`, `is:reprint` (`year=2024 not:reprint`: new in 2024), `is:unique` and
+  `is:universesbeyond` (any UB printing, so Sol Ring too; `is:ubonly`, not on Scryfall, is cards
+  only ever printed as Universes Beyond). As on Scryfall, a card matches when one of its printings matches. `sync`
+  also fetches Scryfall's set list (~0.6 MB, for `b:` and `g:`); the card database grows from 3.8
+  to 4.8 MB and takes ~40 ms longer to load.
+
 ## 0.3.9
 
 - The mana goldfish reads more cards right, found by a second check of how it reads the 1,500 most

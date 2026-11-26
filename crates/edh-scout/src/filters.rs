@@ -347,6 +347,9 @@ impl CardFilter {
                     })?;
                     q.resolve_tags(tags)?;
                 }
+                if q.needs_sets() {
+                    q.resolve_sets(&cards.sets)?;
+                }
                 let mut matching = scan(q);
                 if !matching.contains(&true) {
                     for alt in std::mem::take(&mut self.alternatives) {
@@ -395,7 +398,40 @@ impl fmt::Display for CardFilter {
 }
 
 /// Search keys that compare (`mv=3`, `c=rg`): an `=` after one is part of the search, not a range.
-const COMPARING_KEYS: [&str; 10] = ["mv", "cmc", "manavalue", "usd", "c", "color", "colour", "id", "identity", "ci"];
+const COMPARING_KEYS: [&str; 32] = [
+    "mv",
+    "cmc",
+    "manavalue",
+    "usd",
+    "eur",
+    "tix",
+    "edhrec",
+    "edhrecrank",
+    "c",
+    "color",
+    "colour",
+    "id",
+    "identity",
+    "ci",
+    "m",
+    "mana",
+    "devotion",
+    "produces",
+    "pow",
+    "power",
+    "tou",
+    "toughness",
+    "pt",
+    "powtou",
+    "loy",
+    "loyalty",
+    "def",
+    "defense",
+    "r",
+    "rarity",
+    "year",
+    "date",
+];
 
 /// One `-T` argument.
 #[derive(Clone, Debug)]
@@ -901,7 +937,7 @@ mod tests {
         let q = cards_filter(r#"o:"x=y"=..3"#);
         assert!(matches!(&q.counted, Counted::Query(q) if q.source() == r#"o:"x=y""#));
         assert_eq!(q.to_string(), r#"≤3 o:"x=y""#);
-        for bad in ["=5", "equipment=lots", "set:neo=5+", "t:saga or=2", "artifacts", "creatures=..x"] {
+        for bad in ["=5", "equipment=lots", "cn:5=5+", "t:saga or=2", "artifacts", "creatures=..x"] {
             assert!(bad.parse::<Filter>().is_err(), "should reject {bad:?}");
         }
         assert!("equipment=lots".parse::<Filter>().unwrap_err().to_string().contains("isn't a count"));
@@ -1074,6 +1110,10 @@ mod tests {
         assert_eq!(parsed("t:creature -mv=3=2+"), ("t:creature -mv=3".into(), Some(2), None));
         assert_eq!(parsed("name:c=2+"), ("name:c".into(), Some(2), None), "c inside name:c isn't the colour key");
         assert_eq!(parsed("c=3=4+"), ("c=3".into(), Some(4), None));
+        assert_eq!(parsed("t:creature pow=3=6+"), ("t:creature pow=3".into(), Some(6), None));
+        assert_eq!(parsed("m=GU=4+"), ("m=GU".into(), Some(4), None));
+        assert_eq!(parsed("produces=c"), ("produces=c".into(), None, None));
+        assert_eq!(parsed("devotion=rrr=2+"), ("devotion=rrr".into(), Some(2), None));
     }
 
     #[test]

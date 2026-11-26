@@ -94,7 +94,8 @@ sees 30 Mountains). EDHREC files each card under one main type, so `artifacts=10
 differ. Cards missing from the card database don't count.
 
 Searches run locally against the card database (no requests, `--offline` works) and understand
-this part of [Scryfall's syntax](https://scryfall.com/docs/syntax):
+[Scryfall's syntax](https://scryfall.com/docs/syntax), as far as it's about cards rather than
+printings:
 
 | Syntax | Matches |
 |---|---|
@@ -103,16 +104,37 @@ this part of [Scryfall's syntax](https://scryfall.com/docs/syntax):
 | `fo:` | rules text including reminder text |
 | `t:/…/`, `o:/…/`, `name:/…/` | a case-insensitive regular expression |
 | `kw:` `keyword:` | keyword abilities (`kw:flying`) |
-| `mv`, `cmc`, `usd` | numbers with `: = != < <= > >=` (`mv<=2`; `usd` is the cheapest printing) |
-| `c`, `id` | colour and colour identity: `c:rg` (at least red and green), `id:esper` (fits Esper), `c:m`, `c:c`; a number counts colours, as on Scryfall: `c=3`, `c>=4`, and `'c>=wu c=3=5+'` for five or more three-colour cards with white and blue; a double-faced card has all its faces' colours (Scryfall: either face) |
-| `is:` / `not:` | `gamechanger`, `commander`, `reserved`, `historic`, `permanent`, `mdfc`, `dfc` |
+| `mv`, `usd`, `eur`, `tix`, `edhrec` | numbers with `: = != < <= > >=` (`mv<=2`, `mv:odd`; prices are the cheapest printing's; `edhrec` is EDHREC's rank) |
+| `m:` `mana:` | mana cost symbols: `m:2WW` (at least these), `m={1}{G}` (exactly), `m:{R/P}`; a split card's halves and an adventure's spell count on their own |
+| `devotion:` | what a permanent adds to devotion: `devotion:rrr`, `devotion>={u/b}{u/b}` |
+| `produces:` | kinds of mana it makes: `produces:wu` (at least), `produces=c` (just colourless) |
+| `pow`, `tou`, `pt`, `loy`, `def` | power, toughness, both added up, loyalty, defense: `pow>=8`, `pow>tou`, `pt<=3`; `*` counts as 0; each face on its own (Scryfall mixes faces) |
+| `c`, `id` | colour and colour identity: `c:rg` (at least red and green), `id:esper` (fits Esper), `c:m`, `c:c`; a number counts colours, as on Scryfall: `c=3`, `c>=4`, and `'c>=wu c=3=5+'` for five or more three-colour cards with white and blue; a double-faced card has all its faces' colours (Scryfall: either face); `has:indicator` for a colour indicator |
+| `f:` `legal:`, `banned:`, `restricted:` | format legality: `f:pauper`, `banned:commander` |
+| `is:` / `not:` | kinds of card: `spell`, `permanent`, `historic`, `vanilla`, `frenchvanilla`, `bear`, `party`, `outlaw`, `modal`, `hybrid`, `phyrexian`, `gamechanger`, `reserved`; layouts: `split`, `flip`, `transform`, `meld`, `meldpart`, `meldresult`, `leveler`, `dfc`, `mdfc`; leaders: `commander`, `partner` (Backgrounds too), `companion`, `brawler`, `duelcommander`, `oathbreaker`; land cycles: `dual`, `shockland`, `fetchland`, `checkland`, `fastland`, `slowland`, `painland`, `filterland`, `gainland`, `scryland`, `surveilland`, `bounceland`, `canopyland`, `shadowland`, `storageland`, `tangoland`, `bondland`, `bikeland`, `triome`, `triland`, `pathway`, `creatureland` (and Scryfall's other names for them) |
 | `otag:` `function:` | a [Scryfall Tagger](https://tagger.scryfall.com) tag and its sub-tags (`otag:ramp`, `otag:mana-rock`, `otag:sweeper`, `otag:tutor`) |
+| `s:` `e:` `set:` | printed in this set (`s:neo`) |
+| `st:`, `b:`, `g:` | printed in a set of this type (`st:commander`), this set's block (`b:wwk`) or release (`g:fin`: FIN, FIC, their promos, …) |
+| `in:` | ever printed in this set, set type, game or rarity: `-in:lea` (never in Alpha), `in:arena`, `in:common` (leaving out promos and Secret Lairs, as Scryfall does) |
+| `r:` `rarity:` | printed at this rarity: `r:common`, `r>=rare` |
+| `year`, `date` | printed then: `year<=1994`, `date>=2015-08-18`, `date>ori` (after Magic Origins) |
+| `is:reprint`, `is:unique`, `is:universesbeyond` | a reprint, only ever in one set, a Universes Beyond printing; `year=2024 not:reprint` is first printed in 2024 |
+| `is:ubonly` | only ever printed as Universes Beyond: Sol Ring has UB printings, so it's `is:ub`, but it isn't this (not on Scryfall) |
 | `name:`, bare words, `"…"`, `!"…"` | card names; `!` for one exact card |
 | `or`, `-`, `( )` | terms side by side must all match; `or`, negation, grouping |
 
-Other keys (set, rarity, artist, …) are an error, never silently ignored. So is a filter that
-matches no card at all: usually a typo. The range is whatever follows the *last* `=`, unless that
-`=` belongs to the search: `mv=3` alone counts mana value 3 cards, `mv=3=10+` filters on them.
+The set keys ask about printings, and as on Scryfall a card matches when one of its printings
+matches all of them: `s:neo r:mythic` is a mythic in Neon Dynasty. So `-s:lea` means "has a
+printing outside Alpha", true of nearly every card; "never printed in Alpha" is `-in:lea`.
+
+Land cycles are read from rules text, where Scryfall keeps lists: a reprint under a new name counts
+(A.I.M. Labs is a gain land), and so do the Masques storage lands. Scryfall's own french vanilla
+list differs at the edges (it leaves out most protection). The other keys about printings (`a:`, `ft:`,
+`frame:`, `cn:`, `is:foil`, `atag:`, …) are an error that says so: a decklist names cards, not which
+printing of them. So are Scryfall's display keys (`order:`, `unique:`, …) and anything
+else it doesn't know: never silently ignored. So is a filter that matches no card at all: usually a
+typo. The range is whatever follows the *last* `=`, unless that `=` belongs to the search: `mv=3`
+alone counts mana value 3 cards, `mv=3=10+` filters on them.
 
 **Fetching.** The deck table doesn't say what's in a deck, so decklist filters are checked as each
 deck arrives: decks that fail are left out and counted (`12 didn't match` in the header). They stay
@@ -308,7 +330,7 @@ reused for free, so repeated runs grow the pool.
 | Source | Used for | Requests |
 |---|---|---|
 | EDHREC | deck tables, deck pages, commander synergy, combo votes, top-salt list, theme list and pages, card pages | 1 table + 2 side pages per commander and 1 salt list (cached 1–14 days); 1 per new deck (kept for good); 1 per theme (+1 for the theme list) and per card a `-T` asks for when searching across commanders |
-| Scryfall | `default_cards` bulk (cheapest printing prices, Game Changers, oracle text) and `oracle_tags` bulk (card roles, `otag:` searches) | 4 per `sync` |
+| Scryfall | `default_cards` bulk (cheapest printing prices, Game Changers, oracle text, where each card was printed), `oracle_tags` bulk (card roles, `otag:` searches) and the set list (`b:`, `g:` searches) | 5 per `sync` |
 | Commander Spellbook | full combo dump | 1 per `sync` |
 | Forge (GitHub) | card scripts for the mana goldfish, from the latest release's source | 1 per `sync` (its latest release), +1 when there's a new one (~250 MB) |
 | EDHPowerLevel | nothing — scored locally; links go to the site | 0 |
