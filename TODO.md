@@ -136,12 +136,6 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   enter tapped (Mountain Valley); `left_out` for per-turn Treasure makers. The third audit's
   smaller rulings aren't in yet (`findings-2026-11-25.md`, "Rulings for brief.md": "up to N" is
   N, X-only rocks, station never done, Wrenn and Seven, …). *Small*, docs; before the next run.
-- [ ] **Make the blind audit sync first on a fresh machine.** The `goldfish-blind-audit` workflow
-  (`.claude/workflows/goldfish-blind-audit.js`) fails at the census on a machine with no
-  `~/.cache/edh-scout/cards.json.gz`, as on a new cbox (2026-11-23). The census agent *returns*
-  that failure rather than erroring, so resuming the run replays the cached failure and only a
-  fresh run recovers. Either run `edh-scout sync` in the census step when the cache is missing, or
-  check for the cache before any agent starts. *Small.*
 
 ## Maybe
 

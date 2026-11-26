@@ -19,5 +19,12 @@ a reader change: each run so far found misreads in cards decks are built around.
 The census itself: `CENSUS_OUT=DIR cargo test --release -p edh-goldfish census -- --ignored`
 (`crates/edh-goldfish/src/census.rs`). Its output is derived from Forge's GPL scripts: keep it out
 of the repo. The whole run is the saved workflow `goldfish-blind-audit`
-(`.claude/workflows/goldfish-blind-audit.js`): census, 7 Sonnet readers, one triage, about 650K
-tokens.
+(`.claude/workflows/goldfish-blind-audit.js`): census (syncing first on a fresh machine), 7 Sonnet
+readers, a triage, a check that recounts from the raw files and verifies each misread against the
+code, and a drafted report; about 850K tokens. Each run writes to a folder of its own,
+`~/goldfish-audit/<date-time>`, outside the repo.
+
+**After a run, write the report.** Subagents can't write report files, so the workflow returns the
+draft (`report.markdown`) and its path (`findings-<date>.md` here). Save it, check its counts and
+untriaged list against the run folder, add a line for it to the list above, and file `report.todo`
+in TODO.md. The run folder doesn't outlive the machine, so the findings file is all that's kept.
