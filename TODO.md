@@ -95,8 +95,15 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   draw (a mode chosen as it enters). *Small* each; none moves the corpus.
 - [ ] **A `Branch` step counts both branches' draws.** `drawn` (`forge_profile.rs`) adds the true and
   false branches, so Heaven Sent (rank 12,461) reads draw 7, which comes only when an opponent is at
-  0 life. Reading Saga chapters (0.3.9) surfaced it. Take the better branch, or skip a branch gated
-  on opponents. *Small*; nothing in the corpus.
+  0 life, and Behold the Unspeakable (13,350) draw 6 (4 with one card or fewer in hand, else 2).
+  Reading Saga chapters (0.3.9) surfaced it. Take the better branch, or skip a branch gated on
+  opponents. *Small*; nothing in the corpus.
+- [ ] **Saga chapters are read one at a time.** `draw` (`forge_profile.rs`) takes the first chapter
+  that nets a draw and ignores the others: The Flame of Keld (20,538) reads draw 2, though chapter I
+  discards the hand first (a loss). Net the chapters together. Separately, `amount()` takes
+  `Count$Compare` (a fixed number under a condition) as a variable 3: Nightmares and Daydreams
+  (18,892) reads 3 where a goldfish gets 1 (twenty cards in a graveyard). *Small*; found checking
+  0.3.9's Saga readings by hand (`notes/goldfish-audit/findings-2026-11-23.md`).
 - [ ] **Draw misreads the third blind audit found** (2026-11-25,
   `notes/goldfish-audit/findings-2026-11-25.md`), all in `draw` in
   `crates/edh-goldfish/src/forge_profile.rs`. In order of reach:
