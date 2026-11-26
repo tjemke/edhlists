@@ -14,6 +14,7 @@ a reader change: each run so far found misreads in cards decks are built around.
 - `draw_agree.py OLD NEW OUT.jsonl…`: how often two census runs agree with the agents on draw.
 - `findings.md`: what the 2026-11-22 run and the closing deck round found, and what was fixed.
 - `findings-2026-11-23.md`: the second run (forge-2.0.16), and what 0.3.9 fixed.
+- `findings-2026-11-25.md`: the third run (forge-2.0.16, after 0.3.9 and the second audit's fixes).
 
 The census itself: `CENSUS_OUT=DIR cargo test --release -p edh-goldfish census -- --ignored`
 (`crates/edh-goldfish/src/census.rs`). Its output is derived from Forge's GPL scripts: keep it out

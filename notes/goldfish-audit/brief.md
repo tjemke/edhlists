@@ -81,8 +81,11 @@ search for a land (Wayfarer's Bauble's `{2}`). Usually 0.
   Elder, Wayfarer's Bauble with `activation` 2). Swapping a land for a land (sacrifice one, get
   one) is not ramp. A search that needs an attack, combat damage or a death isn't land ramp.
 - `{"draw": n}`: draws n cards **once**, net of cards discarded or put back (draw 3 then discard 1
-  → 2). A draw whose size depends on the game counts 3; X counts 2. A permanent draws once only
-  as it enters or by sacrificing itself (Mishra's Bauble).
+  → 2). A draw whose size depends on the game counts 3; X counts 2, and so does half X (Hydroid
+  Krasis, Wan Shi Tong: `{"draw": 2}`). A permanent draws once only as it enters or by sacrificing
+  itself (Mishra's Bauble). Always write the object, never a bare number (`"effect": 2`).
+- `{"refill": n}`: discards a hand and draws as many as the biggest hand discarded, which may be
+  an opponent's (Windfall). Opponents' hands are about three cards: `{"refill": 3}`.
 - `"draw engine"`: a permanent that draws a card **every turn** from the next one: an upkeep or
   end-step draw trigger, a trigger the deck sets off by itself (casting spells, playing lands), or
   an ability usable every turn that doesn't sacrifice, discard, exile or remove counters; a
@@ -162,8 +165,8 @@ search for a land (Wayfarer's Bauble's `{2}`). Usually 0.
   and put into hand) on a non-permanent with the Draw role: `{"draw": 1}`.
 - **Draw only with the Draw role**: an effect `{"draw": n}` or `"draw engine"` only when `roles`
   include `Draw`; otherwise `"other"` (Big Score's rummage, Tagger calls it ramp only).
-- **A hand thrown away for new cards** (Wheel of Fortune, Windfall) counts as three cards
-  discarded: Wheel of Fortune is `{"draw": 4}`.
+- **A hand thrown away for a fixed number of new cards** (Wheel of Fortune) counts as three cards
+  discarded: Wheel of Fortune is `{"draw": 4}`. Windfall is `{"refill": 3}` (above).
 - **Several effects**: rock first, then land ramp, then draw.
 - **Adventures, omens, prepare cards**: read the main (first) face only. A land with an adventure
   side is just the land (`spell: null`).
@@ -173,6 +176,36 @@ search for a land (Wayfarer's Bauble's `{2}`). Usually 0.
 - **A land that taps for mana and can also sacrifice itself to search**: if the search costs no mana
   (`{T}, Sacrifice`: the Landscapes), the `fetch` entry only; if it costs mana (Myriad Landscape's
   `{2}`, Krosan Verge), the mana entry only.
+
+## Rulings from the second audit, 2026-11-23 (apply these)
+
+- **`with_lands.makes` is everything the land makes once the lands are out**, so it includes the
+  base ability's kinds (Nykthos: `"makes": ["C"]`, `"with_lands": {"lands": 3, "makes":
+  ["WUBRGC"]}`; also Three Tree City, Cabal Stronghold, Baldur's Gate).
+- **A mana ability counts only if its cost is tapping the card, mana, or life paid with that tap.**
+  Ignore abilities that tap or sacrifice other permanents (Springleaf Drum, Phyrexian Altar,
+  Phyrexian Tower, lands that tap creatures), or that cost energy, forage, cards from the graveyard,
+  counters on the card, life with no tap (Treasonous Ogre), or nothing at all (Vivi Ornitier).
+- **Lands put only into your hand** (Liliana of the Dark Realms, Archaeomancer's Map, Vorinclex)
+  aren't land ramp: `"other"`, with `not_played` `"Ramp"`.
+- **Searches that don't count as land ramp:** a repeating land-search trigger (Karametra), a search
+  gated on an opponent having more lands (it never happens in a goldfish), and lands found per
+  opponent (Tempt with Discovery: none). Kicker is read unkicked, and a larger count under a
+  condition (Entish Restoration) isn't taken.
+- **Conditions a goldfish never meets:** max speed is never reached; a counter put on in the
+  opening hand (Gemstone Caverns' luck counter) isn't there; mana from revealed cards (Selvala)
+  isn't a rock.
+- **Dryad Arbor enters tapped** (summoning sick, it can't tap the turn it's played).
+- **A creature that gives a mana ability to creatures of a kind it is itself** is a rock, with
+  `undercounted: true` when others get it too (Rishkar, Gemhide Sliver, Inga and Esika).
+- **Revealing a creature type to enter untapped** (Temple of the Dragon Queen) uses the snarl form,
+  `{"untapped if you reveal": [...]}`.
+- **A permanent's per-turn card advantage that doesn't say "draw"** (Bolas's Citadel, Ripples of
+  Undeath, Chimil's discover) is `"other"`.
+- **A draw ability usable every turn is a `"draw engine"`**, even when `not_played` is `"Ramp"`
+  (Black Market Connections, Gleaming Splendor).
+- **Cycling on a spell** is `{"draw": 1}`. **A Class level-up draw** isn't counted. **An extra land
+  drop** is `left_out` `"engine"`.
 
 ## Fields you're unsure of
 

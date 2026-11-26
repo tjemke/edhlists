@@ -97,12 +97,38 @@ Possible next steps for the `-T` decklist filters. Phases 1–2 are done (the se
   false branches, so Heaven Sent (rank 12,461) reads draw 7, which comes only when an opponent is at
   0 life. Reading Saga chapters (0.3.9) surfaced it. Take the better branch, or skip a branch gated
   on opponents. *Small*; nothing in the corpus.
-- [ ] **Add the second audit's rulings to `notes/goldfish-audit/brief.md`.** The findings list
-  ten; eight are settled and would have removed ~40 agent disagreements (plus 16 from a format
-  slip). One needs a decision: exile-to-play on a Draw-role spell (census says draw 1, readers say
-  not a draw). Half X and Windfall are settled by hand (Hydroid Krasis and Wan Shi Tong draw 2,
-  Windfall refills to three: `by_hand` in `crates/edh-goldfish/src/profile.rs`, 0.3.9); spree is
-  still open. *Small*, docs.
+- [ ] **Draw misreads the third blind audit found** (2026-11-25,
+  `notes/goldfish-audit/findings-2026-11-25.md`), all in `draw` in
+  `crates/edh-goldfish/src/forge_profile.rs`. In order of reach:
+  - `BecomeMonarch` is never a draw. In a goldfish nobody takes the crown, so it's an end-step
+    draw engine: every Court (Grace 1630, Garenbrig 2366, Ambition 2580, Cunning 2802), Queen
+    Marchesa (2746), Regal Behemoth, Palace Jailer. *Small.*
+  - A draw trigger the card sets off itself isn't traced: Call of the Ring (1432; its upkeep
+    `RingTemptsYou` feeds its own draw), Fathom Mage (1715; Evolve's counters feed
+    `CounterAdded`). *Small–medium.*
+  - A tap-to-draw ability followed by `GainControl Defined$ Self` to an opponent reads as an
+    engine; Humble Defector (1789) is a one-time draw 2. *Small.*
+  - Sacrificing itself for mana, then drawing as it goes to the graveyard, isn't read: Chromatic
+    Star (2841) should be draw 1 like Mishra's Bauble; Nihil Spellbomb probably too (unchecked).
+    *Small.*
+  - An inline `NumCards$ Remembered$Amount/Plus.1` is looked up as an svar and falls back to
+    `VARIABLE_DRAW`: Brass's Tunnel-Grinder (1621) reads draw 2, net 1. *Small.*
+- [ ] **Mana flags and notes the third blind audit found** (2026-11-25). No card's mana units are
+  wrong; only `undercounted` and the fidelity note. In `crates/edh-goldfish/src/forge_profile.rs`:
+  `gives_others_mana` (~1337) counts a Station grant with `AffectedDefined$ Self` as given to
+  others (Evendo 848, Uthros Titanic Godcore 1184, The Eternity Elevator 1434), and adds the
+  note for mana given to other creatures without setting `undercounted` (Esika 2506, Orochi
+  Merge-Keeper); `produced()` reads a `Count$Compare` amount (fixed, under a condition) as
+  growing mana (Ugin's Labyrinth 2726, Ilysian Caryatid 1741, Leafkin Druid, Tower Worker).
+  *Small.*
+- [ ] **Settle the audit rulings still open, and add the third audit's.** The second audit's
+  settled rulings are in `notes/goldfish-audit/brief.md` (2026-11-25), with half X and Windfall's
+  `{"refill": 3}`. Still open: exile-to-play on a Draw-role spell, where the brief's "not a draw"
+  and "card advantage without draw → 1" conflict (the census says 1; 7 disagreements in the third
+  audit); spree; wheels that depend on hand size; modal and cascade draw sizes; fetch lands that
+  enter tapped (Mountain Valley); `left_out` for per-turn Treasure makers. The third audit's
+  smaller rulings aren't in yet (`findings-2026-11-25.md`, "Rulings for brief.md": "up to N" is
+  N, X-only rocks, station never done, Wrenn and Seven, …). *Small*, docs; before the next run.
 - [ ] **Make the blind audit sync first on a fresh machine.** The `goldfish-blind-audit` workflow
   (`.claude/workflows/goldfish-blind-audit.js`) fails at the census on a machine with no
   `~/.cache/edh-scout/cards.json.gz`, as on a new cbox (2026-11-23). The census agent *returns*
